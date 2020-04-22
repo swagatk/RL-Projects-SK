@@ -5,5 +5,8 @@ Reinforcement Learning Projects
 - CartPole
   - Q Learning
   - DQN 
+  - DDQN
+  - D3QN
+  - D3QN with PER
 - Atari
   - DQN
