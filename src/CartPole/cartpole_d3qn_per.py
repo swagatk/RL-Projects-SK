@@ -16,16 +16,18 @@ class DQNAgent:
                  memory_size = 2000,
                  batch_size = 24,
                  discount_factor = 0.95,
-                 learning_rate = 0.001,
+                 learning_rate = 0.001, #0.00025,
                  train_start = 1000,
-                 epsilon = 1.0, 
-                 epsilon_decay_rate = 0.99,
+                 epsilon_start = 1.0,  # exploration rate
+                 epsilon_min = 0.01,
+                 epsilon_decay_rate = 0.99, #0.9995,
                  ddqn_flag = True, # double DQN
                  duel_flag = False,  # use dueling architecture
                  use_PER = True,     # use Prioritized experience replay
-                 polyak_avg = True,  # use Soft update
+                 polyak_avg = False,  # use Soft update
                  pa_tau = 0.1, # weightage for polyak averaging
                  dueling_option = 'avg',
+                 epsilon_greedy_strategy = False, 
                  load_weights_path = None,
                  load_exp_path = None):
     
@@ -37,7 +39,8 @@ class DQNAgent:
         self.train_start = train_start
         self.learning_rate = learning_rate
         self.discount_factor = discount_factor
-        self.epsilon = epsilon
+        self.epsilon = epsilon_start
+        self.epsilon_min = epsilon_min 
         self.epsilon_decay_rate = epsilon_decay_rate
         self.ddqn = ddqn_flag
         self.dueling_option = dueling_option
@@ -45,6 +48,7 @@ class DQNAgent:
         self.pa_tau = pa_tau
         self.use_PER = use_PER
         self.dueling = duel_flag  
+        self.epsilon_gs = epsilon_greedy_strategy 
 
         # Create replay memory to store experience
         if self.use_PER:
@@ -53,7 +57,7 @@ class DQNAgent:
             self.memory = deque(maxlen=self.memory_size)
 
         # create main model and target model
-        self.model = self._build_model()
+        self.model = self._build_model()   
         self.target_model = self._build_model()
 
         if load_weights_path is not None:
@@ -90,7 +94,6 @@ class DQNAgent:
         print('Train Start: ', self.train_start)
         print("**---------------------**")
 
-  
     def _build_model(self):
 
         # Advantage network
@@ -156,16 +159,19 @@ class DQNAgent:
             network_output = A
 
         model = Model(network_input, network_output)
-        model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
-        model.summary()
+        # model.compile(loss='mse', optimizer=Adam(lr=self.learning_rate))
+        model.compile(loss='mse', \
+                      optimizer=RMSprop(lr=self.learning_rate,
+                                        rho=0.95, epsilon=0.01),\
+                      metrics=["accuracy"])
+        model.summary()                                 
         # plot_model(model, to_file='/content/gdrive/My Drive/Colab_Models/model.png',\
         #            show_shapes=True, show_layer_names=True)
         return model
     
-
     def update_target_network(self):
         ''' Implements Polyak Averaging for weight update 
-        in target network
+        in target network - Soft target model update
         '''
         if self.ddqn and self.polyak_avg:
             weights = self.model.get_weights()
@@ -178,16 +184,15 @@ class DQNAgent:
         else:
             self.target_model.set_weights(self.model.get_weights())
 
-    
-
     def update_epsilon(self):
         '''
         Reduce exploration rate over time
         '''
-        if self.epsilon > 0.01:
+        if self.epsilon > self.epsilon_min:
             self.epsilon *= self.epsilon_decay_rate
         else:
-            self.epsilon = 0.01
+            self.epsilon = self.epsilon_min
+
 
     def add_experience(self, state, action, reward, next_state, done):
         '''  Add experiences to the replay memory '''
@@ -200,11 +205,12 @@ class DQNAgent:
 
     def select_action(self, state):
         '''Implements epsilon-greedy policy '''
-        if (random.random() < self.epsilon):
+        if (random.random() < self.epsilon): # explore
             action = np.random.randint(0, self.action_size)
-        else: 
+        else: # exploit 
             q_values = self.model.predict(state)
             action = np.argmax(q_values[0])
+            #print('shape of q_values:{}'.format(np.shape(q_values)))
         return action
 
     def get_maxQvalue_nextstate(self, next_state):
@@ -226,7 +232,6 @@ class DQNAgent:
 
     def train_model(self):
         ''' Training on Mini-Batch with Experience Replay  '''
-
         if self.use_PER:
             tree_idx, mini_batch = self.memory.sample(self.batch_size)
         else:
@@ -238,12 +243,10 @@ class DQNAgent:
         current_state = np.zeros((self.batch_size, self.state_size))
         next_state = np.zeros((self.batch_size, self.state_size))
         qValues = np.zeros((self.batch_size, self.action_size))
-
         #action, reward, done = [], [], []
         action = np.zeros(self.batch_size, dtype=int)
         reward = np.zeros(self.batch_size)
         done = np.zeros(self.batch_size, dtype=bool)
-
         for i in range(self.batch_size):
             current_state[i] = mini_batch[i][0]   # current_state
             action[i] = mini_batch[i][1]
@@ -251,10 +254,8 @@ class DQNAgent:
             next_state[i] = mini_batch[i][3]  # next_state
             done[i] = mini_batch[i][4]
 
-            qValues[i] = self.model.predict(\
-                                            current_state[i].reshape(1,self.state_size))[0]
-            max_qvalue_ns = self.get_maxQvalue_nextstate(\
-                                                        next_state[i].reshape(1,self.state_size))
+            qValues[i] = self.model.predict(current_state[i].reshape(1,self.state_size))[0]
+            max_qvalue_ns = self.get_maxQvalue_nextstate(next_state[i].reshape(1,self.state_size))
 
             if done[i]:
                 qValues[i][action[i]] = reward[i]
@@ -262,32 +263,26 @@ class DQNAgent:
                 qValues[i][action[i]] = reward[i] + \
                         self.discount_factor * max_qvalue_ns
 
-            if self.use_PER:
-                target_old = np.array(self.model.predict(current_state))
-                target = qValues
-                indices = np.arange(self.batch_size, dtype=np.int32)
-                absolute_errors = np.abs(target_old[indices, \
-                        np.array(action)]- target[indices, np.array(action)])
-                # Update priority
-                self.memory.batch_update(tree_idx, absolute_errors)
-                # print('shape of target_old:',np.shape(target_old)) 
-                # print('shape of target:',np.shape(target))
-                # print('shape of error:', np.shape(absolute_errors))
-                # input('press enter to continue') 
-
+        if self.use_PER:
+            target_old = np.array(self.model.predict(current_state))
+            target = qValues
+            indices = np.arange(self.batch_size, dtype=np.int32)
+            absolute_errors = np.abs(target_old[indices, \
+                    np.array(action)]- target[indices, np.array(action)])
+            # Update priority
+            self.memory.batch_update(tree_idx, absolute_errors)
 
         # train the model
         self.model.fit(current_state, qValues, 
                        batch_size = self.batch_size,
                        epochs=1, verbose=0)
-
         # update epsilon with each training step
         self.update_epsilon()
 
 ###########
 if __name__ == "__main__":
     env = gym.make('CartPole-v0')
-    env.seed(0)
+    env.seed(0)  # use a fixed seed 
     max_episodes = 1000
     train_start = 1000
 
@@ -316,7 +311,10 @@ if __name__ == "__main__":
             next_state, reward, done, info = env.step(action)
             next_state = np.reshape(next_state, [1, state_size])
 
-            reward = reward if not done else -100
+            if not done or t == env._max_episode_steps - 1:
+                reward = reward
+            else:
+                reward = -100
 
             t += 1
 
@@ -342,7 +340,7 @@ if __name__ == "__main__":
                     .format(e, t, np.mean(Scores), np.mean(last100Scores),\
                             deepQ.epsilon)  )
 
-                with open('./data2/cp_ddqn_PER_PA_bs24:24:24.txt','a+') as file2:
+                with open('./data2/cp_ddqn_PER_bs24:24:24-3.txt','a+') as file2:
                     file2.write('{}\t {} \t {:0.2f} \t {:0.2f}\t {}\n'\
                                 .format(e, t, np.mean(Scores),\
                                         np.mean(last100Scores), stepCounter))
@@ -350,9 +348,9 @@ if __name__ == "__main__":
                     break
                 # while loop ends here
 
-        if np.mean(last100Scores) > (env.spec.max_episode_steps-5):
-            print('The problem is solved in {} episodes. Exiting'.format(e))
-            break
+        #if np.mean(last100Scores) > (env.spec.max_episode_steps-5):
+        #    print('The problem is solved in {} episodes. Exiting'.format(e))
+        #    break
         # for-episode-loop ends here
 
     # Plot
@@ -362,7 +360,7 @@ if __name__ == "__main__":
     plt.xlabel('Episodes')
     plt.ylabel('Scores')
     plt.legend(['Actual', 'Average', 'Avg100Scores'])
-    plt.savefig('./img2/cp_ddqn_PER_PA_bs24:24:24.png')
+    plt.savefig('./img2/cp_ddqn_PER_bs24:24:24-3.png.png')
     plt.show()
 
 
