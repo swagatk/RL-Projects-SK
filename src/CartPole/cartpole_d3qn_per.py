@@ -23,8 +23,8 @@ class DQNAgent:
                  epsilon_decay_rate = 0.99, #0.9995,
                  ddqn_flag = True, # double DQN
                  duel_flag = False,  # use dueling architecture
-                 use_PER = True,     # use Prioritized experience replay
-                 polyak_avg = False,  # use Soft update
+                 use_PER = False,     # use Prioritized experience replay
+                 polyak_avg = True,  # use Soft update
                  pa_tau = 0.1, # weightage for polyak averaging
                  dueling_option = 'avg',
                  epsilon_greedy_strategy = False, 
@@ -262,7 +262,7 @@ class DQNAgent:
             else:
                 qValues[i][action[i]] = reward[i] + \
                         self.discount_factor * max_qvalue_ns
-
+            #for-loop ends here
         if self.use_PER:
             target_old = np.array(self.model.predict(current_state))
             target = qValues
@@ -340,7 +340,7 @@ if __name__ == "__main__":
                     .format(e, t, np.mean(Scores), np.mean(last100Scores),\
                             deepQ.epsilon)  )
 
-                with open('./data2/cp_ddqn_PER_bs24:24:24-3.txt','a+') as file2:
+                with open('./data2/cp_ddqn_PA_bs24:24:24-5.txt','a+') as file2:
                     file2.write('{}\t {} \t {:0.2f} \t {:0.2f}\t {}\n'\
                                 .format(e, t, np.mean(Scores),\
                                         np.mean(last100Scores), stepCounter))
@@ -348,9 +348,9 @@ if __name__ == "__main__":
                     break
                 # while loop ends here
 
-        #if np.mean(last100Scores) > (env.spec.max_episode_steps-5):
-        #    print('The problem is solved in {} episodes. Exiting'.format(e))
-        #    break
+        if np.mean(last100Scores) > (env.spec.max_episode_steps-5):
+            print('The problem is solved in {} episodes. Exiting'.format(e))
+            break
         # for-episode-loop ends here
 
     # Plot
@@ -360,7 +360,7 @@ if __name__ == "__main__":
     plt.xlabel('Episodes')
     plt.ylabel('Scores')
     plt.legend(['Actual', 'Average', 'Avg100Scores'])
-    plt.savefig('./img2/cp_ddqn_PER_bs24:24:24-3.png.png')
+    plt.savefig('./img2/cp_ddqn_PA_bs24:24:24-5.png')
     plt.show()
 
 
