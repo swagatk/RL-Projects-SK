@@ -7,6 +7,8 @@ import numpy as np
 import gym
 import time
 from collections import deque
+from datetime import datetime 
+import matplotlib.pyplot as plt
 
 np.random.seed(1)
 tf.set_random_seed(1)
@@ -14,7 +16,7 @@ tf.set_random_seed(1)
 #####################################
 # Hyperparameters
 
-MAX_EPISODES = 200
+MAX_EPISODES = 10000
 MAX_EP_STEPS = 200
 
 LR_A = 0.001
@@ -278,16 +280,26 @@ sess.run(tf.global_variables_initializer())
 
 M = Memory(MEMORY_CAPACITY, dims = 2*state_size + action_size + 1)
 
-if OUTPUT_GRAPH:
-    tf.summary.FileWriter("logs/", sess.graph)
+##########
+## Tensorboard
+
+now = datetime.now()
+logdir = 'logs/' + now.strftime("%Y%m%d-%H%M%S") + '/'
+writer = tf.summary.FileWriter(logdir, sess.graph)
+
+summary = tf.Summary()
 
 var = 3
 
+file = open('data_log.txt','w')
+scores = []
+avgscores = []
+avg100scores = []
+last100scores = deque(maxlen=100)
 t1 = time.time()
 for i in range(MAX_EPISODES):
     s = env.reset()
     ep_reward = 0
-
     for j in range(MAX_EP_STEPS):
 
         if RENDER:
@@ -314,13 +326,38 @@ for i in range(MAX_EPISODES):
         ep_reward += r
 
         if j == MAX_EP_STEPS - 1:
+            scores.append(ep_reward)
+            last100scores.append(ep_reward)
             print('Episode:{}, Reward: {}, Explore:{:.2f}'.format(i,
                                                 int(ep_reward), var))
-            if(ep_reward>-100):
-                  RENDER = True
+            summary.value.add(tag='Score', simple_value=ep_reward)
+            summary.value.add(tag='AvgScore', simple_value = np.mean(scores))
+            summary.value.add(tag='Avg100Score', simple_value =
+                              np.mean(last100scores))
+            writer.add_summary(summary, i)
+            file.write('{}\t{}\t{}\t{}\n'.format(i, int(ep_reward),
+                                               np.mean(scores),
+                                                 np.mean(last100scores)))
+
+            #if(ep_reward>-100):
+            #      RENDER = True
             break
 print('Running time:', time.time()-t1)
 
+writer.flush()
+file.close()
+
+###############
+## plot
+plt.plot(scores, 'r-', label='scores')
+plt.plot(avgscores, 'g-', label='avg scores')
+plt.plot(avg100scores, 'b-', label='avg 100 scores')
+plt.legend('lower right')
+plt.xlabel('Episodes')
+plt.ylabel('Scores')
+plt.title('DDPG-Pendulum-V0')
+plt.savefig('./ddpg_pendu_tf.png')
+plt.show()
 
 
 

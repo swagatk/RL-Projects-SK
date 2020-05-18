@@ -1,5 +1,8 @@
 """
 DDPG Algorithm for pendulum
+- Not working as desired. 
+- Use to implement and test PER for pendulum
+
 """
 
 import sys
@@ -38,6 +41,8 @@ class Actor:
         self.lr = lr
         self.model = self._build_net()
         self.target_model = self._build_net()
+        self.adam_optimizer = self.optimizer()
+        
 
     def _build_net(self):
         inp = Input(shape=(self.env_dim,))
@@ -67,9 +72,10 @@ class Actor:
 
     # train actor to maximize Q-value
     def train(self, states, actions, grads):
-        self.optimizer([states, grads])
+        self.adam_optimizer([states, grads])
 
-    def optimizer(self, states, grads):
+
+    def optimizer(self):
         # Actor Optimizer
         action_grads = K.placeholder(shape=(None, self.act_dim))
 
@@ -78,8 +84,8 @@ class Actor:
                                     self.model.trainable_weights,
                                     -action_grads)
         grads = zip(params_grads, self.model.trainable_weights)
-        return K.function([self.model.input, action_grads],
-                          [tf.train.AdamOptimizer(self.lr).apply_gradients(grads)])
+        return  K.function([self.model.input, action_grads],
+                           [tf.train.AdamOptimizer(self.lr).apply_gradients(grads)][1:])
 
     def save(self, path):
         self.model.save_weights(path+'_actor.h5')
@@ -128,8 +134,8 @@ class Critic:
         return self.target_model.predict(inp)
 
     def train_on_batch(self, states, actions, critic_target):
-        print('states shape:{}'.format(np.shape(states)))
-        print('actions shape:{}'.format(np.shape(actions)))
+        #print('states shape:{}'.format(np.shape(states)))
+        #print('actions shape:{}'.format(np.shape(actions)))
         self.model.train_on_batch([states, actions], critic_target)
 
     def transfer_weights(self):
@@ -176,10 +182,10 @@ class DDPG:
 
     def bellman_critic_target(self, rewards, q_values, dones):
         # use bellman equation to compute critic target
-        critic_target = np.asarray(q_values)
+        critic_target = np.array(q_values)
         for i in range(q_values.shape[0]):
             if dones[i]:
-                critic_target = rewards[i]
+                critic_target[i] = rewards[i]
             else:
                 critic_target[i] = rewards[i] + self.gamma * \
                                                         q_values[i]
@@ -220,13 +226,12 @@ class DDPG:
         grads = self.critic.gradients(states, actions)
 
         # train actor
-        self.actor.train(states, actions, np.array(grads).reshape((-1,
-                                                                  self.action_size)))
+        self.actor.train(states, actions, np.array(grads).reshape((-1, self.action_size)))
         # transfer weights to target networks through polyak averaging
         self.actor.transfer_weights()
         self.critic.transfer_weights()
 
-    def train(self, env, summary_writer, gather_stats=True,
+    def train(self, env, summary_writer, record=True,
               render=False, max_episodes=3000, batch_size=64):
         results = []
 
@@ -236,7 +241,6 @@ class DDPG:
         for e in tqdm_e:
             time, cumul_reward, done = 0, 0, False
             state = env.reset().reshape([1, state_size])
-            #actions, states, rewards = [], [], []
             noise = OrnsteinUhlenbeckProcess(size=self.action_size)
 
             while not done:
@@ -263,14 +267,17 @@ class DDPG:
                 if len(self.memory) > batch_size:
                     states, actions, rewards, new_states, dones = \
                                     self.sample_batch(batch_size)
-                    #print('shape of new_states:{}'.format(np.shape(new_states)))
-                    #print('shape of actions:{}'.format(np.shape(actions)))
-                    #print('shape of rewards:{}'.format(np.shape(rewards)))
-                    #input('Press Enter to continue')
 
                     # predict target q-values using target networks
                     q_values = self.critic.target_predict([new_states,
                                                         self.actor.target_predict(new_states)])
+
+                    #print('shape of new_states:{}'.format(np.shape(new_states)))
+                    #print('shape of actions:{}'.format(np.shape(actions)))
+                    #print('shape of rewards:{}'.format(np.shape(rewards)))
+                    #print('shape of dones:{}'.format(np.shape(dones)))
+                    #print('shape of q_values:{}'.format(np.shape(q_values)))
+                    #input('Press Enter to continue ...')
 
                     # compute critic target
                     critic_target = self.bellman_critic_target(rewards,
@@ -285,7 +292,7 @@ class DDPG:
                 time += 1
 
             #Gather stats every episode for plotting
-            if(gather_stats):
+            if(record):
                 mean,stdev = gather_stats(self, env)
                 results.append([e, mean, stdev])
 
@@ -300,7 +307,7 @@ class DDPG:
         return results
 
     def save_weights(self, path):
-        path += '_LR_{}'.format(self.lr)
+        path += '_LR_{}'.format(self.actor_lr)
         self.actor.save(path)
         self.critic.save(path)
 
@@ -321,20 +328,21 @@ if __name__ == '__main__':
     state_size = env.observation_space.shape[0]
     action_size = env.action_space.high.shape[0]
     action_bound = env.action_space.high
+    record = True
 
     agent = DDPG(state_size, action_size, action_bound)
 
 
-    gather_states = True
-    stats = agent.train(env, summary_writer, gather_stats)
+    stats = agent.train(env,  summary_writer, max_episodes=3000,
+                        record=True)
 
-    if gather_stats:
+    if record:
         df = pd.DataFrame(np.array(stats))
-        df._to_csv('ddpg_logs.csv', header=['Episode, Mean, Stdev'],
+        df.to_csv('ddpg_logs.csv', header=['Episode', 'Mean', 'Stdev'],
                    float_format='%10.5f')
 
     exp_dir = './ddpg/models/'
-    if not os.path.exist(exp_dir):
+    if not os.path.exists(exp_dir):
         os.makedirs(exp_dir)
 
     export_path = exp_dir
