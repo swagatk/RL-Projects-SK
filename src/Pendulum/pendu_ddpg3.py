@@ -10,12 +10,12 @@ source:
 import os
 import gym
 import numpy as np
+import tensorflow as tf
 from keras.models import Sequential, Model
 from keras.layers import Dense, Dropout, Input
 from keras.layers.merge import Add, Concatenate
 from keras.optimizers import Adam
 import keras.backend as K
-import tensorflow as tf
 import random
 from collections import deque
 import matplotlib.pyplot as plt
@@ -71,7 +71,7 @@ class ActorCritic:
         actor_model_weights = self.actor_model.trainable_weights
 
         # total grad = dA/dW * (-dC/dA)
-        self.actor_grads =  tf.gradients(self.actor_model.output,
+        self.actor_grads = tf.gradients(self.actor_model.output,
                                         actor_model_weights,
                                         -self.actor_critic_grad)
 

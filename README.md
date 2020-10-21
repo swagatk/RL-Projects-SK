@@ -8,5 +8,7 @@ Reinforcement Learning Projects
   - DDQN
   - D3QN
   - D3QN with PER
+- Pendulum
+   - DDPG
 - Atari
   - DQN

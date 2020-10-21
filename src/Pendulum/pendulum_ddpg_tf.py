@@ -1,6 +1,8 @@
 """
 Deep Deterministic Policy Gradient for solving the Pendulum Problem 
-
+Tensorflow 1.x Code
+Output: Average reward over 100 episodes =
+Training happens over 10000 episodes
 """
 import tensorflow as tf
 import numpy as np
@@ -331,9 +333,8 @@ for i in range(MAX_EPISODES):
             print('Episode:{}, Reward: {}, Explore:{:.2f}'.format(i,
                                                 int(ep_reward), var))
             summary.value.add(tag='Score', simple_value=ep_reward)
-            summary.value.add(tag='AvgScore', simple_value = np.mean(scores))
-            summary.value.add(tag='Avg100Score', simple_value =
-                              np.mean(last100scores))
+            summary.value.add(tag='AvgScore', simple_value  =np.mean(scores))
+            summary.value.add(tag='Avg100Score', simple_value=np.mean(last100scores))
             writer.add_summary(summary, i)
             file.write('{}\t{}\t{}\t{}\n'.format(i, int(ep_reward),
                                                np.mean(scores),
