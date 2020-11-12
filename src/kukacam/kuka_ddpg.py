@@ -5,9 +5,11 @@ Applying DDPG algorithm to KukaCamGym Environment
 import gym
 from pybullet_envs.bullet.kukaCamGymEnv import KukaCamGymEnv
 import numpy as np
-import time
-from itertools import count
+import tensorflow as tf
 import matplotlib.pyplot as plt
+from kuka_actor_critic import KukaACAgent
+from utils import *
+
 env = KukaCamGymEnv(renders=True, isDiscrete=False)
 print('shape of Observation space: ', env.observation_space.shape)
 print('shape of Action space: ', env.action_space.shape)
@@ -33,15 +35,75 @@ replacement = [
 MEMORY_CAPACITY = 50000
 BATCH_SIZE = 64
 
+upper_bound = env.action_space.high
+lower_bound = env.action_space.low
+state_size = env.observation_space.shape[0:2]
+action_size = env.action_space.shape
+
+# Create a Kuka Actor-Critic Agent
+agent = KukaACAgent(state_size, action_size,
+                 replacement, LR_A, LR_C,
+                 BATCH_SIZE,
+                 MEMORY_CAPACITY,
+                 GAMMA,
+                 upper_bound, lower_bound)
+
+ep_reward_list = []
+avg_reward_list = []
+best_score = - np.inf
 for episode in range(MAX_EPISODES):
     obsv = env.reset()
-
+    state = preprocess_image_input(obsv)  # 1-channel image
     episodic_reward = 0
     frames = []
     while True:
         if episode > MAX_EPISODES - 3:
             frames.append(env.render(mode='rgb_array'))
-        agent.policy(state)
 
+        # convert the numpy array state into a tensor
+        tf_state = tf.expand_dims(tf.convert_to_tensor(state), 0)
 
-for
+        # take an action as per the policy
+        action = agent.policy(state)
+
+        # obtain next state and rewards
+        next_obsv, reward, done, info = env.step(action)
+        next_state = preprocess_image_input(next_obsv)
+
+        episodic_reward += reward
+
+        # store experience
+        agent.buffer.record((state, action, reward, next_state))
+
+        # train the network
+        agent.experience_replay()
+
+        # update the target model
+        agent.update_targets()
+
+        state = next_state
+
+        if done:
+            if episodic_reward > best_score:
+                best_score = episodic_reward
+                agent.actor.save_weights('./kuka_actor_weights.h5')
+                agent.critic.save_weights('./kuka_actor_weights.h5')
+            break
+
+    ep_reward_list.append(episodic_reward)
+    avg_reward = np.mean(ep_reward_list[-40:])
+    print("Episode * {} * Avg Reward = {} ".format(ep, avg_reward))
+    avg_reward_list.append(avg_reward)
+
+env.close()
+
+# plot
+plt.plot(avg_reward_list)
+plt.xlabel('Episodes')
+plt.ylabel('Avg episodic reward')
+plt.grid()
+plt.savefig('./kuka_ddpg_tf2.png')
+plt.show()
+# save animation as GIF
+# save_frames_as_gif(frames)
+

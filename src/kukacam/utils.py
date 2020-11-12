@@ -1,9 +1,9 @@
 '''
 Utilities
 '''
+import cv2
 import matplotlib.pyplot as plt
 from matplotlib import animation
-import cv2
 
 # convert images from RGBA to RGB
 def rgba2rgb(rgba, background=(255, 255, 255)):
@@ -53,6 +53,11 @@ def save_frames_as_gif(frames, path='./', filename='gym_animation.gif'):
 
 
 def preprocess_image_input(rgba_img):
+    """
+    Convert RGBA image to YUV image and return Y channel
+    :param rgba_img:
+    :return: Y channel of YUV image
+    """
     rgb_img = cv2.cvtColor(rgba_img, cv2.COLOR_RGBA2RGB)
     yuv_img = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2YUV)
 

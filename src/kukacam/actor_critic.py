@@ -229,6 +229,7 @@ class Buffer:
 
         return state_batch, action_batch, reward_batch, next_state_batch
 
+
 #######################
 # ACTOR-CRITIC AGENT
 #####################
@@ -266,10 +267,13 @@ class AC_Agent:
 
     def policy(self, state):
         sampled_action = tf.squeeze(self.actor.model(state))
-        noise = self.noise_object()
+        noise = self.noise_object()  # scalar value
+
+        # convert into the same shape as that of the action vector
+        noise_vec = noise * np.ones(self.action_size)
 
         # Add noise to the action
-        sampled_action = sampled_action.numpy() + noise
+        sampled_action = sampled_action.numpy() + noise_vec
 
         # Make sure that the action is within bounds
         valid_action = np.clip(sampled_action, self.lower_bound, self.upper_bound)
