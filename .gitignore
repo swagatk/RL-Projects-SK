@@ -1,0 +1,5 @@
+# ignore the following directories
+
+__pycache__/
+logs/
+logdir/

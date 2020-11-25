@@ -11,7 +11,6 @@ print('shape of Action space: ', env.action_space.shape)
 print('Reward Range: ', env.reward_range)
 print('Action High value: ', env.action_space.high)
 print('Action Low Value: ', env.action_space.low)
-
 for episode in range(2):
     print('Episode: ', episode)
     obsv = env.reset()

@@ -60,5 +60,4 @@ def preprocess_image_input(rgba_img):
     """
     rgb_img = cv2.cvtColor(rgba_img, cv2.COLOR_RGBA2RGB)
     yuv_img = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2YUV)
-
     return yuv_img[:, :, 0] # return the intensity channel or Y channel
