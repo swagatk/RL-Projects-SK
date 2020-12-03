@@ -1,3 +1,6 @@
+"""
+Kuka Actor Critic Model
+"""
 import tensorflow as tf
 import numpy as np
 from tensorflow import keras
@@ -14,14 +17,6 @@ if gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
     except RuntimeError as e:
         print(e)
-################################################
-
-######################
-# Seed Initialization
-# required for reproducing the result
-np.random.seed(1)
-tf.random.set_seed(1)
-#####################################
 
 
 ##########################
@@ -55,45 +50,75 @@ class OUActionNoise:
             self.x_prev = np.zeros_like(self.mean)
 
 
+###########################
+# feature network
+########################
+class FeatureNetwork:
+    def __init__(self, state_size):
+        self.state_size = state_size
+        self.model = self._build_net()
+
+        # create NN models
+        self.model = self._build_net()
+        self.optimizer = tf.keras.optimizers.Adam(self.lr)
+
+    def _build_net(self):
+
+        img_input = layers.Input(shape=self.state_size)
+
+        # shared convolutional layers
+        conv1 = layers.Conv2D(15, kernel_size=5, strides=2,
+                              padding="SAME", activation="relu")(img_input)
+        bn1 = layers.BatchNormalization()(conv1)
+        conv2 = layers.Conv2D(32, kernel_size=5, strides=2,
+                              padding="SAME", activation='relu')(bn1)
+        bn2 = layers.BatchNormalization()(conv2)
+        conv3 = layers.Conv2D(32, kernel_size=5, strides=2,
+                              padding="SAME", activation='relu')(bn2)
+        bn3 = layers.BatchNormalization()(conv3)
+        f1 = layers.Flatten()(bn3)
+        fc1 = layers.Dense(128, activation='relu')(f1)
+        fc2 = layers.Dense(64, activation='relu')(fc1)
+        model = tf.keras.Model(inputs=img_input, outputs=fc2)
+        print('shared feature network')
+        model.summary()
+        keras.utils.plot_model(model, to_file='feature_net.png',
+                               show_shapes=True, show_layer_names=True)
+        return model
+
+    def __call__(self, state):
+        return self.model(state)
+
 ############################################
 # ACTOR
 ##############################
 class KukaActor:
     def __init__(self, state_size, action_size,
                  replacement, learning_rate,
-                 upper_bound):
-        self.state_size = state_size
-        self.action_size = action_size
+                 upper_bound, feature_model):
+        self.state_size = state_size   # shape: (w, h, c)
+        self.action_size = action_size  # shape: (n, )
         self.lr = learning_rate
         self.replacement = replacement
         self.upper_bound = upper_bound
         self.train_step_count = 0
 
         # create NN models
+        self.feature_model = feature_model
         self.model = self._build_net()
         self.target = self._build_net()
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
 
     def _build_net(self):
         # input is a stack of 1-channel YUV images
-        last_init = tf.random_uniform_initializer(minval=-0.03, maxval=0.03)
+        #last_init = tf.random_uniform_initializer(minval=-0.03, maxval=0.03)
+        last_init = tf.random_uniform_initializer(minval=-0.9, maxval=0.9)
+
         state_input = layers.Input(shape=self.state_size)
-        conv1 = layers.Conv2D(15, kernel_size=6, strides=2,
-                                padding="SAME", activation="relu")(state_input)
-        bn1 = layers.BatchNormalization()(conv1)
-        conv2 = layers.Conv2D(32, kernel_size=6, strides=2,
-                              padding="SAME", activation="relu")(bn1)
-        bn2 = layers.BatchNormalization()(conv2)
-        conv3 = layers.Conv2D(32, kernel_size=6, strides=2,
-                              padding="SAME", activation="relu")(bn2)
-        bn3 = layers.BatchNormalization()(conv3)
+        feature = self.feature_model(state_input)
 
-        #max_pool1 = layers.MaxPool2D(pool_size=3, strides=2)(conv_l1)
-        f1 = layers.Flatten()(bn3)
-
-        l1 = layers.Dense(128, activation='relu')(f1)
-        l2 = layers.Dense(64, activation='relu')(l1)
-        net_out = layers.Dense(self.action_size, activation='tanh',
+        l2 = layers.Dense(64, activation='relu')(feature)
+        net_out = layers.Dense(self.action_size[0], activation='tanh',
                                kernel_initializer=last_init)(l2)
 
         net_out = net_out * self.upper_bound
@@ -140,13 +165,14 @@ class KukaActor:
 class KukaCritic:
     def __init__(self, state_size, action_size,
                  replacement,
-                 learning_rate=1e-3,
-                 gamma=0.99):
+                 learning_rate,
+                 gamma, feature_model):
         self.state_size = state_size
         self.action_size = action_size
         self.lr = learning_rate
         self.replacement = replacement
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
+        self.feature_model = feature_model
         self.model = self._build_net()
         self.target = self._build_net()
         self.gamma = gamma
@@ -155,21 +181,9 @@ class KukaCritic:
     def _build_net(self):
         # state input is a stack of 1-D YUV images
         state_input = layers.Input(shape=self.state_size)
-        conv1 = layers.Conv2D(15, kernel_size=6, strides=2,
-                                padding="SAME", activation="relu")(state_input)
-        bn1 = layers.BatchNormalization()(conv1)
-        conv2 = layers.Conv2D(32, kernel_size=6, strides=2,
-                              padding="SAME", activation="relu")(bn1)
-        bn2 = layers.BatchNormalization()(conv2)
 
-        conv3 = layers.Conv2D(32, kernel_size=6, strides=2,
-                              padding="SAME", activation="relu")(bn2)
-        bn3 = layers.BatchNormalization()(conv3)
-
-        #max_pool1 = layers.MaxPool2D(pool_size=3, strides=2)(conv_l1)
-        f1 = layers.Flatten()(bn3)
-
-        state_out = layers.Dense(32, activation="relu")(f1)
+        feature = self.feature_model(state_input)
+        state_out = layers.Dense(32, activation="relu")(feature)
         state_out = layers.Dense(32, activation="relu")(state_out)
 
         # Action as input
@@ -180,7 +194,8 @@ class KukaCritic:
         concat = layers.Concatenate()([state_out, action_out])
 
         out = layers.Dense(128, activation="relu")(concat)
-        out = layers.Dense(64, activation="relu")(out)
+        out = layers.Dense(64, activation="lrelu")(out)  # leakyRelu
+        #out = layers.Dense(64, activation=tf.keras.layers.LeakyReLU())(out)  # leakyRelu
         net_out = layers.Dense(1)(out)
 
         # Outputs single value for give state-action
@@ -255,12 +270,14 @@ class KukaBuffer:
 
         return state_batch, action_batch, reward_batch, next_state_batch
 
-#######################################
-# Actor-Critic Agent for Kuka Environment
+
+####################################
+# ACTOR-CRITIC AGENT
 ##################################
-class KukaACAgent:
+class KukaActorCriticAgent:
     def __init__(self, state_size, action_size,
-                 replacement, lr_a, lr_c,
+                 replacement,
+                 lr_a, lr_c,
                  batch_size,
                  memory_capacity,
                  gamma,
@@ -276,10 +293,12 @@ class KukaACAgent:
         self.upper_bound = upper_bound
         self.lower_bound = lower_bound
 
+        self.feature = FeatureNetwork(self.state_size)
+
         self.actor = KukaActor(self.state_size, self.action_size, self.replacement,
-                           self.actor_lr, self.upper_bound)
+                               self.actor_lr, self.upper_bound, self.feature)
         self.critic = KukaCritic(self.state_size, self.action_size, self.replacement,
-                             self.critic_lr, self.gamma)
+                                 self.critic_lr, self.gamma, self.feature)
         self.buffer = KukaBuffer(self.memory_capacity, self.batch_size)
 
         std_dev = 0.2
@@ -312,7 +331,7 @@ class KukaACAgent:
 
         actor_loss = self.actor.train(state_batch, self.critic)
         critic_loss = self.critic.train(state_batch, action_batch, reward_batch,
-                          next_state_batch, self.actor)
+                                        next_state_batch, self.actor)
 
         return actor_loss, critic_loss
 

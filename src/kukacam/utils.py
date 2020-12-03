@@ -4,6 +4,7 @@ Utilities
 import cv2
 import matplotlib.pyplot as plt
 from matplotlib import animation
+from PIL import Image
 
 # convert images from RGBA to RGB
 def rgba2rgb(rgba, background=(255, 255, 255)):
@@ -60,4 +61,14 @@ def preprocess_image_input(rgba_img):
     """
     rgb_img = cv2.cvtColor(rgba_img, cv2.COLOR_RGBA2RGB)
     yuv_img = cv2.cvtColor(rgb_img, cv2.COLOR_RGB2YUV)
-    return yuv_img[:, :, 0] # return the intensity channel or Y channel
+    return yuv_img[:, :, 0]  # return the intensity channel or Y channel
+
+
+def preprocess_image(rgba_img):
+    rgb_img = cv2.cvtColor(rgba_img, cv2.COLOR_RGBA2RGB)
+    resized_img = cv2.resize(rgb_img, (48, 48), interpolation=cv2.INTER_AREA)
+    return resized_img
+
+
+
+
