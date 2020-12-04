@@ -14,7 +14,7 @@ print('Action High value: ', env.action_space.high)
 print('Action Low Value: ', env.action_space.low)
 
 
-for episode in range(2):
+for episode in range(10):
     print('Episode: ', episode)
     obsv = env.reset()
     for t in count():
@@ -22,6 +22,7 @@ for episode in range(2):
         #plt.show()
         #env.render()
         action = env.action_space.sample()
+        print(action)
         next_obs, reward, done, info = env.step(action)
         if done:
             break

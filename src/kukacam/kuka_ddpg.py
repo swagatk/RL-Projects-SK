@@ -70,6 +70,13 @@ if __name__ == '__main__':
                      GAMMA,
                      upper_bound, lower_bound)
 
+
+    # fill the replay buffer with some random experiences
+    # this might help speed up the learning process
+    for ep in range(2000):
+        obsv = env.reset()
+        state = np.asarray(obsv, dtype=np.float32) / 255.0
+
     actor_loss, critic_loss = 0, 0
     ep_reward_list = []
     avg_reward_list = []
@@ -82,8 +89,6 @@ if __name__ == '__main__':
         #plt.show()
         episodic_reward = 0
         frames = []
-
-
         step = 0
         while True:
             if episode > MAX_EPISODES - 3:
