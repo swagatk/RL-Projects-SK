@@ -2,4 +2,5 @@
 
 __pycache__/
 logs/
-**/*.h5
+*.h5
+*.txt
