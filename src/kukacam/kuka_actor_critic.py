@@ -5,6 +5,14 @@ from tensorflow.keras import layers
 from collections import deque
 import random
 
+########################################
+# check tensorflow version
+from packaging import version
+print("Tensorflow Version: ", tf.__version__)
+assert version.parse(tf.__version__).release[0] >= 2, \
+    "This program requires Tensorflow 2.0 or above"
+#######################################
+
 #######################################
 # avoid CUDNN_STATUS_INTERNAL_ERROR
 gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -93,7 +101,7 @@ class KukaActor:
 
         l1 = layers.Dense(128, activation='relu')(f1)
         l2 = layers.Dense(64, activation='relu')(l1)
-        net_out = layers.Dense(self.action_size, activation='tanh',
+        net_out = layers.Dense(self.action_size[0], activation='tanh',
                                kernel_initializer=last_init)(l2)
 
         net_out = net_out * self.upper_bound
@@ -173,7 +181,7 @@ class KukaCritic:
         state_out = layers.Dense(32, activation="relu")(state_out)
 
         # Action as input
-        action_input = layers.Input(shape=(self.action_size,))
+        action_input = layers.Input(shape=self.action_size)
         action_out = layers.Dense(32, activation="relu")(action_input)
 
         # Both are passed through separate layer before concatenating
@@ -221,6 +229,7 @@ class KukaCritic:
     def load_weights(self, filename):
         self.model.load_weights(filename)
 
+
 #########################################
 # REPLAY BUFFER
 ####################################
@@ -255,10 +264,11 @@ class KukaBuffer:
 
         return state_batch, action_batch, reward_batch, next_state_batch
 
+
 #######################################
 # Actor-Critic Agent for Kuka Environment
 ##################################
-class KukaACAgent:
+class KukaActorCriticAgent:
     def __init__(self, state_size, action_size,
                  replacement, lr_a, lr_c,
                  batch_size,
@@ -282,24 +292,22 @@ class KukaACAgent:
                              self.critic_lr, self.gamma)
         self.buffer = KukaBuffer(self.memory_capacity, self.batch_size)
 
-        std_dev = 0.2
-        self.noise_object = OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.ones(1))
+        self.noise_object = OUActionNoise(mean=np.zeros(1), std_deviation=0.2 * np.ones(1))
 
         # Initially make weights for target and model equal
         self.actor.target.set_weights(self.actor.model.get_weights())
         self.critic.target.set_weights(self.critic.model.get_weights())
 
     def policy(self, state):
-        # Check the size of state: 1, 256, 341, 1
+        # Check the size of state: 1, 48, 48, 3
         sampled_action = tf.squeeze(self.actor.model(state))
         noise = self.noise_object()  # scalar value
 
         # convert into the same shape as that of the action vector
-        noise_vec = noise * np.ones(self.action_size)
+        noise_vec = noise * np.ones(shape=self.action_size)
 
         # Add noise to the action
-        sampled_action = sampled_action.numpy() + noise_vec
-        #sampled_action = sampled_action.numpy()
+        sampled_action = sampled_action.numpy() + noise_vec # check if we need to add noise
 
         # Make sure that the action is within bounds
         valid_action = np.clip(sampled_action, self.lower_bound, self.upper_bound)
@@ -307,8 +315,8 @@ class KukaACAgent:
 
     def experience_replay(self):
         # sample from stored memory
-        state_batch, action_batch, reward_batch, \
-        next_state_batch = self.buffer.sample()
+        state_batch, action_batch, reward_batch,\
+                    next_state_batch = self.buffer.sample()
 
         actor_loss = self.actor.train(state_batch, self.critic)
         critic_loss = self.critic.train(state_batch, action_batch, reward_batch,

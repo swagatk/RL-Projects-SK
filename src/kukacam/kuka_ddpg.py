@@ -9,10 +9,10 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 import matplotlib.pyplot as plt
-from kuka_actor_critic import KukaACAgent
-from utils import *
+# from kuka_actor_critic import KukaActorCriticAgent
+from kuka_actor_critic2 import KukaActorCriticAgent
 import datetime
-print("Tensorflow Version: ", tf.__version__)
+
 
 if __name__ == '__main__':
 
@@ -21,7 +21,10 @@ if __name__ == '__main__':
     # TENSORBOARD SETTINGS
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     train_log_dir = 'logs/train/' + current_time
+    graph_log_dir = 'logs/func/' + current_time
     train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+    #graph_summary_writer = tf.summary.create_file_writer(graph_log_dir)
+    #tf.summary.trace_on(graph=True, profiler=True)
     ######################
 
     # start open/AI GYM environment
@@ -40,7 +43,6 @@ if __name__ == '__main__':
     # Hyper-parameters
     ######################
     MAX_EPISODES = 50000
-    STACK_SIZE = 5 # number of frames stacked together - not used
 
     LR_A = 0.001
     LR_C = 0.002
@@ -56,26 +58,19 @@ if __name__ == '__main__':
 
     upper_bound = env.action_space.high
     lower_bound = env.action_space.low
-    state_size = env.observation_space.shape
-    action_size = env.action_space.shape[0]
+    state_size = env.observation_space.shape  # (48, 48, 3)
+    action_size = env.action_space.shape  # (3,)
 
     print('state_size: ', state_size)
     print('action_size: ', action_size)
 
     # Create a Kuka Actor-Critic Agent
-    agent = KukaACAgent(state_size, action_size,
-                     replacement, LR_A, LR_C,
-                     BATCH_SIZE,
-                     MEMORY_CAPACITY,
-                     GAMMA,
-                     upper_bound, lower_bound)
-
-
-    # fill the replay buffer with some random experiences
-    # this might help speed up the learning process
-    for ep in range(2000):
-        obsv = env.reset()
-        state = np.asarray(obsv, dtype=np.float32) / 255.0
+    agent = KukaActorCriticAgent(state_size, action_size,
+                        replacement, LR_A, LR_C,
+                        BATCH_SIZE,
+                        MEMORY_CAPACITY,
+                        GAMMA,
+                        upper_bound, lower_bound)
 
     actor_loss, critic_loss = 0, 0
     ep_reward_list = []
@@ -84,9 +79,7 @@ if __name__ == '__main__':
     for episode in range(MAX_EPISODES):
         print('Episode = ', episode)
         obsv = env.reset()
-        state = np.asarray(obsv, dtype=np.float32) / 255.0
-        #plt.imshow(state)
-        #plt.show()
+        state = np.asarray(obsv, dtype=np.float32) / 255.0  # convert into float array
         episodic_reward = 0
         frames = []
         step = 0
@@ -101,13 +94,16 @@ if __name__ == '__main__':
             action = agent.policy(tf_state)
 
             # obtain next state and rewards
-            next_state, reward, done, info = env.step(action)
+            next_obsv, reward, done, info = env.step(action)
+            next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0  # convert into float array
 
             #tb_img = np.reshape(next_state, (-1, 48, 48, 3))  # for tensorboard
             tb_img = np.reshape(next_state, (-1,) + state_size) # for tensorboard
 
             with train_summary_writer.as_default():
                 tf.summary.image("Training Image", tb_img, step=episode)
+                tf.summary.histogram("action_vector", action, step=step)
+
             episodic_reward += reward
 
             # print('reward:', episodic_reward)
@@ -117,16 +113,19 @@ if __name__ == '__main__':
 
             # train the network
             actor_loss, critic_loss = agent.experience_replay()
-            with train_summary_writer.as_default():
-                tf.summary.scalar('actor_loss', actor_loss, step=episode)
-                tf.summary.scalar('critic_loss', critic_loss, step=episode)
 
             # update the target model
             agent.update_targets()
 
+            with train_summary_writer.as_default():
+                tf.summary.scalar('actor_loss', actor_loss, step=episode)
+                tf.summary.scalar('critic_loss', critic_loss, step=episode)
+            # with graph_summary_writer.as_default():
+            #     tf.summary.trace_export(name="update_target", step=episode,
+            #                             profiler_outdir=graph_log_dir)
+
             state = next_state
             step += 1
-            #print('step: ', step)
 
             if done:
                 if episodic_reward > best_score:

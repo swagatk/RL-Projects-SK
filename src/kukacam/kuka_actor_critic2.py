@@ -7,6 +7,15 @@ from tensorflow import keras
 from tensorflow.keras import layers
 from collections import deque
 import random
+import pickle
+
+########################################
+# check tensorflow version
+from packaging import version
+print("Tensorflow Version: ", tf.__version__)
+assert version.parse(tf.__version__).release[0] >= 2, \
+    "This program requires Tensorflow 2.0 or above"
+#######################################
 
 #######################################
 # avoid CUDNN_STATUS_INTERNAL_ERROR
@@ -54,16 +63,14 @@ class OUActionNoise:
 # feature network
 ########################
 class FeatureNetwork:
-    def __init__(self, state_size):
+    def __init__(self, state_size, learning_rate=1e-3):
         self.state_size = state_size
-        self.model = self._build_net()
-
+        self.lr = learning_rate
         # create NN models
         self.model = self._build_net()
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
 
     def _build_net(self):
-
         img_input = layers.Input(shape=self.state_size)
 
         # shared convolutional layers
@@ -111,8 +118,8 @@ class KukaActor:
 
     def _build_net(self):
         # input is a stack of 1-channel YUV images
-        #last_init = tf.random_uniform_initializer(minval=-0.03, maxval=0.03)
-        last_init = tf.random_uniform_initializer(minval=-0.9, maxval=0.9)
+        last_init = tf.random_uniform_initializer(minval=-0.03, maxval=0.03)
+        #last_init = tf.random_uniform_initializer(minval=-0.9, maxval=0.9)
 
         state_input = layers.Input(shape=self.state_size)
         feature = self.feature_model(state_input)
@@ -124,6 +131,8 @@ class KukaActor:
         net_out = net_out * self.upper_bound
         model = keras.Model(state_input, net_out)
         model.summary()
+        keras.utils.plot_model(model, to_file='actor_net.png',
+                               show_shapes=True, show_layer_names=True)
         return model
 
     def update_target(self):
@@ -187,20 +196,22 @@ class KukaCritic:
         state_out = layers.Dense(32, activation="relu")(state_out)
 
         # Action as input
-        action_input = layers.Input(shape=(self.action_size,))
+        action_input = layers.Input(shape=self.action_size)
         action_out = layers.Dense(32, activation="relu")(action_input)
 
         # Both are passed through separate layer before concatenating
         concat = layers.Concatenate()([state_out, action_out])
 
         out = layers.Dense(128, activation="relu")(concat)
-        out = layers.Dense(64, activation="lrelu")(out)  # leakyRelu
+        out = layers.Dense(64, activation="relu")(out)  # leakyRelu
         #out = layers.Dense(64, activation=tf.keras.layers.LeakyReLU())(out)  # leakyRelu
         net_out = layers.Dense(1)(out)
 
         # Outputs single value for give state-action
         model = tf.keras.Model(inputs=[state_input, action_input], outputs=net_out)
         model.summary()
+        keras.utils.plot_model(model, to_file='critic_net.png',
+                               show_shapes=True, show_layer_names=True)
         return model
 
     def update_target(self):
@@ -235,6 +246,7 @@ class KukaCritic:
 
     def load_weights(self, filename):
         self.model.load_weights(filename)
+
 
 #########################################
 # REPLAY BUFFER
@@ -318,7 +330,6 @@ class KukaActorCriticAgent:
 
         # Add noise to the action
         sampled_action = sampled_action.numpy() + noise_vec
-        #sampled_action = sampled_action.numpy()
 
         # Make sure that the action is within bounds
         valid_action = np.clip(sampled_action, self.lower_bound, self.upper_bound)
@@ -326,8 +337,8 @@ class KukaActorCriticAgent:
 
     def experience_replay(self):
         # sample from stored memory
-        state_batch, action_batch, reward_batch, \
-        next_state_batch = self.buffer.sample()
+        state_batch, action_batch, reward_batch,\
+                            next_state_batch = self.buffer.sample()
 
         actor_loss = self.actor.train(state_batch, self.critic)
         critic_loss = self.critic.train(state_batch, action_batch, reward_batch,
@@ -338,4 +349,29 @@ class KukaActorCriticAgent:
     def update_targets(self):
         self.actor.update_target()
         self.critic.update_target()
+
+    def save_model(self, path, actor_filename, critic_filename,
+                   replay_filename):
+        actor_file = path + actor_filename
+        critic_file = path + critic_filename
+        replay_file = path + replay_filename
+
+        self.actor.save_weights(actor_file)
+        self.critic.save_weights(critic_file)
+        with open(replay_file, 'wb') as file:
+            pickle.dump(self.buffer, file)
+
+    def load_model(self, path, actor_filename, critic_filename,
+                   replay_filename):
+        actor_file = path + actor_filename
+        critic_file = path + critic_filename
+        replay_file = path + replay_filename
+
+        self.actor.model.load_weights(actor_file)
+        self.actor.target.load_weights(actor_file)
+        self.critic.model.load_weights(critic_file)
+        self.critic.target.load_weights(critic_file)
+
+        with open(replay_file, 'rb') as file:
+            self.buffer = pickle.load(file)
 
