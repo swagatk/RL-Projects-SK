@@ -1,5 +1,13 @@
 """
-Kuka Actor Critic Model
+Implementing DDPG for Kuka Diverse Object Environment
+
+- Here the Actor and Critic  share common Convolution Feature Network Layer to extract features from RGB images
+- Both Actor and Critic update the Feature Network parameters during training. Weights of feature network are
+updated twice in each iteration.
+- Status: No success. The average reward for last 100 episodes after 4K episodes is about 0.2.
+- Todo:
+    - Display the Conv Layer output on Tensorboard.
+    - Fill the replay buffer with random experiences in the beginning
 """
 import tensorflow as tf
 import numpy as np
@@ -74,19 +82,20 @@ class FeatureNetwork:
         img_input = layers.Input(shape=self.state_size)
 
         # shared convolutional layers
-        conv1 = layers.Conv2D(15, kernel_size=5, strides=2,
+        conv1 = layers.Conv2D(16, kernel_size=5, strides=2,
                               padding="SAME", activation="relu")(img_input)
         bn1 = layers.BatchNormalization()(conv1)
         conv2 = layers.Conv2D(32, kernel_size=5, strides=2,
-                              padding="SAME", activation='relu')(bn1)
+                              padding="SAME", activation="relu")(bn1)
         bn2 = layers.BatchNormalization()(conv2)
         conv3 = layers.Conv2D(32, kernel_size=5, strides=2,
-                              padding="SAME", activation='relu')(bn2)
+                              padding="SAME", activation="relu")(bn2)
         bn3 = layers.BatchNormalization()(conv3)
-        f1 = layers.Flatten()(bn3)
-        fc1 = layers.Dense(128, activation='relu')(f1)
-        fc2 = layers.Dense(64, activation='relu')(fc1)
-        model = tf.keras.Model(inputs=img_input, outputs=fc2)
+        f = layers.Flatten()(bn3)
+        f = layers.Dense(128, activation="relu")(f)
+        f = layers.Dense(128, activation="relu")(f)
+        f = layers.Dense(64, activation="relu")(f)
+        model = tf.keras.Model(inputs=img_input, outputs=f)
         print('shared feature network')
         model.summary()
         keras.utils.plot_model(model, to_file='feature_net.png',
@@ -95,6 +104,7 @@ class FeatureNetwork:
 
     def __call__(self, state):
         return self.model(state)
+
 
 ############################################
 # ACTOR
@@ -119,16 +129,15 @@ class KukaActor:
     def _build_net(self):
         # input is a stack of 1-channel YUV images
         last_init = tf.random_uniform_initializer(minval=-0.03, maxval=0.03)
-        #last_init = tf.random_uniform_initializer(minval=-0.9, maxval=0.9)
 
         state_input = layers.Input(shape=self.state_size)
         feature = self.feature_model(state_input)
 
-        l2 = layers.Dense(64, activation='relu')(feature)
+        l2 = layers.Dense(64, activation="relu")(feature)
         net_out = layers.Dense(self.action_size[0], activation='tanh',
                                kernel_initializer=last_init)(l2)
 
-        net_out = net_out * self.upper_bound
+        net_out = net_out * self.upper_bound  # element-wise product
         model = keras.Model(state_input, net_out)
         model.summary()
         keras.utils.plot_model(model, to_file='actor_net.png',
@@ -193,7 +202,6 @@ class KukaCritic:
 
         feature = self.feature_model(state_input)
         state_out = layers.Dense(32, activation="relu")(feature)
-        state_out = layers.Dense(32, activation="relu")(state_out)
 
         # Action as input
         action_input = layers.Input(shape=self.action_size)
@@ -203,8 +211,7 @@ class KukaCritic:
         concat = layers.Concatenate()([state_out, action_out])
 
         out = layers.Dense(128, activation="relu")(concat)
-        out = layers.Dense(64, activation="relu")(out)  # leakyRelu
-        #out = layers.Dense(64, activation=tf.keras.layers.LeakyReLU())(out)  # leakyRelu
+        out = layers.Dense(64, activation="relu")(out)
         net_out = layers.Dense(1)(out)
 
         # Outputs single value for give state-action
@@ -274,12 +281,6 @@ class KukaBuffer:
             reward_batch.append(mini_batch[i][2])
             next_state_batch.append(mini_batch[i][3])
 
-        # convert to tensors
-        state_batch = tf.convert_to_tensor(state_batch, dtype=tf.float32)
-        action_batch = tf.convert_to_tensor(action_batch, dtype=tf.float32)
-        reward_batch = tf.convert_to_tensor(reward_batch, dtype=tf.float32)
-        next_state_batch = tf.convert_to_tensor(next_state_batch, dtype=tf.float32)
-
         return state_batch, action_batch, reward_batch, next_state_batch
 
 
@@ -305,7 +306,7 @@ class KukaActorCriticAgent:
         self.upper_bound = upper_bound
         self.lower_bound = lower_bound
 
-        self.feature = FeatureNetwork(self.state_size)
+        self.feature = FeatureNetwork(self.state_size, self.actor_lr)
 
         self.actor = KukaActor(self.state_size, self.action_size, self.replacement,
                                self.actor_lr, self.upper_bound, self.feature)
@@ -321,15 +322,20 @@ class KukaActorCriticAgent:
         self.critic.target.set_weights(self.critic.model.get_weights())
 
     def policy(self, state):
-        # Check the size of state: 1, 256, 341, 1
-        sampled_action = tf.squeeze(self.actor.model(state))
+        # Check the size of state: (w, h, c)
+
+        # convert the numpy array state into a tensor of size (1, w, h, c)
+        tf_state = tf.expand_dims(tf.convert_to_tensor(state), 0)
+
+        sampled_action = tf.squeeze(self.actor.model(tf_state))
         noise = self.noise_object()  # scalar value
 
         # convert into the same shape as that of the action vector
         noise_vec = noise * np.ones(self.action_size)
 
         # Add noise to the action
-        sampled_action = sampled_action.numpy() + noise_vec
+        #sampled_action = sampled_action.numpy() + noise_vec
+        sampled_action = sampled_action.numpy()
 
         # Make sure that the action is within bounds
         valid_action = np.clip(sampled_action, self.lower_bound, self.upper_bound)

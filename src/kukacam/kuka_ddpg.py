@@ -10,7 +10,8 @@ import tensorflow as tf
 from tensorflow import keras
 import matplotlib.pyplot as plt
 # from kuka_actor_critic import KukaActorCriticAgent
-from kuka_actor_critic2 import KukaActorCriticAgent
+#from kuka_actor_critic2 import KukaActorCriticAgent
+from kuka_actor_critic3 import KukaActorCriticAgent
 import datetime
 
 
@@ -25,6 +26,9 @@ if __name__ == '__main__':
     train_summary_writer = tf.summary.create_file_writer(train_log_dir)
     #graph_summary_writer = tf.summary.create_file_writer(graph_log_dir)
     #tf.summary.trace_on(graph=True, profiler=True)
+
+    with tf.Graph().as_default():
+        print(tf.executing_eagerly())
     ######################
 
     # start open/AI GYM environment
@@ -42,10 +46,10 @@ if __name__ == '__main__':
     ################
     # Hyper-parameters
     ######################
-    MAX_EPISODES = 50000
+    MAX_EPISODES = 10000
 
-    LR_A = 0.001
-    LR_C = 0.002
+    LR_A = 2e-4
+    LR_C = 2e-4
     GAMMA = 0.99
 
     replacement = [
@@ -53,8 +57,10 @@ if __name__ == '__main__':
         dict(name='hard', rep_iter_a=600, rep_iter_c=500)
     ][0]  # you can try different target replacement strategies
 
-    MEMORY_CAPACITY = 70000
+    MEMORY_CAPACITY = 20000
     BATCH_SIZE = 128
+
+    __PER = True  # priority experience replay
 
     upper_bound = env.action_space.high
     lower_bound = env.action_space.low
@@ -72,10 +78,26 @@ if __name__ == '__main__':
                         GAMMA,
                         upper_bound, lower_bound)
 
+    # Pre-train: Fill the replay-buffer with random experiences
+    print('Pretrain Phase ... Wait')
+    for ep in range(200):
+        obsv = env.reset()
+        state = np.asarray(obsv, dtype=np.float32) / 255.0  # convert into float array
+        action = env.action_space.sample()
+        next_obsv, reward, done, info = env.step(action)
+        next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
+        experience = (state, action, reward, next_state)
+        if __PER:
+            agent.buffer.record(experience, 0.1)
+        else:
+            agent.buffer.record(experience)
+    print('Pre-train completed')
+
     actor_loss, critic_loss = 0, 0
     ep_reward_list = []
     avg_reward_list = []
     best_score = - np.inf
+    print('Main training loop')
     for episode in range(MAX_EPISODES):
         print('Episode = ', episode)
         obsv = env.reset()
@@ -87,11 +109,8 @@ if __name__ == '__main__':
             if episode > MAX_EPISODES - 3:
                 frames.append(env.render(mode='rgb_array'))
 
-            # convert the numpy array state into a tensor of size (1, 48, 48)
-            tf_state = tf.expand_dims(tf.convert_to_tensor(state), 0)
-
             # take an action as per the policy
-            action = agent.policy(tf_state)
+            action = agent.policy(state)
 
             # obtain next state and rewards
             next_obsv, reward, done, info = env.step(action)
@@ -107,9 +126,14 @@ if __name__ == '__main__':
             episodic_reward += reward
 
             # print('reward:', episodic_reward)
+            experience = (state, action, reward, next_state)
+            priority = agent.get_per_error(experience)
 
             # store experience
-            agent.buffer.record(state, action, reward, next_state)
+            if __PER:
+                agent.buffer.record(experience, priority)
+            else:
+                agent.buffer.record(experience)
 
             # train the network
             actor_loss, critic_loss = agent.experience_replay()
