@@ -253,6 +253,7 @@ class KukaCritic:
     def load_weights(self, filename):
         self.model.load_weights(filename)
 
+
 ####################################
 # ACTOR-CRITIC AGENT
 ##################################
@@ -281,7 +282,8 @@ class KukaActorCriticAgent:
                                self.actor_lr, self.upper_bound, self.feature)
         self.critic = KukaCritic(self.state_size, self.action_size, self.replacement,
                                  self.critic_lr, self.gamma, self.feature)
-        self.buffer = Memory(self.memory_capacity, self.batch_size)
+        self.buffer = Memory(self.memory_capacity, self.batch_size,
+                             self.state_size, self.action_size)
 
         std_dev = 0.2
         self.noise_object = OUActionNoise(mean=np.zeros(1), std_deviation=float(std_dev) * np.ones(1))
@@ -356,8 +358,9 @@ class KukaActorCriticAgent:
 
         target_qt = reward + self.gamma * target_qtp1
 
-        error = target_qt - prim_qt
-        return self.huber_loss(error.numpy())
+        # time-delay error
+        error = tf.squeeze(target_qt - prim_qt).numpy()
+        return KukaActorCriticAgent.huber_loss(error)
 
     @staticmethod
     def huber_loss(error):

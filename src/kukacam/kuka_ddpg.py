@@ -13,10 +13,14 @@ import matplotlib.pyplot as plt
 #from kuka_actor_critic2 import KukaActorCriticAgent
 from kuka_actor_critic3 import KukaActorCriticAgent
 import datetime
-
+from tensorflow.keras import backend as K
 
 if __name__ == '__main__':
 
+    # # To fix the following error:
+    # # numpy.random.mtrand.RandomState.uniform: range exceeds valid bounds
+    # print(K.image_data_format())
+    # print(K.set_image_data_format('channels_first'))
 
     #####################
     # TENSORBOARD SETTINGS
@@ -57,7 +61,7 @@ if __name__ == '__main__':
         dict(name='hard', rep_iter_a=600, rep_iter_c=500)
     ][0]  # you can try different target replacement strategies
 
-    MEMORY_CAPACITY = 20000
+    MEMORY_CAPACITY = 100000
     BATCH_SIZE = 128
 
     __PER = True  # priority experience replay

@@ -6,12 +6,22 @@ import numpy as np
 from collections import deque
 
 
+
 class Memory:
-    def __init__(self, max_capacity: int, batch_size: int):
-        self.size = max_capacity
+    def __init__(self, max_capacity: int, batch_size: int,
+                 state_size: tuple, action_size: tuple):
+        self.state_size = state_size
+        self.action_size = action_size
+        self.buffer_size = max_capacity
+
+        # buffer to store (s,a,r,s') tuples
+        self.buffer = [(np.zeros(shape=self.state_size),
+                        np.zeros(shape=self.action_size),
+                        0.0,
+                        np.zeros(shape=self.state_size)) for i in range(self.buffer_size)]
+        self.sum_tree = SumTree([0 for i in range(self.buffer_size)])
         self.curr_write_idx = 0
-        self.buffer = deque(maxlen=self.size)
-        self.sum_tree = SumTree([0 for i in range(self.size)])
+        self.available_samples = 0
 
         self.beta = 0.4  # Importance sampling factor
         self.alpha = 0.6  # priority factor
@@ -19,16 +29,19 @@ class Memory:
         self.batch_size = batch_size
 
     def record(self, experience: tuple, priority: float):
-        self.buffer.append(experience)
+        # add the experience to the buffer
+        self.buffer[self.curr_write_idx] = experience
 
         # update the priority of this experience in the sum tree
         self.update(self.curr_write_idx, priority)
 
         self.curr_write_idx += 1
 
-        # reset the current writer position if it exceeds the buffer size
-        if self.curr_write_idx >= self.size:
+        if self.curr_write_idx >= self.buffer_size:
             self.curr_write_idx = 0
+
+        if self.available_samples < self.buffer_size:
+            self.available_samples += 1  # max value = self.buffer_size
 
     def adjust_priority(self, priority: float):
         return np.power(priority + self.min_priority, self.alpha)
@@ -46,10 +59,10 @@ class Memory:
             sample_node = self.sum_tree.retrieve(sample_val, self.sum_tree.root_node)
 
             # check if this is a valid idx
-            if sample_node.idx < len(self.buffer):
+            if sample_node.idx < self.available_samples:
                 sampled_idxs.append(sample_node.idx)
-                p = sample_node.value / self.sum_tree.root_node.value
-                is_weights.append(len(self.buffer) * p)
+                p = sample_node.value / (self.sum_tree.root_node.value + 1e-3)  # avoid singularity
+                is_weights.append(self.available_samples * p)  # give equal weights
             sample_no += 1
         # while loop ends here
         # apply beta factor and normalise so that maximum is_weight < 1
