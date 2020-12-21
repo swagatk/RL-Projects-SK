@@ -1,6 +1,11 @@
 # ignore the following directories
 
 __pycache__/
-logs
+**/logs
 *.h5
 *.txt
+*.swp
+*.swo
+*.dat
+chkpt/ 
+reload/

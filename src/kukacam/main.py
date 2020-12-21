@@ -1,26 +1,20 @@
 '''
-Applying DDPG algorithm to KukaCamGym Environment
-
+Main File Kuka Environment
 '''
 import gym
 #from pybullet_envs.bullet.kukaCamGymEnv import KukaCamGymEnv
 from pybullet_envs.bullet.kuka_diverse_object_gym_env import KukaDiverseObjectEnv
 import numpy as np
 import tensorflow as tf
-from tensorflow import keras
 import matplotlib.pyplot as plt
 # from kuka_actor_critic import KukaActorCriticAgent
 #from kuka_actor_critic2 import KukaActorCriticAgent
-from kuka_actor_critic3 import KukaActorCriticAgent
+from ddpg_PER import DDPG_PER_Agent
+#from kuka_actor_critic4 import KukaTD3Agent
 import datetime
-from tensorflow.keras import backend as K
+import pickle
 
 if __name__ == '__main__':
-
-    # # To fix the following error:
-    # # numpy.random.mtrand.RandomState.uniform: range exceeds valid bounds
-    # print(K.image_data_format())
-    # print(K.set_image_data_format('channels_first'))
 
     #####################
     # TENSORBOARD SETTINGS
@@ -50,10 +44,10 @@ if __name__ == '__main__':
     ################
     # Hyper-parameters
     ######################
-    MAX_EPISODES = 10000
+    MAX_EPISODES = 15001
 
-    LR_A = 2e-4
-    LR_C = 2e-4
+    LR_A = 0.001
+    LR_C = 0.002
     GAMMA = 0.99
 
     replacement = [
@@ -61,10 +55,23 @@ if __name__ == '__main__':
         dict(name='hard', rep_iter_a=600, rep_iter_c=500)
     ][0]  # you can try different target replacement strategies
 
-    MEMORY_CAPACITY = 100000
+    MEMORY_CAPACITY = 50000  # max permissible on my machine is 50000
     BATCH_SIZE = 128
 
-    __PER = True  # priority experience replay
+    # episodes for random exploration
+    RAND_EPS = 0
+
+    # priority experience replay flag
+    __PER = True
+
+    # Directory to store intermediate models
+    SAVE_DIR = './chkpt/'
+
+    # load saved models from this directory
+    LOAD_DIR = './reload/'
+    LOAD_MODEL = False
+
+    SAVE_FREQ = 500
 
     upper_bound = env.action_space.high
     lower_bound = env.action_space.low
@@ -75,69 +82,77 @@ if __name__ == '__main__':
     print('action_size: ', action_size)
 
     # Create a Kuka Actor-Critic Agent
-    agent = KukaActorCriticAgent(state_size, action_size,
+    agent = DDPG_PER_Agent(state_size, action_size,
                         replacement, LR_A, LR_C,
                         BATCH_SIZE,
                         MEMORY_CAPACITY,
                         GAMMA,
                         upper_bound, lower_bound)
 
-    # Pre-train: Fill the replay-buffer with random experiences
-    print('Pretrain Phase ... Wait')
-    for ep in range(200):
-        obsv = env.reset()
-        state = np.asarray(obsv, dtype=np.float32) / 255.0  # convert into float array
-        action = env.action_space.sample()
-        next_obsv, reward, done, info = env.step(action)
-        next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
-        experience = (state, action, reward, next_state)
-        if __PER:
-            agent.buffer.record(experience, 0.1)
-        else:
-            agent.buffer.record(experience)
-    print('Pre-train completed')
+    # if loading from previous models
+
+    if LOAD_MODEL:
+        agent.load_model(LOAD_DIR, 'actor_weights.h5', 'critic_weights.h5',
+                         'replay_buffer.dat')
+
+        load_file = LOAD_DIR + 'ep_reward.dat'
+        with open(load_file, 'rb') as file:
+            load_param = pickle.load(file)
+
+        start_episode = load_param[0]
+        ep_reward_list = load_param[1]
+        avg_reward_list = load_param[2]
+
+    else:
+        start_episode = 0
+        ep_reward_list = []
+        avg_reward_list = []
 
     actor_loss, critic_loss = 0, 0
-    ep_reward_list = []
-    avg_reward_list = []
     best_score = - np.inf
     print('Main training loop')
-    for episode in range(MAX_EPISODES):
+    for episode in range(start_episode, MAX_EPISODES):
         print('Episode = ', episode)
         obsv = env.reset()
         state = np.asarray(obsv, dtype=np.float32) / 255.0  # convert into float array
         episodic_reward = 0
         frames = []
-        step = 0
+        steps = 0
         while True:
             if episode > MAX_EPISODES - 3:
                 frames.append(env.render(mode='rgb_array'))
 
             # take an action as per the policy
-            action = agent.policy(state)
+            if episode < RAND_EPS:  # explore for some episodes
+                action = env.action_space.sample()
+            else:
+                action = agent.policy(state)
 
             # obtain next state and rewards
+
             next_obsv, reward, done, info = env.step(action)
             next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0  # convert into float array
 
             #tb_img = np.reshape(next_state, (-1, 48, 48, 3))  # for tensorboard
-            tb_img = np.reshape(next_state, (-1,) + state_size) # for tensorboard
+            tb_img = np.reshape(next_state, (-1,) + state_size)  # for tensorboard
 
             with train_summary_writer.as_default():
                 tf.summary.image("Training Image", tb_img, step=episode)
-                tf.summary.histogram("action_vector", action, step=step)
+                tf.summary.histogram("action_vector", action, step=steps)
 
             episodic_reward += reward
 
             # print('reward:', episodic_reward)
             experience = (state, action, reward, next_state)
+
+            # compute the priority of this experience
             priority = agent.get_per_error(experience)
 
             # store experience
             if __PER:
-                agent.buffer.record(experience, priority)
+                agent.replay_buffer.record(experience, priority)
             else:
-                agent.buffer.record(experience)
+                agent.replay_buffer.record(experience)
 
             # train the network
             actor_loss, critic_loss = agent.experience_replay()
@@ -153,22 +168,36 @@ if __name__ == '__main__':
             #                             profiler_outdir=graph_log_dir)
 
             state = next_state
-            step += 1
+            steps += 1
 
             if done:
-                if episodic_reward > best_score:
+                if episode > 500 and episodic_reward > best_score:
                     best_score = episodic_reward
-                    agent.actor.save_weights('./kuka_actor_weights.h5')
-                    agent.critic.save_weights('./kuka_actor_weights.h5')
+                    agent.save_model(SAVE_DIR, 'best_actor.h5',
+                                     'best_critic.h5', 'best_replay.dat')
                 break
 
         ep_reward_list.append(episodic_reward)
         avg_reward = np.mean(ep_reward_list[-100:])
-        print("Episode * {} * Avg Reward = {} ".format(episode, avg_reward))
         avg_reward_list.append(avg_reward)
+        print("Episode: {}, Buffer size: {}, reward = {}, Avg Reward = {} ".format(episode,
+                                            len(agent.replay_buffer), episodic_reward, avg_reward))
+
+        with open(SAVE_DIR + 'episode_reward.txt', 'a+') as file:
+            file.write('{}\t{}\t{}\n'.format(episode, episodic_reward, avg_reward))
 
         with train_summary_writer.as_default():
             tf.summary.scalar('avg_reward', avg_reward, step=episode)
+
+        if episode % SAVE_FREQ == 0:
+            agent.save_model(SAVE_DIR, 'actor_weights.h5',
+                             'critic_weights.h5', 'replay_buffer.dat')
+
+            agent.replay_buffer.save_priorities_txt(SAVE_DIR + 'priorities.txt')
+            save_param = [episode, ep_reward_list, avg_reward_list]
+
+            with open(SAVE_DIR+'ep_reward.dat', 'wb') as file:
+                pickle.dump(save_param, file)
 
     env.close()
 

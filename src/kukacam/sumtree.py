@@ -5,6 +5,7 @@ Sum Tree Implementation
 import numpy as np
 import random
 
+
 class Node:
     def __init__(self, left, right, is_leaf: bool = False, idx=None):
         self.left = left
@@ -27,8 +28,8 @@ class Node:
 
 
 class SumTree:
-    def __init__(self, input: list):
-        nodes = [Node.create_leaf(v, i) for i, v in enumerate(input)]
+    def __init__(self, input_list: list):
+        nodes = [Node.create_leaf(v, i) for i, v in enumerate(input_list)]
         self.leaf_nodes = nodes
         while len(nodes) > 1:
             inodes = iter(nodes)
@@ -52,6 +53,12 @@ class SumTree:
         node.value += change
         if node.parent is not None:
             self.propagate_changes(change, node.parent)
+
+    def get_priorities(self):
+        priorities = []
+        for i in range(len(self.leaf_nodes)):
+            priorities.append(self.leaf_nodes[i].value)
+        return priorities
 
     def demonstrate_sampling(self):
         tree_total = self.root_node.value

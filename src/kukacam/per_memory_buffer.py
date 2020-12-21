@@ -3,8 +3,7 @@ Memory Buffer for Priority Experience Replay
 """
 from sumtree import SumTree
 import numpy as np
-from collections import deque
-
+import pickle
 
 
 class Memory:
@@ -14,12 +13,16 @@ class Memory:
         self.action_size = action_size
         self.buffer_size = max_capacity
 
-        # buffer to store (s,a,r,s') tuples
+        # buffer to store (s,a,r,s',d) tuples
         self.buffer = [(np.zeros(shape=self.state_size),
                         np.zeros(shape=self.action_size),
                         0.0,
-                        np.zeros(shape=self.state_size)) for i in range(self.buffer_size)]
+                        np.zeros(shape=self.state_size),
+                        0.0) for i in range(self.buffer_size)]
+
+        # Initially all priorities are set to zero
         self.sum_tree = SumTree([0 for i in range(self.buffer_size)])
+
         self.curr_write_idx = 0
         self.available_samples = 0
 
@@ -27,6 +30,9 @@ class Memory:
         self.alpha = 0.6  # priority factor
         self.min_priority = 0.01
         self.batch_size = batch_size
+
+    def __len__(self):
+        return self.available_samples
 
     def record(self, experience: tuple, priority: float):
         # add the experience to the buffer
@@ -80,8 +86,40 @@ class Memory:
             action_batch.append(self.buffer[sampled_idxs[i]][1])
             reward_batch.append(self.buffer[sampled_idxs[i]][2])
             next_state_batch.append(self.buffer[sampled_idxs[i]][3])
+        return state_batch, action_batch, reward_batch,\
+               next_state_batch, sampled_idxs, is_weights
 
-        return state_batch, action_batch, reward_batch, next_state_batch, sampled_idxs, is_weights
+    def save_priorities_txt(self, filename):
+        priorities = self.sum_tree.get_priorities()
+
+        with open(filename, 'w') as file:
+            for i in range(self.buffer_size):
+                file.write('{}\t{}\n'.format(i, priorities[i]))
+
+    def save_data(self, buffer_filename):
+        # get priorities
+        priorities = self.sum_tree.get_priorities()
+        parameters = (
+            self.buffer,
+            self.curr_write_idx,
+            self.available_samples,
+            priorities
+        )
+        with open(buffer_filename, 'wb') as file:
+            pickle.dump(parameters, file)
+
+    def load_data(self, buffer_filename):
+        with open(buffer_filename, 'rb') as file:
+            parameters = pickle.load(file)
+
+        self.buffer, self.curr_write_idx, \
+            self.available_samples, priorities = parameters
+        self.sum_tree = SumTree(priorities)
+
+
+
+
+
 
 
 

@@ -5,6 +5,7 @@ import cv2
 import matplotlib.pyplot as plt
 from matplotlib import animation
 from PIL import Image
+import sys
 
 # convert images from RGBA to RGB
 def rgba2rgb(rgba, background=(255, 255, 255)):
@@ -68,6 +69,25 @@ def preprocess_image(rgba_img):
     rgb_img = cv2.cvtColor(rgba_img, cv2.COLOR_RGBA2RGB)
     resized_img = cv2.resize(rgb_img, (48, 48), interpolation=cv2.INTER_AREA)
     return resized_img
+
+
+
+###############
+## CHECKING SIZE OF VARIABLES
+#################
+def sizeof_fmt(num, suffix='B'):
+    ''' by Fred Cirera, https://stackoverflow.com/a/1094933/1870254, modified'''
+    for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
+        if abs(num) < 1024.0:
+            return "%3.1f %s%s" % (num, unit, suffix)
+        num /= 1024.0
+    return "%.1f %s%s" % (num, 'Yi', suffix)
+
+def print_size_locals():
+    for name, size in sorted(((name, sys.getsizeof(value)) for name, value in locals().items()),
+                         key=lambda x: -x[1])[:10]: print("{:>30}: {:>8}".format(name, sizeof_fmt(size)))
+
+
 
 
 
