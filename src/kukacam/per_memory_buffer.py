@@ -81,13 +81,15 @@ class Memory:
         action_batch = []
         reward_batch = []
         next_state_batch = []
+        done_batch = []
         for i in range(len(sampled_idxs)):
             state_batch.append(self.buffer[sampled_idxs[i]][0])
             action_batch.append(self.buffer[sampled_idxs[i]][1])
             reward_batch.append(self.buffer[sampled_idxs[i]][2])
             next_state_batch.append(self.buffer[sampled_idxs[i]][3])
+            done_batch.append(self.buffer[sampled_idxs[i]][4])
         return state_batch, action_batch, reward_batch,\
-               next_state_batch, sampled_idxs, is_weights
+               next_state_batch, done_batch, sampled_idxs, is_weights
 
     def save_priorities_txt(self, filename):
         priorities = self.sum_tree.get_priorities()

@@ -61,13 +61,13 @@ class KukaCritic:
             self.target.set_weights(new_wts)
 
     def train(self, state_batch, action_batch, reward_batch,
-              next_state_batch, actor): #
+              next_state_batch, done_batch, actor): #
         self.train_step_count += 1
         with tf.GradientTape() as tape:
             critic_weights = self.model.trainable_variables
             target_actions = actor.target(next_state_batch)
             target_critic = self.target([next_state_batch, target_actions])
-            y = reward_batch + self.gamma * target_critic
+            y = reward_batch + self.gamma * (1 - done_batch) * target_critic
             critic_value = self.model([state_batch, action_batch])
             critic_loss = tf.math.reduce_mean(tf.square(y - critic_value))
 
