@@ -48,7 +48,6 @@ class KukaBuffer:
         with open(filename, 'rb') as file:
             self.buffer = pickle.load(file)
 
-
     def get_all_samples(self):
         s_batch = []
         a_batch = []

@@ -10,6 +10,7 @@ from ppo import KukaPPOAgent
 import datetime
 import pickle
 import tensorboard
+from collections import deque
 
 if __name__ == '__main__':
 
@@ -40,19 +41,22 @@ if __name__ == '__main__':
     ################
     # Hyper-parameters
     ######################
-    MAX_EPISODES = 1500001  #15000 * 100
+    MAX_SEASONS = 1500000
 
     LR_A = 0.001
     LR_C = 0.002
-    GAMMA = 0.99
+    GAMMA = 0.993   # discount factor
     LAMBDA = 0.95  # required for GAE
-    EPSILON = 0.2  # required for PPO-CLIP
+    EPSILON = 0.07  # clipping factor
     EPOCHS = 100    # check ??
+    BETA = 0.01     # ??
 
     MEMORY_CAPACITY = 2000  # max permissible on my machine is 50000
-    BATCH_SIZE = 125
+    BATCH_SIZE = 128
     UPDATE_FREQ = 500
     TRG_EPOCHS = 10   # training epochs
+    TMAX = 1000     # max env episode steps
+
 
     # Directory to store intermediate models
     SAVE_DIR = './chkpt/'
@@ -78,24 +82,10 @@ if __name__ == '__main__':
                        EPSILON, GAMMA, action_upper_bound,
                        UPDATE_FREQ, TRG_EPOCHS)
 
-    # if loading from previous models
+    score_window = deque(maxlen=100)
+    save_scores = []
 
-    if LOAD_MODEL:
-        agent.load_model(LOAD_DIR, 'actor_weights.h5', 'critic_weights.h5',
-                         'replay_buffer.dat')
-
-        load_file = LOAD_DIR + 'ep_reward.dat'
-        with open(load_file, 'rb') as file:
-            load_param = pickle.load(file)
-
-        start_episode = load_param[0]
-        ep_reward_list = load_param[1]
-        avg_reward_list = load_param[2]
-
-    else:
-        start_episode = 0
-        ep_reward_list = []
-        avg_reward_list = []
+    for s in range(MAX_SEASONS):
 
     actor_loss, critic_loss = 0, 0
     best_score = - np.inf

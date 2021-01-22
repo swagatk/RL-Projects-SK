@@ -4,7 +4,6 @@ Implementing Proximal Policy Optimization (PPO) for Kuka Environment
 PPO_CLIP Algorithm
 """
 import tensorflow as tf
-import tensorflow.keras.backend as K
 import numpy as np
 from FeatureNet import FeatureNetwork
 from buffer import KukaBuffer
@@ -27,8 +26,6 @@ if gpus:
             tf.config.experimental.set_memory_growth(gpu, True)
     except RuntimeError as e:
         print(e)
-
-
 ####################################
 
 ################
@@ -41,9 +38,8 @@ class PPOActor:
         self.state_size = state_size  # shape: (w, h, c)
         self.action_size = action_size  # shape: (n, )
         self.lr = learning_rate
-        self.epsilon = epsilon  # clipping factor
+        self.epsilon = epsilon          # required for PPO-clip
         self.upper_bound = action_upper_bound
-        self.train_step_count = 0
 
         # create NN models
         self.feature_model = feature_model
@@ -60,8 +56,8 @@ class PPOActor:
         f = tf.keras.layers.Dense(64, activation="relu", trainable=trainable)(f)
         net_out = tf.keras.layers.Dense(self.action_size[0], activation='tanh',
                                         kernel_initializer=last_init, trainable=trainable)(f)
-        model = tf.keras.Model(state_input, net_out)
         net_out = net_out * self.upper_bound  # element-wise product
+        model = tf.keras.Model(state_input, net_out)
         model.summary()
         tf.keras.utils.plot_model(model, to_file='actor_net.png',
                                   show_shapes=True, show_layer_names=True)
@@ -74,7 +70,6 @@ class PPOActor:
         self.model.load_weights(filename)
 
     def train(self, state_batch, action_old, advantages):
-        self.train_step_count += 1
         with tf.GradientTape() as tape:
             actor_weights = self.model.trainable_variables
             actor_policy = self.model(state_batch)
@@ -90,7 +85,7 @@ class PPOActor:
         self.model_old.set_weights(self.model.get_weights())
 
         self.optimizer.apply_gradients(zip(actor_grad, actor_weights))
-        return actor_loss
+        return actor_loss.numpy()
 
     def update_target(self):
         #self.model_old.set_weights(self.model.get_weights())
@@ -139,7 +134,7 @@ class PPOCritic:
 
         critic_grad = tape.gradient(critic_loss, critic_weights)
         self.optimizer.apply_gradients(zip(critic_grad, critic_weights))
-        return critic_loss
+        return critic_loss.numpy()
 
     def save_weights(self, filename):
         self.model.save_weights(filename)
@@ -164,7 +159,7 @@ class KukaPPOAgent:
         self.memory_capacity = memory_capacity
         self.gamma = gamma  # discount factor
         self.lmbda = lmbda  # required for estimating advantage (GAE)
-        self.epsilon = epsilon  # clip_factor
+        self.clip_param = epsilon  # clip_factor
         self.action_upper_bound = action_upper_bound
 
         self.training_step_count = 0
@@ -174,7 +169,7 @@ class KukaPPOAgent:
         self.feature = FeatureNetwork(self.state_size)
         self.buffer = KukaBuffer(self.memory_capacity, self.batch_size)
         self.actor = PPOActor(self.state_size, self.action_size, self.actor_lr,
-                              self.epsilon, self.action_upper_bound, self.feature)
+                              self.clip_param, self.action_upper_bound, self.feature)
 
         # critic estimates the advantage
         self.critic = PPOCritic(self.state_size, self.action_size,
@@ -217,11 +212,16 @@ class KukaPPOAgent:
             adv_split = tf.split(adv_batch, n_splits)
             indexes = np.arange(n_splits, dtype=int)
 
+            a_loss = []
+            c_loss = []
             for _ in range(self.max_epochs):
                 np.random.shuffle(indexes)
                 for i in indexes:
-                    actor_loss = self.actor.train(s_split[i], a_split[i], adv_split[i])
-                    critic_loss = self.critic.train(s_split, returns_split[i])
+                    a_loss.append(self.actor.train(s_split[i], a_split[i], adv_split[i]))
+                    c_loss.append(self.critic.train(s_split, returns_split[i]))
+
+            actor_loss = np.mean(a_loss)
+            critic_loss = np.mean(c_loss)
 
             # clear the buffer
             self.buffer.buffer.clear()
