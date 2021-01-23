@@ -6,8 +6,6 @@ PPO Algorithm for Pendulum Gym Environment
 - makes use of tensorflow probability
 - The program terminates when the best episodic score over 50 episodes > -200
 """
-import os
-import time
 import pickle
 import gym
 import random
@@ -39,8 +37,8 @@ GAMMA = 0.9     # reward discount
 LR_A = 0.0001    # learning rate for actor
 LR_C = 0.0002    # learning rate for critic
 BATCH_SIZE = 50     # minimum batch size for updating PPO
-MAX_BUFFER_SIZE = 20000     # maximum buffer capacity
-METHOD = 'penalty'          # 'clip' or 'penalty'
+MAX_BUFFER_SIZE = 20000     # maximum buffer capacity > TRAIN_EPISODES * 200
+METHOD = 'clip'          # 'clip' or 'penalty'
 
 ##################
 KL_TARGET = 0.01
@@ -64,7 +62,7 @@ class Actor:
         self.lam = lmbda  # required for 'penalty' method
         self.method = method
         self.kl_target = kl_target  # required for 'penalty' method
-        self.kl_value = None        # most recent value
+        self.kl_value = 0       # most recent kld value
 
         # create NN models
         self.model = self._build_net()
@@ -100,21 +98,7 @@ class Actor:
     def load_weights(self, filename):
         self.model.load_weights(filename)
 
-    def train(self, state_batch, action_batch, advantages):
-        self.train_step_count += 1
-        with tf.GradientTape() as tape:
-            actor_weights = self.model.trainable_variables
-            new_actions = self.model(state_batch)
-            ratio = (new_actions + 1e-9) / (action_batch + 1e-9)
-            p1 = ratio * advantages
-            p2 = tf.clip_by_value(ratio, clip_value_min=1 - self.epsilon,
-                                  clip_value_max=1 + self.epsilon) * advantages
-            actor_loss = -tf.math.reduce_mean(tf.minimum(p1, p2))
-        actor_grad = tape.gradient(actor_loss, actor_weights)
-        self.optimizer.apply_gradients(zip(actor_grad, actor_weights))
-        return actor_loss.numpy()
-
-    def train2(self, state_batch, action_batch, advantages, old_pi):
+    def train(self, state_batch, action_batch, advantages, old_pi):
 
         with tf.GradientTape() as tape:
             mean = tf.squeeze(self.model(state_batch))
@@ -123,9 +107,9 @@ class Actor:
             ratio = tf.exp(pi.log_prob(tf.squeeze(action_batch)) -
                            old_pi.log_prob(tf.squeeze(action_batch)))
             surr = ratio * advantages  # surrogate function
+            kl = tfp.distributions.kl_divergence(old_pi, pi)
+            self.kl_value = tf.reduce_mean(kl)
             if self.method == 'penalty':  # ppo-penalty method
-                kl = tfp.distributions.kl_divergence(old_pi, pi)
-                self.kl_value = tf.reduce_mean(kl)
                 actor_loss = -(tf.reduce_mean(surr - self.lam * kl))
                 # # update the lambda value after each epoch
                 # if kl_mean < self.kl_target / 1.5:
@@ -142,7 +126,7 @@ class Actor:
         actor_grad = tape.gradient(actor_loss, actor_weights)
         self.optimizer.apply_gradients(zip(actor_grad, actor_weights))
 
-        return actor_loss.numpy()
+        return actor_loss.numpy(), self.kl_value.numpy()
 
     def update_lambda(self):
         # update the lambda value after each epoch
@@ -303,7 +287,7 @@ class PPOAgent:
 
     def train(self, training_epochs=20, tmax=None):
         if tmax is not None and len(self.buffer) < tmax:
-            return 0, 0
+            return 0, 0, 0
 
         n_split = len(self.buffer) // self.batch_size
         n_samples = n_split * self.batch_size
@@ -333,28 +317,35 @@ class PPOAgent:
         adv_split = tf.split(advantages, n_split)
         indexes = np.arange(n_split, dtype=int)
 
-        a_loss = []
-        c_loss = []
+        a_loss_list = []
+        c_loss_list = []
+        kld_list = []
         np.random.shuffle(indexes)
         for _ in range(training_epochs):
             for i in indexes:
                 old_pi = pi[i*self.batch_size: (i+1)*self.batch_size]
+
                 # update actor
-                a_loss.append(self.actor.train2(s_split[i], a_split[i], adv_split[i], old_pi))
+                a_loss, kld = self.actor.train(s_split[i], a_split[i], adv_split[i], old_pi)
+                a_loss_list.append(a_loss)
+                kld_list.append(kld)
+                #a_loss.append(self.actor.train(s_split[i], a_split[i], adv_split[i], old_pi))
+
                 # update critic
-                c_loss.append(self.critic.train(s_split[i], dr_split[i]))
+                c_loss_list.append(self.critic.train(s_split[i], dr_split[i]))
 
             # update lambda after each epoch
             if self.method == 'penalty':
                 self.actor.update_lambda()
 
-        actor_loss = np.mean(a_loss)
-        critic_loss = np.mean(c_loss)
+        actor_loss = np.mean(a_loss_list)
+        critic_loss = np.mean(c_loss_list)
+        mean_kld = np.mean(kld_list)
 
         # clear the buffer  -- this is important
         self.buffer.clear()
 
-        return actor_loss, critic_loss
+        return actor_loss, critic_loss, mean_kld
 
     @staticmethod
     def discount(x, gamma):
@@ -397,78 +388,81 @@ class PPOAgent:
 
 ##################
 def collect_trajectories(env, agent, max_episodes):
-    path = './'
     ep_reward_list = []
     steps = 0
     for ep in range(max_episodes):
         state = env.reset()
-
         t = 0
         ep_reward = 0
         while True:
             action = agent.policy(state)
             next_state, reward, done, _ = env.step(action)
             agent.buffer.record(state, action, reward, next_state, done)
-
             ep_reward += reward
+            state = next_state
             t += 1
-
             if done:
                 ep_reward_list.append(ep_reward)
                 steps += t
                 break
 
-        if agent.best_ep_reward < ep_reward:
-            agent.best_ep_reward = ep_reward
-            agent.save_model(path, 'actor_weights.h5', 'critic_weights.h5',
-                             'buffer.dat')
-            print('*** Episode: {}, best_episodic_reward: {}. Model saved. ***' \
-                  .format(ep, agent.best_ep_reward))
-
     mean_ep_reward = np.mean(ep_reward_list)
-
     return steps, mean_ep_reward
 
-
+# This includes seasons for training
 def main1(env, agent):
-    outfile = open('result.txt', 'w')
+
+    path = './'
+    if agent.method == 'clip':
+        outfile = open(path + 'result_'+'clip_1'+'.txt', 'w')
+    else:
+        outfile = open(path + 'result_'+'klp_1'+'.txt', 'w')
+
     # training
 
     total_steps = 0
+    best_score = -np.inf
     for s in range(MAX_SEASONS):
         t, s_reward = collect_trajectories(env, agent, TRAIN_EPISODES)
 
-        a_loss, c_loss = agent.train(TRAIN_EPOCHS)
+        a_loss, c_loss, kld_value = agent.train(training_epochs=TRAIN_EPOCHS)
 
         total_steps += t
 
-        print('Season:{} Episodes:{}, Training_steps:{}, mean_ep_reward:{:.2f}' \
+        print('Season:{}, Episodes:{}, Training_steps:{}, mean_ep_reward:{:.2f}' \
               .format(s, (s + 1) * TRAIN_EPISODES, total_steps, s_reward))
 
-        if agent.method == 'penalty':
-            outfile.write('{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'.format(s, s_reward,
-                                                                        a_loss, c_loss, agent.actor.kl_value))
-        else:
-            outfile.write('{}\t{:.2f}\t{:.2f}\t{:.2f}\n'.format(s, s_reward, a_loss, c_loss))
+        # if best_score < s_reward:
+        #     best_score = s_reward
+        #     agent.save_model(path, 'actor_weights.h5', 'critic_weights.h5')
+        #     print('*** Season: {}, best score:{} Model Saved ***'.format(s, best_score))
 
-        if agent.best_ep_reward > -200:
-            print('Problem is solved in {} seasons involving {} steps' \
-                  .format(s, total_steps))
+        if agent.method == 'penalty':
+            outfile.write('{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'.format(s, s_reward,
+                                            a_loss, c_loss, kld_value, agent.actor.lam))
+        else:
+            outfile.write('{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'.format(s, s_reward,
+                                                                a_loss, c_loss, kld_value))
+
+        if s_reward > -200:
+            print('Problem is solved in {} seasons involving {} steps'.format(s, total_steps))
+            agent.save_model(path, 'actor_weights.h5', 'critic_weights.h5')
             break
 
     env.close()
     outfile.close()
 
 
+# this is standard approach where the model goes through training over episodes
 def main2(env, agent):
 
     path = './'
     if agent.method == 'clip':
-        outfile = open('result_'+'clip'+'.txt', 'w')
+        outfile = open(path + 'result_'+'clip_2'+'.txt', 'w')
     else:
-        outfile = open('result_'+'klp'+'.txt', 'w')
-    # training
+        outfile = open(path + 'result_'+'klp_2'+'.txt', 'w')
 
+    # training
     max_episodes = 10000
     total_steps = 0
     best_score = -np.inf
@@ -479,25 +473,28 @@ def main2(env, agent):
         t = 0
         mean_a_loss = 0
         mean_c_loss = 0
+        mean_kl_value = 0
         while True:
             action = agent.policy(state)
             next_state, reward, done, info = env.step(action)
             agent.buffer.record(state, action, reward, next_state, done)
 
             # train
-            a_loss, c_loss = agent.train(tmax=10000)
+            a_loss, c_loss, kld_value = agent.train(training_epochs=TRAIN_EPOCHS, tmax=10000)
 
             ep_reward += reward
             mean_a_loss += a_loss
             mean_c_loss += c_loss
+            mean_kl_value += kld_value
 
             state = next_state
             t += 1
 
             if done:
                 ep_reward_list.append(ep_reward)
-                mean_a_loss = mean_a_loss / t
-                mean_c_loss = mean_c_loss / t
+                mean_a_loss /= t
+                mean_c_loss /= t
+                mean_kl_value /= t
                 total_steps += t
                 break
 
@@ -509,33 +506,28 @@ def main2(env, agent):
                 agent.save_model(path, 'actor_weights.h5', 'critic_weights.h5')
                 print('*** Episode: {}, validation_score: {}. Model saved. ***'.format(ep, best_score))
 
-        if ep % 100 == 0:
-            print('Episode:{}, ep_reward:{:.2f}, avg_reward:{:.2f} \n'
-                  .format(ep, ep_reward, np.mean(ep_reward_list)))
+        # if ep % 100 == 0:
+        #     print('Episode:{}, ep_reward:{:.2f}, avg_reward:{:.2f} \n'
+        #           .format(ep, ep_reward, np.mean(ep_reward_list)))
 
         if agent.method == 'penalty':
-            outfile.write('{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{}\n'.format(ep, ep_reward,
-                                    np.mean(ep_reward_list),
-                                            mean_a_loss, mean_c_loss, agent.actor.kl_value))
+            outfile.write('{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'.format(ep, ep_reward,
+                                    np.mean(ep_reward_list), mean_a_loss, mean_c_loss,
+                                                            mean_kl_value, agent.actor.lam))
         else:
-            outfile.write('{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'.format(ep, ep_reward,
-                                            np.mean(ep_reward_list), mean_a_loss, mean_c_loss))
+            outfile.write('{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'.format(ep, ep_reward,
+                                            np.mean(ep_reward_list), mean_a_loss,
+                                                        mean_c_loss, mean_kl_value))
 
-        if ep > 100 and best_score > -170:
+        if ep > 100 and best_score > -200:
             print('Problem is solved in {} seasons involving {} steps with avg reward {}'
                   .format(ep, total_steps, np.mean(ep_reward_list)))
             break
 
-        # if ep > 100 and np.mean(ep_reward_list) > -200:
-        #     print('Problem is solved in {} episodes with mean score: {}'.format(ep,
-        #                                         np.mean(queue_scores)))
-        #     agent.save_model(path, 'actor_weights.h5', 'critic_weights.h5')
-        #     break
-
     env.close()
     outfile.close()
 
-
+# test a model
 def test(env, agent):
     path = './'
     agent.load_model(path, 'actor_weights.h5', 'critic_weights.h5')
@@ -559,7 +551,7 @@ def test(env, agent):
     print('Avg episodic reward: ', np.mean(ep_reward_list))
     env.close()
 
-
+# used for validating
 def validate(env, agent, ep_max=50):
     ep_reward_list = []
     for ep in range(ep_max):
@@ -598,7 +590,10 @@ if __name__ == '__main__':
                      action_bound,
                      LR_A, LR_C, GAMMA, LAM, EPSILON, KL_TARGET, METHOD)
 
-    # training
+    # training with seasons
+    # main1(env, agent)
+
+    # training with episodes
     main2(env, agent)
 
     # test
