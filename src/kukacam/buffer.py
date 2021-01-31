@@ -48,13 +48,17 @@ class KukaBuffer:
         with open(filename, 'rb') as file:
             self.buffer = pickle.load(file)
 
-    def get_all_samples(self):
+    def get_samples(self, n_samples=None):
+
+        if n_samples is None or n_samples > len(self.buffer):
+            n_samples = len(self.buffer)
+
         s_batch = []
         a_batch = []
         r_batch = []
         ns_batch = []
         d_batch = []
-        for i in range(len(self.buffer)):
+        for i in range(n_samples):
             s_batch.append(self.buffer[i][0])
             a_batch.append(self.buffer[i][1])
             r_batch.append(self.buffer[i][2])
@@ -62,6 +66,9 @@ class KukaBuffer:
             d_batch.append(self.buffer[i][4])
 
         return s_batch, a_batch, r_batch, ns_batch, d_batch
+
+    def clear(self):
+        self.buffer.clear()
 
 
 

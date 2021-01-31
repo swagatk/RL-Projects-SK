@@ -57,7 +57,6 @@ class Actor:
         self.action_size = action_size
         self.lr = learning_rate
         self.upper_bound = upper_bound
-        self.train_step_count = 0
         self.epsilon = epsilon  # required for 'clip' method
         self.lam = lmbda  # required for 'penalty' method
         self.method = method
@@ -311,12 +310,14 @@ class PPOAgent:
         mean, std = self.actor(s_batch)
         pi = tfp.distributions.Normal(mean, std)
 
+        # create splits
         s_split = tf.split(s_batch, n_split)
         a_split = tf.split(a_batch, n_split)
         dr_split = tf.split(disc_sum_reward, n_split)
         adv_split = tf.split(advantages, n_split)
         indexes = np.arange(n_split, dtype=int)
 
+        # training
         a_loss_list = []
         c_loss_list = []
         kld_list = []

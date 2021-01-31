@@ -153,9 +153,6 @@ if __name__ == '__main__':
             with train_summary_writer.as_default():
                 tf.summary.scalar('actor_loss', actor_loss, step=episode)
                 tf.summary.scalar('critic_loss', critic_loss, step=episode)
-            # with graph_summary_writer.as_default():
-            #     tf.summary.trace_export(name="update_target", step=episode,
-            #                             profiler_outdir=graph_log_dir)
 
             state = next_state
             steps += 1

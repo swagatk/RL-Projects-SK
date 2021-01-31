@@ -33,7 +33,7 @@ class FeatureNetwork:
         f = layers.Dense(128, activation="relu")(f)
         f = layers.Dense(128, activation="relu")(f)
         f = layers.Dense(64, activation="relu")(f)
-        model = tf.keras.Model(inputs=img_input, outputs=f)
+        model = tf.keras.Model(inputs=img_input, outputs=f, name='feature_net')
         print('shared feature network')
         model.summary()
         keras.utils.plot_model(model, to_file='feature_net.png',
