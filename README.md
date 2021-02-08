@@ -1,7 +1,5 @@
 # RL-Projects-SK
 Reinforcement Learning Projects
-- Taxi
-- Frozen-Lake
 - CartPole
   - Q Learning
   - DQN 
@@ -10,5 +8,7 @@ Reinforcement Learning Projects
   - D3QN with PER
 - Pendulum
    - DDPG
-- Atari
-  - DQN
+   - PPO
+- KukaCam
+  - DDPG (Work in progress)
+  - PPO (work in progress)

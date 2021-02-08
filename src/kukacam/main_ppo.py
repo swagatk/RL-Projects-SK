@@ -7,6 +7,7 @@ import numpy as np
 import tensorflow as tf
 from ppo import KukaPPOAgent
 import datetime
+from collections import deque
 
 
 #########################
@@ -56,12 +57,19 @@ def main(env, agent, path='./'):
     #training
     total_steps = 0
     best_score = -np.inf
+    scores_window = deque(maxlen=100)
     for s in range(MAX_SEASONS):
         # collect trajectories
         t, s_reward = collect_trajectories(env, agent, TRG_EPISODES)
 
         # train the agent
         a_loss, c_loss, kld_value = agent.train(training_epochs=TRAIN_EPOCHS)
+
+        # decay the clipping parameter over time
+        agent.actor.epsilon *= 0.99
+
+        scores_window.append(s_reward)
+
         total_steps += t
         print('Season: {}, Episodes: {} , Training Steps: {}, Mean Episodic Reward: {:.2f}'\
               .format(s, (s+1) * TRG_EPISODES, total_steps, s_reward))
@@ -72,23 +80,24 @@ def main(env, agent, path='./'):
                 tf.summary.scalar('Actor Loss', a_loss, step=s)
                 tf.summary.scalar('Critic Loss', c_loss, step=s)
                 tf.summary.scalar('KL Divergence', kld_value, step=s)
-                tf.summary.scalar('Lambda', agent.actor.lam, step=s)
+                tf.summary.scalar('beta', agent.actor.beta, step=s)
 
         #valid_score = validate(env, agent)
-        if best_score < s_reward:
-            best_score = s_reward
+        mean_reward = np.mean(scores_window)
+        if best_score < mean_reward:
+            best_score = mean_reward
             agent.save_model(path, 'actor_weights.h5', 'critic_weights.h5')
             print('*** Season:{}, best score: {}. Model Saved ***'.format(s, best_score))
 
         # book keeping
         if agent.method == 'penalty':
             outfile.write('{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'.format(s,
-                                    s_reward, a_loss, c_loss, kld_value, agent.actor.lam))
+                                    s_reward, a_loss, c_loss, kld_value, agent.actor.beta))
         else:
             outfile.write('{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'.format(s,
                                                         s_reward, a_loss, c_loss, kld_value))
 
-        if best_score > 50:
+        if s > 25 and best_score > 50:
             print('Problem is solved in {} seasons involving {} steps.'.format(s, total_steps))
             agent.save_model(path, 'actor_weights.h5', 'critic_weights.h5')
             break
@@ -187,13 +196,15 @@ if __name__ == '__main__':
     BATCH_SIZE = 100
     MEMORY_CAPACITY = 10000     # memory capacity > trg_episodes * max_steps in each episode
 
-    LR_A = 0.0001
-    LR_C = 0.0002
-    GAMMA = 0.99   # discount factor
-    LAMBDA = 0.9  # required for GAE
-    EPSILON = 0.07  # clipping factor
-    KL_TARGET = 0.1
-    METHOD = 'clip'
+    LR_A = 0.0001        # actor learning rate
+    LR_C = 0.0002        # critic learning rate
+    GAMMA = 0.99        # discount factor
+    LAMBDA = 0.7        # required for GAE
+    EPSILON = 0.02      # clipping factor
+    BETA = 0.5          # required for 'Penalty' method
+    ENT_COEFF = 0.01    # entropy coefficient
+    KL_TARGET = 0.01
+    METHOD = 'clip'     # choose 'clip' or 'penalty'
 
     ############################
     upper_bound = env.action_space.high
@@ -205,7 +216,7 @@ if __name__ == '__main__':
     # Create a Kuka Actor-Critic Agent
     agent = KukaPPOAgent(state_size, action_size, BATCH_SIZE,
                          MEMORY_CAPACITY, upper_bound,
-                       LR_A, LR_C, GAMMA, LAMBDA, EPSILON,
+                       LR_A, LR_C, GAMMA, LAMBDA, BETA, ENT_COEFF, EPSILON,
                          KL_TARGET, METHOD)
     # training
     main(env, agent)

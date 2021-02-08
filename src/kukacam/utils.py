@@ -1,6 +1,7 @@
 '''
 Utilities
 '''
+import numpy as np
 import cv2
 import matplotlib.pyplot as plt
 from matplotlib import animation
@@ -32,13 +33,11 @@ def rgba2rgb(rgba, background=(255, 255, 255)):
     rgb[:, :, 0] = r * a + (1.0 - a) * R
     rgb[:, :, 1] = g * a + (1.0 - a) * G
     rgb[:, :, 2] = b * a + (1.0 - a) * B
-
-
     return np.asarray(rgb, dtype='uint8')
 
 
+###########################
 def save_frames_as_gif(frames, path='./', filename='gym_animation.gif'):
-
     print('Creating GIF Animation File. Wait ...')
     #Mess with this to change frame size
     plt.figure(figsize=(frames[0].shape[1] / 72.0, frames[0].shape[0] / 72.0), dpi=72)
@@ -49,8 +48,8 @@ def save_frames_as_gif(frames, path='./', filename='gym_animation.gif'):
     def animate(i):
         patch.set_data(frames[i])
 
-    anim = animation.FuncAnimation(plt.gcf(), animate, frames = len(frames), interval=50)
-    anim.save(path + filename, writer='imagemagick', fps=60)
+    anim = animation.FuncAnimation(plt.gcf(), animate, frames=len(frames), interval=500)
+    anim.save(path + filename, writer='imagemagick', fps=5)
     print('done!!')
 
 
@@ -71,21 +70,6 @@ def preprocess_image(rgba_img):
     return resized_img
 
 
-
-###############
-## CHECKING SIZE OF VARIABLES
-#################
-def sizeof_fmt(num, suffix='B'):
-    ''' by Fred Cirera, https://stackoverflow.com/a/1094933/1870254, modified'''
-    for unit in ['','Ki','Mi','Gi','Ti','Pi','Ei','Zi']:
-        if abs(num) < 1024.0:
-            return "%3.1f %s%s" % (num, unit, suffix)
-        num /= 1024.0
-    return "%.1f %s%s" % (num, 'Yi', suffix)
-
-def print_size_locals():
-    for name, size in sorted(((name, sys.getsizeof(value)) for name, value in locals().items()),
-                         key=lambda x: -x[1])[:10]: print("{:>30}: {:>8}".format(name, sizeof_fmt(size)))
 
 
 

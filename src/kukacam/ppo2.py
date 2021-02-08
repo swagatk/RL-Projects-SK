@@ -104,10 +104,7 @@ class PPOActor:
             self.kl_value = tf.reduce_mean(kl)
             if self.method == 'penalty':    # KL-penalty method
                 actor_loss = -(tf.reduce_mean(surr - self.beta * kl))   # beta
-                # if self.kl_value < self.kl_target / 1.5:
-                #     self.beta /= 2
-                # elif self.kl_value > self.kl_target * 1.5:
-                #     self.beta *= 2
+                self.update_beta()
             elif self.method == 'clip':
                 l_clip = tf.reduce_mean(
                     tf.minimum(surr, tf.clip_by_value(ratio, 1. - self.epsilon,
@@ -154,6 +151,11 @@ class PPOCritic:
                                   show_shapes=True, show_layer_names=True)
         return model
 
+    def __call__(self, state):  # state is a numpy array
+        tf_state = tf.convert_to_tensor(state, dtype=tf.float32)
+        value = tf.squeeze(self.model(tf_state))
+        return value
+
     def train(self, state_batch, disc_rewards):
         with tf.GradientTape() as tape:
             critic_weights = self.model.trainable_variables
@@ -174,16 +176,14 @@ class PPOCritic:
 ## PPO AGENT
 #########################
 class KukaPPOAgent:
-    def __init__(self, state_size, action_size, batch_size,
-                 memory_capacity, upper_bound,
+    def __init__(self, state_size, action_size,
+                 upper_bound,
                  lr_a=1e-3, lr_c=1e-3, gamma=0.99,  lmbda=0.9, beta=0.5, ent_coeff=0.01,
                  epsilon=0.07, kl_target=0.01, method='clip'):
         self.state_size = state_size
         self.action_size = action_size
         self.actor_lr = lr_a
         self.critic_lr = lr_c
-        self.batch_size = batch_size
-        self.memory_capacity = memory_capacity
         self.gamma = gamma  # discount factor
         self.lam = lmbda  # required for Generalized Advantage Estimator (GAE)
         self.beta = beta    # required for KL-Penalty method
@@ -194,7 +194,6 @@ class KukaPPOAgent:
         self.method = method
 
         self.feature = FeatureNetwork(self.state_size)
-        self.buffer = KukaBuffer(self.memory_capacity, self.batch_size)
         self.actor = PPOActor(self.state_size, self.action_size, self.actor_lr,
                               self.epsilon, self.beta, self.entropy_coeff, self.kl_target, self.upper_bound,
                               self.feature, self.method)
@@ -215,121 +214,57 @@ class KukaPPOAgent:
         valid_action = tf.clip_by_value(action, -self.upper_bound, self.upper_bound)
         return valid_action.numpy()
 
-    def record(self, experience: tuple):
-        self.buffer.record(experience)
+    def train(self, states, actions, rewards, dones):
+        # note that state has one extra row
+        states = tf.convert_to_tensor(states, dtype=tf.float32)
+        actions = tf.convert_to_tensor(actions, dtype=tf.float32)
+        rewards = tf.convert_to_tensor(rewards, dtype=tf.float32)
+        dones = tf.convert_to_tensor(dones, dtype=tf.float32)
 
-    def train(self, training_epochs=20):
-        n_split = len(self.buffer) // self.batch_size
-        n_samples = n_split * self.batch_size
-
-        s_batch, a_batch, r_batch, ns_batch, d_batch = \
-            self.buffer.get_samples(n_samples)
-
-        s_batch = tf.convert_to_tensor(s_batch, dtype=tf.float32)
-        a_batch = tf.convert_to_tensor(a_batch, dtype=tf.float32)
-        r_batch = tf.convert_to_tensor(r_batch, dtype=tf.float32)
-        ns_batch = tf.convert_to_tensor(ns_batch, dtype=tf.float32)
-        d_batch = tf.convert_to_tensor(d_batch, dtype=tf.float32)
-
-        disc_cum_rewards, advantages = self.compute_advantages2(s_batch, ns_batch, r_batch, d_batch)
-        #disc_cum_rewards = KukaPPOAgent.discount(r_batch.numpy(), self.gamma)
-        #advantages = self.compute_advantages(s_batch, ns_batch, r_batch, d_batch)
-        #advantages = tf.convert_to_tensor(advantages, dtype=tf.float32)
-        #disc_cum_rewards = tf.convert_to_tensor(disc_cum_rewards, dtype=tf.float32)
+        disc_cum_rewards, advantages = self.compute_advantages(states, rewards, dones)   # outputs are tensors
 
         # current policy
-        mean, std = self.actor(s_batch)
-        pi = tfp.distributions.Normal(mean, std)
+        mean, std = self.actor(states[:-1])
+        old_pi = tfp.distributions.Normal(mean, std)
 
-        # create splits
-        s_split = tf.split(s_batch, n_split)
-        a_split = tf.split(a_batch, n_split)
-        dr_split = tf.split(disc_cum_rewards, n_split)
-        adv_split = tf.split(advantages, n_split)
-        indexes = np.arange(n_split, dtype=int)
+        c_loss = self.critic.train(states[:-1], disc_cum_rewards)
+        a_loss = self.actor.train(states[:-1], actions, advantages, old_pi, c_loss)
 
-        # training
-        a_loss_list = []
-        c_loss_list = []
-        kl_list = []
-        np.random.shuffle(indexes)
-        for i in indexes:
-            old_pi = pi[i * self.batch_size: (i + 1) * self.batch_size]
-            for _ in range(training_epochs):
-                # update critic
-                cl = self.critic.train(s_split[i], dr_split[i])
-                c_loss_list.append(cl)
+        # update lambda once in each epoch
+        # if self.method == 'penalty':
+        #     self.actor.update_beta()
 
-                # update actor
-                a_loss_list.append(self.actor.train(s_split[i], a_split[i],
-                                                    adv_split[i], old_pi, cl))
-                kl_list.append(self.actor.kl_value)
+        return a_loss, c_loss
 
+    def compute_advantages(self, s_batch, r_batch, d_batch):
 
-            # update lambda once in each epoch
-            if self.method == 'penalty':
-                self.actor.update_beta()
-
-        actor_loss = np.mean(a_loss_list)
-        critic_loss = np.mean(c_loss_list)
-        kld_mean = np.mean(kl_list)
-
-        # clear the buffer
-        self.buffer.clear()
-        return actor_loss, critic_loss, kld_mean
-
-    @staticmethod
-    def discount(x, gamma):
-        return signal.lfilter([1.0], [1.0, -gamma], x[::-1])[::-1]
-
-    # Generalized Advantage Estimate (GAE)
-    def compute_advantages(self, s_batch, ns_batch, r_batch, d_batch):
-        s_values = tf.squeeze(self.critic.model(s_batch))
-        ns_values = tf.squeeze(self.critic.model(ns_batch))
-
-        # time-delay error
-        tds = r_batch + self.gamma * ns_values * (1. - d_batch) - s_values
-        adv = KukaPPOAgent.discount(tds.numpy(), self.gamma * self.lam)
-        adv = (adv - adv.mean()) / (adv.std() + 1e-8)       # sometimes helpful
-        return adv
-
-
-    def compute_advantages2(self, s_batch, ns_batch, r_batch, d_batch):
-        s_values = tf.squeeze(self.critic.model(s_batch))
-        ns_values = tf.squeeze(self.critic.model(ns_batch))
+        # make sure that len(s_batch) = len(r_batch) + 1
+        # all inputs are tensors
+        values = self.critic(s_batch)
         g = 0
         returns = []
         for i in reversed(range(len(r_batch))):
-            delta = r_batch[i] + self.gamma * ns_values[i] * (1 - d_batch[i]) - s_values[i]
-            g = delta + self.gamma * self.lam * (1 - d_batch[i]) * g
-            returns.append(g + s_values[i])
+            delta = r_batch[i] + self.gamma * values[i + 1] * d_batch[i] - values[i]
+            g = delta + self.gamma * self.lam * d_batch[i] * g
+            returns.append(g + values[i])
 
         returns.reverse()  # check the type of returns - is it a tensor?
         returns = tf.convert_to_tensor(returns, dtype=tf.float32)
-        adv = returns - s_values
+        adv = returns - values[:-1]  # omits the last item
         adv = (adv - np.mean(adv)) / (np.std(adv) + 1e-10)
         return returns, adv
 
     def save_model(self, path, actor_filename,
-                   critic_filename, buffer_filename=None):
+                   critic_filename):
         actor_file = path + actor_filename
         critic_file = path + critic_filename
-
         self.actor.save_weights(actor_file)
         self.critic.save_weights(critic_file)
 
-        if buffer_filename is not None:
-            buffer_file = path + buffer_filename
-            self.buffer.save_data(buffer_file)
-
     def load_model(self, path, actor_filename,
-                   critic_filename, buffer_filename=None):
+                   critic_filename):
         actor_file = path + actor_filename
         critic_file = path + critic_filename
-
         self.actor.model.load_weights(actor_file)
         self.critic.model.load_weights(critic_file)
 
-        if buffer_filename is not None:
-            buffer_file = path + buffer_filename
-            self.buffer.load_data(buffer_file)

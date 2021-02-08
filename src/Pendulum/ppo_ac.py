@@ -310,14 +310,12 @@ class PPOAgent:
         mean, std = self.actor(s_batch)
         pi = tfp.distributions.Normal(mean, std)
 
-        # create splits
         s_split = tf.split(s_batch, n_split)
         a_split = tf.split(a_batch, n_split)
         dr_split = tf.split(disc_sum_reward, n_split)
         adv_split = tf.split(advantages, n_split)
         indexes = np.arange(n_split, dtype=int)
 
-        # training
         a_loss_list = []
         c_loss_list = []
         kld_list = []
