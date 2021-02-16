@@ -6,9 +6,7 @@ PPO_CLIP Algorithm
 import tensorflow as tf
 import numpy as np
 from FeatureNet import FeatureNetwork
-from buffer import KukaBuffer
 import tensorflow_probability as tfp
-from scipy import signal
 
 ###########################
 ## TENSORFLOW Related Logistics
@@ -262,8 +260,8 @@ class KukaPPOAgent:
                 kl_list.append(self.actor.kl_value)
 
             # update lambda once in each epoch
-            if self.method == 'penalty':
-                self.actor.update_beta()
+            # if self.method == 'penalty':
+            #     self.actor.update_beta()
 
         actor_loss = np.mean(a_loss_list)
         critic_loss = np.mean(c_loss_list)

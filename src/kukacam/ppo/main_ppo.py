@@ -1,9 +1,9 @@
 """
 PPO algorithm for Kuka Diverse Object Environment
 
-- Working properly
-- Mean score over last 100 seasons increase over time.
-- It is possible to reach mean episodic reward of about 0.7 - 0.8 over 20 episodes
+- PPO Clip provides faster convergence compared to 'penalty' method. I have not tuned the parameters for 'penalty' method.
+- Mean score over last 100 seasons increase over time with PPO clip.
+- It is possible to reach mean episodic reward of about 0.7 - 0.8 over 20 episodes through the validation routine.
 
 References:
 https://github.com/mahyaret/kuka_rl/blob/master/kuka_rl_2.ipynb
@@ -69,10 +69,10 @@ def main(env, agent, path='./'):
         filename = path + 'result_ppo_klp.txt'
 
     if os.path.exists(filename):
+        print('Deleting existing file. A new one will be created.')
         os.remove(filename)
     else:
         print('The file does not exist. It will be created.')
-
 
     #training
     max_seasons = 1000
@@ -99,8 +99,8 @@ def main(env, agent, path='./'):
         mean_reward = np.mean(scores_window)
         # valid_score = validate(env, agent)
 
-        # print('Season: {}, season_score: {}, # episodes:{}, mean score:{:.2f}'\
-        #       .format(s, season_score, ep_count, mean_reward))
+        print('Season: {}, season_score: {}, # episodes:{}, mean score:{:.2f}'\
+              .format(s, season_score, ep_count, mean_reward))
 
         if TB_LOG:  # tensorboard logging
             with train_summary_writer.as_default():
@@ -200,7 +200,7 @@ if __name__ == '__main__':
 
     if TB_LOG:
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        train_log_dir = 'logs/train/' + current_time
+        train_log_dir = '../logs/train/' + current_time
         train_summary_writer = tf.summary.create_file_writer(train_log_dir)
     ############################
     # for reproducibility
