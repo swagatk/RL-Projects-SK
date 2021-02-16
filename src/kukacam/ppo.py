@@ -1,7 +1,7 @@
 """
 Implementing Proximal Policy Optimization (PPO) for Kuka Environment
-
 PPO_CLIP Algorithm
+
 """
 import tensorflow as tf
 import numpy as np
@@ -154,6 +154,11 @@ class PPOCritic:
                                   show_shapes=True, show_layer_names=True)
         return model
 
+    def __call__(self, state):
+        # input is a tensor
+        value = tf.squeeze(self.model(state))
+        return value
+
     def train(self, state_batch, disc_rewards):
         with tf.GradientTape() as tape:
             critic_weights = self.model.trainable_variables
@@ -175,7 +180,7 @@ class PPOCritic:
 #########################
 class KukaPPOAgent:
     def __init__(self, state_size, action_size, batch_size,
-                 memory_capacity, upper_bound,
+                 upper_bound,
                  lr_a=1e-3, lr_c=1e-3, gamma=0.99,  lmbda=0.9, beta=0.5, ent_coeff=0.01,
                  epsilon=0.07, kl_target=0.01, method='clip'):
         self.state_size = state_size
@@ -183,7 +188,6 @@ class KukaPPOAgent:
         self.actor_lr = lr_a
         self.critic_lr = lr_c
         self.batch_size = batch_size
-        self.memory_capacity = memory_capacity
         self.gamma = gamma  # discount factor
         self.lam = lmbda  # required for Generalized Advantage Estimator (GAE)
         self.beta = beta    # required for KL-Penalty method
@@ -194,14 +198,11 @@ class KukaPPOAgent:
         self.method = method
 
         self.feature = FeatureNetwork(self.state_size)
-        self.buffer = KukaBuffer(self.memory_capacity, self.batch_size)
         self.actor = PPOActor(self.state_size, self.action_size, self.actor_lr,
                               self.epsilon, self.beta, self.entropy_coeff, self.kl_target, self.upper_bound,
                               self.feature, self.method)
-
-        # critic estimates the advantage
         self.critic = PPOCritic(self.state_size, self.action_size,
-                                self.critic_lr, self.feature)
+                                self.critic_lr, self.feature)       # estimates state value
 
     def policy(self, state, greedy=False):
         tf_state = tf.expand_dims(tf.convert_to_tensor(state), 0)
@@ -215,37 +216,27 @@ class KukaPPOAgent:
         valid_action = tf.clip_by_value(action, -self.upper_bound, self.upper_bound)
         return valid_action.numpy()
 
-    def record(self, experience: tuple):
-        self.buffer.record(experience)
+    def train(self, states, actions, rewards, next_states, dones, epochs=20):
 
-    def train(self, training_epochs=20):
-        n_split = len(self.buffer) // self.batch_size
-        n_samples = n_split * self.batch_size
+        states = tf.convert_to_tensor(states, dtype=tf.float32)
+        next_states = tf.convert_to_tensor(next_states, dtype=tf.float32)
+        actions = tf.convert_to_tensor(actions, dtype=tf.float32)
+        rewards = tf.convert_to_tensor(rewards, dtype=tf.float32)
+        dones = tf.convert_to_tensor(dones, dtype=tf.float32)
 
-        s_batch, a_batch, r_batch, ns_batch, d_batch = \
-            self.buffer.get_samples(n_samples)
+        # compute advantages and discounted cumulative rewards
+        target_values, advantages = self.compute_advantages(states, next_states, rewards, dones)
 
-        s_batch = tf.convert_to_tensor(s_batch, dtype=tf.float32)
-        a_batch = tf.convert_to_tensor(a_batch, dtype=tf.float32)
-        r_batch = tf.convert_to_tensor(r_batch, dtype=tf.float32)
-        ns_batch = tf.convert_to_tensor(ns_batch, dtype=tf.float32)
-        d_batch = tf.convert_to_tensor(d_batch, dtype=tf.float32)
+        target_values = tf.convert_to_tensor(target_values, dtype=tf.float32)
+        advantages = tf.convert_to_tensor(advantages, dtype=tf.float32)
 
-        disc_cum_rewards, advantages = self.compute_advantages2(s_batch, ns_batch, r_batch, d_batch)
-        #disc_cum_rewards = KukaPPOAgent.discount(r_batch.numpy(), self.gamma)
-        #advantages = self.compute_advantages(s_batch, ns_batch, r_batch, d_batch)
-        #advantages = tf.convert_to_tensor(advantages, dtype=tf.float32)
-        #disc_cum_rewards = tf.convert_to_tensor(disc_cum_rewards, dtype=tf.float32)
-
-        # current policy
-        mean, std = self.actor(s_batch)
+        # current action probability distribution
+        mean, std = self.actor(states)
         pi = tfp.distributions.Normal(mean, std)
 
-        # create splits
-        s_split = tf.split(s_batch, n_split)
-        a_split = tf.split(a_batch, n_split)
-        dr_split = tf.split(disc_cum_rewards, n_split)
-        adv_split = tf.split(advantages, n_split)
+        n_split = len(rewards) // self.batch_size
+        assert n_split > 0, 'there should be at least one split'
+
         indexes = np.arange(n_split, dtype=int)
 
         # training
@@ -253,18 +244,22 @@ class KukaPPOAgent:
         c_loss_list = []
         kl_list = []
         np.random.shuffle(indexes)
-        for i in indexes:
-            old_pi = pi[i * self.batch_size: (i + 1) * self.batch_size]
-            for _ in range(training_epochs):
+        for _ in range(epochs):
+            for i in indexes:
+                old_pi = pi[i * self.batch_size: (i + 1) * self.batch_size]
+                s_split = tf.gather(states, indices=np.arange(i * self.batch_size, (i+1) * self.batch_size), axis=0)
+                a_split = tf.gather(actions, indices=np.arange(i * self.batch_size, (i+1) * self.batch_size), axis=0)
+                tv_split = tf.gather(target_values, indices=np.arange(i * self.batch_size, (i+1) * self.batch_size), axis=0)
+                adv_split = tf.gather(advantages, indices=np.arange(i * self.batch_size, (i+1) * self.batch_size), axis=0)
+
                 # update critic
-                cl = self.critic.train(s_split[i], dr_split[i])
+                cl = self.critic.train(s_split, tv_split)
                 c_loss_list.append(cl)
 
                 # update actor
-                a_loss_list.append(self.actor.train(s_split[i], a_split[i],
-                                                    adv_split[i], old_pi, cl))
+                a_loss_list.append(self.actor.train(s_split, a_split,
+                                                    adv_split, old_pi, cl))
                 kl_list.append(self.actor.kl_value)
-
 
             # update lambda once in each epoch
             if self.method == 'penalty':
@@ -274,62 +269,41 @@ class KukaPPOAgent:
         critic_loss = np.mean(c_loss_list)
         kld_mean = np.mean(kl_list)
 
-        # clear the buffer
-        self.buffer.clear()
         return actor_loss, critic_loss, kld_mean
 
-    @staticmethod
-    def discount(x, gamma):
-        return signal.lfilter([1.0], [1.0, -gamma], x[::-1])[::-1]
-
     # Generalized Advantage Estimate (GAE)
-    def compute_advantages(self, s_batch, ns_batch, r_batch, d_batch):
-        s_values = tf.squeeze(self.critic.model(s_batch))
-        ns_values = tf.squeeze(self.critic.model(ns_batch))
+    def compute_advantages(self, states, next_states, rewards, dones):
+        # inputs are tensors
+        # outputs are tensors
+        s_values = self.critic(states)
+        ns_values = self.critic(next_states)
 
-        # time-delay error
-        tds = r_batch + self.gamma * ns_values * (1. - d_batch) - s_values
-        adv = KukaPPOAgent.discount(tds.numpy(), self.gamma * self.lam)
-        adv = (adv - adv.mean()) / (adv.std() + 1e-8)       # sometimes helpful
-        return adv
+        adv = np.zeros(shape=(len(rewards), ))
+        returns = np.zeros(shape=(len(rewards), ))
 
-
-    def compute_advantages2(self, s_batch, ns_batch, r_batch, d_batch):
-        s_values = tf.squeeze(self.critic.model(s_batch))
-        ns_values = tf.squeeze(self.critic.model(ns_batch))
+        discount = self.gamma
+        lmbda = self.lam
         g = 0
-        returns = []
-        for i in reversed(range(len(r_batch))):
-            delta = r_batch[i] + self.gamma * ns_values[i] * (1 - d_batch[i]) - s_values[i]
-            g = delta + self.gamma * self.lam * (1 - d_batch[i]) * g
-            returns.append(g + s_values[i])
-
-        returns.reverse()  # check the type of returns - is it a tensor?
-        returns = tf.convert_to_tensor(returns, dtype=tf.float32)
-        adv = returns - s_values
+        returns_current = ns_values[-1]
+        for i in reversed(range(len(rewards))):
+            gamma = discount * (1. - dones[i])
+            td_error = rewards[i] + gamma * ns_values[i] - s_values[i]
+            g = td_error + gamma * lmbda * g
+            returns_current = rewards[i] + gamma * returns_current
+            adv[i] = g
+            returns[i] = returns_current
         adv = (adv - np.mean(adv)) / (np.std(adv) + 1e-10)
         return returns, adv
 
-    def save_model(self, path, actor_filename,
-                   critic_filename, buffer_filename=None):
+    def save_model(self, path, actor_filename, critic_filename):
         actor_file = path + actor_filename
         critic_file = path + critic_filename
-
         self.actor.save_weights(actor_file)
         self.critic.save_weights(critic_file)
 
-        if buffer_filename is not None:
-            buffer_file = path + buffer_filename
-            self.buffer.save_data(buffer_file)
-
-    def load_model(self, path, actor_filename,
-                   critic_filename, buffer_filename=None):
+    def load_model(self, path, actor_filename, critic_filename):
         actor_file = path + actor_filename
         critic_file = path + critic_filename
-
         self.actor.model.load_weights(actor_file)
         self.critic.model.load_weights(critic_file)
 
-        if buffer_filename is not None:
-            buffer_file = path + buffer_filename
-            self.buffer.load_data(buffer_file)
