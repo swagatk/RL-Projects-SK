@@ -1,4 +1,7 @@
 ### PPO Algorithm for Kuka Diverse Object Environment
+This code provides the PPO implementation for Kuka Diverse Object Environment
+using Tensorflow 2.x. It implements both 'clip' and 'KL penalty' variants
+of the PPO method.
 
 Software:
 - Tensorflow 2.2.0
@@ -22,10 +25,14 @@ Execute:
 python main_ppo.py
 ````
 
-Images
+Images:
+
 - Rewards and Scores
+
 ![Rewards or Scores](images/ppo_clip_scores.png)
+
 - Losses 
+
 ![Losses](images/ppo_clip_losses.png)
 
 
