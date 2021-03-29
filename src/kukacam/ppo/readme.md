@@ -73,5 +73,7 @@ applying the attention layers are as follows:
 `Conv2D - Attention - Conv2D - Attention - Conv2D - Attention - Flatten - Dense layers`
 - Architecture 2: Same as above but `x + Attention(x)` is applied to
 the next layer
+- The multi-head attention is applied with 2 and 4 heads
+respectively. 
 
 ![Scores](../images/ppo_attention_comparison.png)
