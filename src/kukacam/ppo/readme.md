@@ -67,6 +67,11 @@ network. Please see the file `AttnFeatureNet.py` in the
 - Multi-head Attention:`keras.layers.MultiHeadAttention()`
 
 The first two provides better performance compared the last one which
-is also computationally very expensive. 
+is also computationally very expensive. The two architectures of
+applying the attention layers are as follows:
+- Architecture 1:
+`Conv2D - Attention - Conv2D - Attention - Conv2D - Attention - Flatten - Dense layers`
+- Architecture 2: Same as above but `x + attention(x)` is applied to
+the next layer
 
 ![Scores](../images/ppo_attention_comparison.png)
