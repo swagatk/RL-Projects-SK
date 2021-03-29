@@ -58,7 +58,7 @@ Losses:
 ![Losses](../images/ppo_klp_losses.png)
  
 ---
-### Applying attention in the feature network
+### Applying attention to the feature network
 The following Keras APIs for attention are applied to the feature
 network. Please see the file `AttnFeatureNet.py` in the
 `/kukacam/common` folder.
@@ -71,7 +71,7 @@ is also computationally very expensive. The two architectures of
 applying the attention layers are as follows:
 - Architecture 1:
 `Conv2D - Attention - Conv2D - Attention - Conv2D - Attention - Flatten - Dense layers`
-- Architecture 2: Same as above but `x + attention(x)` is applied to
+- Architecture 2: Same as above but `x + Attention(x)` is applied to
 the next layer
 
 ![Scores](../images/ppo_attention_comparison.png)
