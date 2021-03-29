@@ -5,7 +5,8 @@ PPO_CLIP Algorithm
 """
 import tensorflow as tf
 import numpy as np
-from FeatureNet import FeatureNetwork
+# from common.FeatureNet import FeatureNetwork
+from common.AttnFeatureNet import FeatureNetwork        # with Attention
 import tensorflow_probability as tfp
 
 ###########################

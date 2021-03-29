@@ -25,9 +25,9 @@ python3 main_ppo.py
 ````
 ### Network Architectures
 
-- Feature Network: Convolutional Neural Network 
-- Actor Network: Feature Net --> Fully Connected network
-- Critic Network: Feature Net --> Fully Connected Network
+- Feature Network: A Convolutional Neural Network shared by both Actor and critic networks
+- Actor Network: (Image Input) --> Feature Net --> Fully Connected network --> (Action Output)
+- Critic Network: (Image Input) --> Feature Net --> Fully Connected Network --> (Value Output)
 
 ### Results:
 
@@ -56,4 +56,17 @@ Rewards and Scores:
 Losses:
 
 ![Losses](../images/ppo_klp_losses.png)
+ 
+---
+### Applying attention in the feature network
+The following Keras APIs for attention are applied to the feature
+network. Please see the file `AttnFeatureNet.py` in the
+`/kukacam/common` folder.
+- Luong-style Attention: `keras.layers.Attention()`
+- Bahdanau-style Attention:`keras.layers.AdditiveAttention()` 
+- Multi-head Attention:`keras.layers.MultiHeadAttention()`
 
+The first two provides better performance compared the last one which
+is also computationally very expensive. 
+
+![Scores](../images/ppo_attention_comparison.png)

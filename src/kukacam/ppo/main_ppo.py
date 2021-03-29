@@ -75,7 +75,7 @@ def main(env, agent, path='./'):
         print('The file does not exist. It will be created.')
 
     #training
-    max_seasons = 1000
+    max_seasons = 30
     best_score = 0
     # best_valid_score = 0
     scores_window = deque(maxlen=100)
@@ -190,7 +190,7 @@ def validate(env, agent, max_eps=20):
     return mean_ep_reward
 
 ####################
-## main
+## main #####
 
 if __name__ == '__main__':
 
@@ -238,7 +238,7 @@ if __name__ == '__main__':
                          ent_coeff=0.01,
                          epsilon=0.2,
                          kl_target=0.01,
-                         method='penalty')
+                         method='clip')
     # training
     main(env, agent)
 

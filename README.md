@@ -10,5 +10,5 @@ Reinforcement Learning Projects
    - DDPG
    - PPO
 - KukaCam
-  - DDPG (Work in progress)
-  - PPO (work in progress)
+  - DDPG 
+  - PPO 

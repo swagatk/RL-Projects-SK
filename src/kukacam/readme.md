@@ -3,4 +3,4 @@
 - DDPG 
 - PPO 
 
-Please see the readme file in the respective folder. 
+Please see the readme file in the respective folders. 
