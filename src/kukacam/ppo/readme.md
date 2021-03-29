@@ -66,14 +66,17 @@ network. Please see the file `AttnFeatureNet.py` in the
 - Bahdanau-style Attention:`keras.layers.AdditiveAttention()` 
 - Multi-head Attention:`keras.layers.MultiHeadAttention()`
 
-The first two provides better performance compared the last one which
-is also computationally very expensive. The two architectures of
-applying the attention layers are as follows:
+The first two provides improvement over the feature network without
+attention.  The following two architectures are used for applying
+these two attention styels: 
 - Architecture 1:
 `Conv2D - Attention - Conv2D - Attention - Conv2D - Attention - Flatten - Dense layers`
 - Architecture 2: Same as above but `x + Attention(x)` is applied to
 the next layer
-- The multi-head attention is applied with 2 and 4 heads
-respectively. 
+
+The multi-head attention is applied with 2 and 4 heads respectively.
+It does not show any improvement in the training performance and is
+comparatively computationally more expensive compared to the above two
+styles. 
 
 ![Scores](../images/ppo_attention_comparison.png)
