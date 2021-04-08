@@ -198,7 +198,8 @@ class KukaPPOAgent:
 
         self.feature = FeatureNetwork(self.state_size)
         self.actor = PPOActor(self.state_size, self.action_size, self.actor_lr,
-                              self.epsilon, self.beta, self.entropy_coeff, self.kl_target, self.upper_bound,
+                              self.epsilon, self.beta, self.entropy_coeff, self.kl_target,
+                              self.upper_bound,
                               self.feature, self.method)
         self.critic = PPOCritic(self.state_size, self.action_size,
                                 self.critic_lr, self.feature)       # estimates state value
@@ -214,6 +215,11 @@ class KukaPPOAgent:
             action = pi.sample()
         valid_action = tf.clip_by_value(action, -self.upper_bound, self.upper_bound)
         return valid_action.numpy()
+
+    def get_value(self, state):
+        tf_state = tf.expand_dims(tf.convert_to_tensor(state), 0)
+        value = self.critic(tf_state)
+        return value.numpy()
 
     def train(self, states, actions, rewards, next_states, dones, epochs=20):
 

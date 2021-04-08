@@ -590,10 +590,10 @@ if __name__ == '__main__':
                      LR_A, LR_C, GAMMA, LAM, EPSILON, KL_TARGET, METHOD)
 
     # training with seasons
-    # main1(env, agent)
+    main1(env, agent)
 
     # training with episodes
-    main2(env, agent)
+    #main2(env, agent)
 
     # test
     # test(env, agent)

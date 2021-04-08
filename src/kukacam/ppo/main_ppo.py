@@ -112,7 +112,7 @@ def main(env, agent, path='./'):
 
         if best_score < mean_reward:
             best_score = mean_reward
-            agent.save_model(path, 'actor_weights.h5', 'critic_weights.h5')
+            agent.save_model(path, 'actor_weights_best.h5', 'critic_weights_best.h5')
             print('*** Season:{}, best score: {}. Model Saved ***'.format(s, best_score))
 
         # if best_valid_score < valid_score:
@@ -130,7 +130,7 @@ def main(env, agent, path='./'):
                 file.write('{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'.format(s,
                                                         season_score, mean_reward, a_loss, c_loss, kld_value))
 
-        if s > 25 and best_score > 50:
+        if s > 25 and mean_reward > 50:
             print('Problem is solved in {} seasons.'.format(s))
             agent.save_model(path, 'actor_weights.h5', 'critic_weights.h5')
             break
