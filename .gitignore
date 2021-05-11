@@ -11,3 +11,5 @@ chkpt/
 reload/
 results/
 **/result 
+**/.idea
+**/.ipynb_checkpoints
