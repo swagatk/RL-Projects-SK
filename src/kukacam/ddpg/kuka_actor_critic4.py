@@ -7,9 +7,9 @@ import numpy as np
 from tensorflow import keras
 from tensorflow.keras import layers
 import pickle
-from FeatureNet import FeatureNetwork
-from OUActionNoise import OUActionNoise
-from per_memory_buffer import Memory
+from common.FeatureNet import FeatureNetwork
+from common.OUActionNoise import OUActionNoise
+from common.per_memory_buffer import Memory
 ########################################
 # check tensorflow version
 from packaging import version

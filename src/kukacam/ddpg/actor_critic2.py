@@ -1,12 +1,8 @@
 '''
-DDPG Algorithm for Pendulum-v0 environment
-Source: https://keras.io/examples/rl/ddpg_pendulum/
+DDPG Algorithm for Kuka Environment 
 Tensorflow 2.0 / Keras implementation
 
-Gives a average reward of about -180 to -200 (over 40 episodes)
-
-Be careful with @tf.function decorator. Does not work for all functions. It does not work when I decorate the function
-experience_replay() with this decorator.
+Status: Not working
 '''
 import gym
 import tensorflow as tf

@@ -39,6 +39,7 @@ class KukaCritic:
 
         out = layers.Dense(128, activation="relu")(concat)
         out = layers.Dense(64, activation="relu")(out)
+        out = layers.Dense(32, activation="relu")(out)
         net_out = layers.Dense(1)(out)
 
         # Outputs single value for give state-action
@@ -47,6 +48,11 @@ class KukaCritic:
         keras.utils.plot_model(model, to_file='critic_net.png',
                                show_shapes=True, show_layer_names=True)
         return model
+
+    def __call__(self, state, action):
+        # inputs are tensors
+        value = tf.squeeze(self.model([state, action]))
+        return value
 
     def update_target(self):
         if self.replacement['name'] == 'hard':

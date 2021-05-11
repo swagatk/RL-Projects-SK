@@ -1,7 +1,7 @@
 """
 Memory Buffer for Priority Experience Replay
 """
-from sumtree import SumTree
+from common.sumtree import SumTree
 import numpy as np
 import pickle
 
@@ -14,14 +14,18 @@ class Memory:
         self.buffer_size = max_capacity
 
         # buffer to store (s,a,r,s',d) tuples
-        self.buffer = [(np.zeros(shape=self.state_size),
-                        np.zeros(shape=self.action_size),
-                        0.0,
-                        np.zeros(shape=self.state_size),
-                        0.0) for i in range(self.buffer_size)]
+        # self.buffer = [(np.zeros(shape=self.state_size),
+        #                 np.zeros(shape=self.action_size),
+        #                 0.0,
+        #                 np.zeros(shape=self.state_size),
+        #                 0.0) for i in range(self.buffer_size)]
+
+        # create an empty list of tuples
+        # experiences are stored in the buffer as tuples
+        self.buffer = [tuple() for _ in range(self.buffer_size)]
 
         # Initially all priorities are set to zero
-        self.sum_tree = SumTree([0 for i in range(self.buffer_size)])
+        self.sum_tree = SumTree([0 for _ in range(self.buffer_size)])
 
         self.curr_write_idx = 0
         self.available_samples = 0
@@ -35,6 +39,10 @@ class Memory:
         return self.available_samples
 
     def record(self, experience: tuple, priority: float):
+
+        # make sure that the priority is positive
+        assert priority >= 0, "priority must be 0 or positive"
+
         # add the experience to the buffer
         self.buffer[self.curr_write_idx] = experience
 
@@ -61,8 +69,14 @@ class Memory:
         is_weights = []  # importance sampling weights
         sample_no = 0
         while sample_no < self.batch_size:
-            sample_val = np.random.uniform(0, self.sum_tree.root_node.value)
-            sample_node = self.sum_tree.retrieve(sample_val, self.sum_tree.root_node)
+            try:
+                sample_val = np.random.uniform(0, self.sum_tree.root_node.value)
+                sample_node = self.sum_tree.retrieve(sample_val, self.sum_tree.root_node)
+            except:
+                print('sum_tree root_node value:', self.sum_tree.root_node.value)
+                print('sample_node.idx:', sample_node.idx)
+                print('sample_node value:', sample_node.value)
+                print('An exception occurred here. Please investigate')
 
             # check if this is a valid idx
             if sample_node.idx < self.available_samples:

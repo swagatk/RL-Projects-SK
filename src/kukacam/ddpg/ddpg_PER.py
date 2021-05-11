@@ -6,19 +6,26 @@ Todo: Focus on code reuse
 """
 import tensorflow as tf
 import numpy as np
-from per_memory_buffer import Memory
-import pickle
-from FeatureNet import FeatureNetwork
-from OUActionNoise import OUActionNoise
-from actor import KukaActor
-from critic import KukaCritic
+from tensorflow import keras
+from common.per_memory_buffer import Memory
+from tensorflow.keras import layers
+import random
+from common.FeatureNet import FeatureNetwork
+from common.OUActionNoise import OUActionNoise
 ########################################
 # check tensorflow version
 from packaging import version
 print("Tensorflow Version: ", tf.__version__)
 assert version.parse(tf.__version__).release[0] >= 2, \
     "This program requires Tensorflow 2.0 or above"
+##############################
+# For reproducibility
+random.seed(2212)
+np.random.seed(2212)
+tf.random.set_seed(2212)
+
 #######################################
+# Flags
 _DEBUG = False
 #######################################
 # avoid CUDNN_STATUS_INTERNAL_ERROR
@@ -31,10 +38,178 @@ if gpus:
         print(e)
 
 
+#########################################
+# Actor Network
+class KukaActor:
+    def __init__(self, state_size, action_size,
+                 replacement, learning_rate,
+                 upper_bound, feature_model):
+        self.state_size = state_size   # shape: (w, h, c)
+        self.action_size = action_size  # shape: (n, )
+        self.lr = learning_rate
+        self.replacement = replacement
+        self.upper_bound = upper_bound
+        self.train_step_count = 0
+
+        # create NN models
+        self.feature_model = feature_model
+        self.model = self._build_net()
+        self.target = self._build_net()
+        self.optimizer = tf.keras.optimizers.Adam(self.lr)
+
+        # Initially both models share same weights
+        self.target.set_weights(self.model.get_weights())
+
+    def _build_net(self):
+        # input is a stack of 1-channel YUV images
+        last_init = tf.random_uniform_initializer(minval=-0.03, maxval=0.03)
+
+        state_input = layers.Input(shape=self.state_size)
+        feature = self.feature_model(state_input)
+
+        x = layers.Dense(128, activation="relu")(feature)
+        x = layers.Dense(64, activation="relu")(x)
+        net_out = layers.Dense(self.action_size[0], activation='tanh',
+                               kernel_initializer=last_init)(x)
+
+        net_out = net_out * self.upper_bound  # element-wise product
+        model = keras.Model(state_input, net_out)
+        model.summary()
+        keras.utils.plot_model(model, to_file='actor_net.png',
+                               show_shapes=True, show_layer_names=True)
+        return model
+
+    def __call__(self, state):
+        # input is a tensor
+        action = tf.squeeze(self.model(state))
+        return action
+
+    def update_target(self):
+        if self.replacement['name'] == 'hard':
+            if self.train_step_count % \
+                    self.replacement['rep_iter_a'] == 0:
+                self.target.set_weights(self.model.get_weights())
+        else:
+            w = np.array(self.model.get_weights())
+            w_dash = np.array(self.target.get_weights())
+            new_wts = self.replacement['tau'] * w + \
+                      (1 - self.replacement['tau']) * w_dash
+            self.target.set_weights(new_wts)
+
+    def save_weights(self, filename):
+        self.model.save_weights(filename)
+
+    def load_weights(self, filename):
+        self.model.load_weights(filename)
+
+    def train(self, state_batch, critic):
+        self.train_step_count += 1
+        with tf.GradientTape() as tape:
+            actor_weights = self.model.trainable_variables
+            actions = self.model(state_batch)
+            critic_value = critic.model([state_batch, actions])
+            # -ve value is used to maximize value function
+            actor_loss = -tf.math.reduce_mean(critic_value)
+
+        actor_grad = tape.gradient(actor_loss, actor_weights)
+        #actor_grad = [tf.clip_by_norm(g, 1e-3) for g in actor_grad]     # gradient clipping
+        self.optimizer.apply_gradients(zip(actor_grad, actor_weights))
+        return actor_loss
+
+
+#######################################
+# Critic Network
+class KukaCritic:
+    def __init__(self, state_size, action_size,
+                 replacement,
+                 learning_rate,
+                 gamma, feature_model):
+        self.state_size = state_size
+        self.action_size = action_size
+        self.lr = learning_rate
+        self.replacement = replacement
+        self.optimizer = tf.keras.optimizers.Adam(self.lr)
+        self.gamma = gamma
+        self.train_step_count = 0
+
+        # create two models
+        self.feature_model = feature_model
+        self.model = self._build_net()
+        self.target = self._build_net()
+
+        # Initially both models share same weights
+        self.target.set_weights(self.model.get_weights())
+
+    def _build_net(self):
+        # state input is a stack of 1-D YUV images
+        state_input = layers.Input(shape=self.state_size)
+
+        feature = self.feature_model(state_input)
+        state_out = layers.Dense(32, activation="relu")(feature)
+
+        # Action as input
+        action_input = layers.Input(shape=self.action_size)
+        action_out = layers.Dense(32, activation="relu")(action_input)
+
+        # Both are passed through separate layer before concatenating
+        concat = layers.Concatenate()([state_out, action_out])
+
+        out = layers.Dense(128, activation="relu")(concat)
+        out = layers.Dense(64, activation="relu")(out)
+        out = layers.Dense(32, activation="relu")(out)
+        net_out = layers.Dense(1)(out)
+
+        # Outputs single value for give state-action
+        model = tf.keras.Model(inputs=[state_input, action_input], outputs=net_out)
+        model.summary()
+        keras.utils.plot_model(model, to_file='critic_net.png',
+                               show_shapes=True, show_layer_names=True)
+        return model
+
+    def __call__(self, state, action):
+        # inputs are tensors
+        value = tf.squeeze(self.model([state, action]))
+        return value
+
+    def update_target(self):
+        if self.replacement['name'] == 'hard':
+            if self.train_step_count % \
+                    self.replacement['rep_iter_a'] == 0:
+                self.target.set_weights(self.model.get_weights())
+        else:
+            w = np.array(self.model.get_weights())
+            w_dash = np.array(self.target.get_weights())
+            new_wts = self.replacement['tau'] * w + \
+                      (1 - self.replacement['tau']) * w_dash
+            self.target.set_weights(new_wts)
+
+    def train(self, state_batch, action_batch, reward_batch,
+              next_state_batch, done_batch, actor):
+        self.train_step_count += 1
+        with tf.GradientTape() as tape:
+            critic_weights = self.model.trainable_variables
+            target_actions = actor.target(next_state_batch)
+            target_critic = self.target([next_state_batch, target_actions])
+            y = reward_batch + self.gamma * (1 - done_batch) * target_critic
+            critic_value = self.model([state_batch, action_batch])
+            critic_loss = tf.math.reduce_mean(tf.square(y - critic_value))
+
+        critic_grad = tape.gradient(critic_loss, critic_weights)
+        #critic_grad = [tf.clip_by_value(g, 1e-3) for g in critic_grad]      # Gradient Clipping
+        self.optimizer.apply_gradients(zip(critic_grad, critic_weights))
+        return critic_loss
+
+    def save_weights(self, filename):
+        self.model.save_weights(filename)
+
+    def load_weights(self, filename):
+        self.model.load_weights(filename)
+
+
 ####################################
 # ACTOR-CRITIC AGENT
 ##################################
-class DDPG_PER_Agent:
+class DDPGPERAgent:
     def __init__(self, state_size, action_size,
                  replacement,
                  lr_a, lr_c,
@@ -129,7 +304,7 @@ class DDPG_PER_Agent:
         '''
         Computes the time-delay error which is used to determine the relative priority
         of the experience. This will be used for PER-based training
-        delta[i] = r_t + gamma * QT(s', a) - Q(s, a)
+        delta[i] = r_t + gamma * QT(s', a_t) - Q(s, a)
         :param experience:
         :return: error
         '''
@@ -143,20 +318,24 @@ class DDPG_PER_Agent:
         tf_done = tf.convert_to_tensor(done, dtype=tf.float32)  # scalar
 
         # predict Q(s,a) for a given batch of states and action
-        prim_qt = tf.squeeze(self.critic.model([tf_state, tf_action]))
+        q_value = tf.squeeze(self.critic.model([tf_state, tf_action]))
 
-        # target Qtarget(s',a)
-        target_qtp1 = tf.squeeze(self.critic.target([tf_next_state, tf_action]))
+        # target_action
+        t_action = tf.squeeze(self.actor.target(tf_next_state))
+        t_action = tf.expand_dims(t_action, 0)
 
-        target_qt = reward + self.gamma * (1 - tf_done) * target_qtp1
+        # target Qt(s',at)
+        qt_next = tf.squeeze(self.critic.target([tf_next_state, t_action]))
+
+        target_qt = reward + self.gamma * (1 - tf_done) * qt_next
 
         # time-delay error
-        error = tf.squeeze(target_qt - prim_qt).numpy()
-        error = DDPG_PER_Agent.huber_loss(error)
+        error = tf.squeeze(target_qt - q_value).numpy()
+        error = DDPGPERAgent.huber_loss(error)
 
         if _DEBUG:
             with open('./td_error.txt', 'a+') as file:
-                file.write('{:0.2f}\t{:0.2f}\t{:0.2f}\n'.format(error, target_qt.numpy(), target_qtp1.numpy()))
+                file.write('{:0.2f}\t{:0.2f}\t{:0.2f}\n'.format(error, target_qt.numpy(), qt_next.numpy()))
         return error
 
     @staticmethod

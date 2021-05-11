@@ -1,10 +1,11 @@
 """
 PPO Algorithm for Pendulum Gym Environment
+Tensorflow 2.x compatible
 
-- It seems to work properly with best episodic score reaching -200 within 1000 episodes
+- It seems to work properly with best episodic score reaching -200 within 1000 episodes or around 10-12 seasons
 - Implements both 'KL-Penalty' method as well as 'PPO-Clip' method
 - makes use of tensorflow probability
-- The program terminates when the best episodic score over 50 episodes > -200
+- The program terminates when the season score over 50 episodes > -200
 """
 import pickle
 import gym

@@ -31,9 +31,10 @@ class KukaActor:
         state_input = layers.Input(shape=self.state_size)
         feature = self.feature_model(state_input)
 
-        l2 = layers.Dense(64, activation="relu")(feature)
+        x = layers.Dense(128, activation="relu")(feature)
+        x = layers.Dense(64, activation="relu")(x)
         net_out = layers.Dense(self.action_size[0], activation='tanh',
-                               kernel_initializer=last_init)(l2)
+                               kernel_initializer=last_init)(x)
 
         net_out = net_out * self.upper_bound  # element-wise product
         model = keras.Model(state_input, net_out)
@@ -41,6 +42,11 @@ class KukaActor:
         keras.utils.plot_model(model, to_file='actor_net.png',
                                show_shapes=True, show_layer_names=True)
         return model
+
+    def __call__(self, state):
+        # input is a tensor
+        action = tf.squeeze(self.model(state))
+        return action
 
     def update_target(self):
 

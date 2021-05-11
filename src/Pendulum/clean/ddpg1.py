@@ -5,8 +5,9 @@ Tensorflow 2.0 / Keras implementation
 
 Gives a average reward of about -180 to -200 (over 40 episodes)
 
-Be careful with @tf.function decorator. Does not work for all functions. It does not work when I decorate the function
-experience_replay() with this decorator.
+It has a single actor_critic class compared to the standard 3 classes, one for actor,
+one for critic and one for the agent. This is the direct implementation available at the
+above link.
 '''
 import gym
 import tensorflow as tf
@@ -14,8 +15,14 @@ from tensorflow.keras import layers
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import animation
+import random
 
 print('Tensorflow version: ', tf.__version__)
+
+# for reproducibility
+random.seed(2212)
+np.random.seed(2212)
+tf.random.set_seed(2212)
 
 
 def save_frames_as_gif(frames, path='./', filename='gym_animation.gif'):
@@ -202,7 +209,6 @@ class actor_critic:
         for (a, b) in zip(target_weights, weights):
             a.assign(b * tau + a * (1 - tau))
 
-    @tf.function
     def update_target_models(self):
         actor_critic._update_target(self.target_actor.variables, self.actor_model.variables, self.tau)
         actor_critic._update_target(self.target_critic.variables, self.critic_model.variables, self.tau)
@@ -243,6 +249,7 @@ if __name__ == '__main__':
 
     problem = "Pendulum-v0"
     env = gym.make(problem)
+    env.seed(2212)  # for reproducibility
 
     num_states = env.observation_space.shape[0]
     print("Size of State Space ->  {}".format(num_states))

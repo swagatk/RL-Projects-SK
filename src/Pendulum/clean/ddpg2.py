@@ -1,15 +1,13 @@
 '''
 Actor-Critic Model for implementing DDPG Algorithm
 Tensorflow 2.0
-This code also works. average score over 40 episodes is about -180 after training over 100 episodes.
-
+This code works. average score over last 40 episodes > -200 after training over 50-60 episodes.
 '''
 import tensorflow as tf
 import numpy as np
 from tensorflow import keras
 from tensorflow.keras import layers
 import matplotlib.pyplot as plt
-from utils import save_frames_as_gif
 import gym
 
 # required for reproducing the result
@@ -66,6 +64,7 @@ class Actor:
         self.model = self._build_net()
         self.target = self._build_net()
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
+        self.target.set_weights(self.model.get_weights())
 
     def _build_net(self):
         last_init = tf.random_uniform_initializer(minval=-0.003, maxval=0.003)
@@ -112,6 +111,9 @@ class Actor:
         self.optimizer.apply_gradients(zip(actor_grad, actor_weights))
 
 
+#######################
+# CRITIC
+######################
 class Critic:
     def __init__(self, state_size, action_size,
                         replacement,
@@ -126,6 +128,7 @@ class Critic:
         self.target = self._build_net()
         self.gamma = gamma
         self.train_step_count = 0
+        self.target.set_weights(self.model.get_weights())
 
     def _build_net(self):
         state_input = layers.Input(shape=(self.state_size,))
@@ -181,6 +184,9 @@ class Critic:
         self.model.load_weights(filename)
 
 
+###########################
+# REPLAY BUFFER
+#######################
 class Buffer:
     def __init__(self, state_size, action_size,
                  buffer_capacity=100000, batch_size=64):
@@ -225,8 +231,10 @@ class Buffer:
 
         return state_batch, action_batch, reward_batch, next_state_batch
 
-
-class AC_Agent:
+#########################
+# DDPG AGENT
+#########################
+class DDPGAgent:
     def __init__(self, state_size, action_size,
                  replacement, lr_a, lr_c,
                  batch_size,
@@ -314,7 +322,7 @@ if __name__=='__main__':
     print("Max Value of Action ->  {}".format(upper_bound))
     print("Min Value of Action ->  {}".format(lower_bound))
 
-    agent = AC_Agent(num_states, num_actions,
+    agent = DDPGAgent(num_states, num_actions,
                      replacement, LR_A, LR_C,
                      BATCH_SIZE,
                      MEMORY_CAPACITY,
@@ -357,6 +365,9 @@ if __name__=='__main__':
         avg_reward = np.mean(ep_reward_list[-40:])
         print("Episode * {} * Avg Reward = {} ".format(ep, avg_reward))
         avg_reward_list.append(avg_reward)
+        if avg_reward > -200:
+            print('Problem is solved in {} episodes'.format(ep))
+            break
     env.close()
 
     # plot
@@ -366,8 +377,6 @@ if __name__=='__main__':
     plt.grid()
     plt.savefig('./pendu_ddpg_tf2.png')
     plt.show()
-    # save animation as GIF
-    #save_frames_as_gif(frames)
 
 
 

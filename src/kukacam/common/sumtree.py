@@ -14,7 +14,7 @@ class Node:
         if not self.is_leaf:
             self.value = self.left.value + self.right.value
         self.parent = None
-        self.idx = idx
+        self.idx = idx          # this is set only for leaf nodes
         if left is not None:
             left.parent = self
         if right is not None:
@@ -39,6 +39,7 @@ class SumTree:
     def retrieve(self, value: float, node: Node):
         if node.is_leaf:
             return node
+
         if node.left.value >= value:
             return self.retrieve(value, node.left)
         else:
@@ -73,9 +74,12 @@ class SumTree:
 
 
 if __name__ == '__main__':
+    # each entry in the input list represent their relative importance
+    # the list values are priorities themselves and should be positive
     input = [1, 4, 2, 3]
     s = SumTree(input)
     selected_values = s.demonstrate_sampling()
 
+    # so the item '4' is four-times more likely to be selected compared to item '1'
     print('should be ~4:', sum([1 for x in selected_values if x == 4]) /
           sum([1 for y in selected_values if y == 1]))

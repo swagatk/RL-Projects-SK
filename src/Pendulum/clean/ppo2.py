@@ -1,13 +1,17 @@
 '''
-PPO Algorithm for Pendulum
+PPO Algorithm for Pendulum-v0 environment
+Tensorflow 2.0
 
-Changes:
-- We use a different version for compute_advantage function
+Changes compared to 'ppo1.py'
+- We use a different version for compute_advantage function that also computes the discounted returns
 - It does not require the BUFFER class. Experiences are stored in a list which is discarded after each iteration
+- The actor loss function also include critic loss term as well as entropy term
 
 Effect:
-- It appears to be slower in convergence. It takes around 88 seasons to solve the problem.
+- The problem get solved within 15 seasons. The problem is considered solved when season score > -200.
+- including critic_loss and entropy improves the convergence speed. The problem gets solved within 13 seasons.
 '''
+import random
 import gym
 import numpy as np
 import tensorflow as tf
@@ -23,6 +27,7 @@ print('Tensorflow version:', tf.__version__)
 print('Keras Version:', tf.keras.__version__)
 
 # set random seed for reproducibility
+random.seed(20)
 tf.random.set_seed(20)
 np.random.seed(20)
 
@@ -87,8 +92,7 @@ class Actor:
             pi = tfp.distributions.Normal(mean, std)
             ratio = tf.exp(pi.log_prob(tf.squeeze(action_batch)) -
                            old_pi.log_prob(tf.squeeze(action_batch)))       # shape = (-1,3)
-            adv_stack = tf.stack([advantages for i in range(self.action_size[0])], axis=1) # shape(-1,3)
-            surr = ratio * adv_stack   # surrogate function
+            surr = ratio * advantages # surrogate function
             kl = tfp.distributions.kl_divergence(old_pi, pi)    # kl divergence
             entropy = tf.reduce_mean(pi.entropy())      # entropy
             self.kl_value = tf.reduce_mean(kl)
@@ -98,8 +102,9 @@ class Actor:
             elif self.method == 'clip':
                 l_clip = tf.reduce_mean(
                     tf.minimum(surr, tf.clip_by_value(ratio, 1. - self.epsilon,
-                                                      1. + self.epsilon) * adv_stack))
-                actor_loss = - (l_clip - 0.0 * c_loss + self.entropy_coeff * entropy)   # notice 0.0
+                                                      1. + self.epsilon) * advantages))
+                actor_loss = -(l_clip - self.c_loss_coeff * c_loss +
+                                                self.entropy_coeff * entropy)
             actor_weights = self.model.trainable_variables
         actor_grad = tape.gradient(actor_loss, actor_weights)
         self.optimizer.apply_gradients(zip(actor_grad, actor_weights))
@@ -111,7 +116,6 @@ class Actor:
             self.beta /= 2
         elif self.kl_value > self.kl_target * 1.5:
             self.beta *= 2
-
 
 ####################################
 # CRITIC NETWORK
@@ -166,16 +170,16 @@ class Critic:
 class PPOAgent:
     def __init__(self, state_size, action_size,
              batch_size, upper_bound,
-             lr_a=2e-4,             # Actor learning rate
+             lr_a=1e-4,             # Actor learning rate
              lr_c=2e-4,             # Critic Learning Rate
              gamma=0.9,             # Discount factor
              lmbda=0.95,            # Required for GAE
              beta=0.5,              # Required for KL-Penalty Method
              ent_coeff=0.01,        # Weighting factor for Entropy term
-             c_loss_coeff=1.0,      # Weighting factor Critic Loss component
+             c_loss_coeff=0.5,      # Weighting factor Critic Loss component
              epsilon=0.2,           # Required for PPO-CLIP
              kl_target=0.01,        # Required for KL-Penalty method
-             method='clip'):
+             method='penalty'):
         self.state_size = state_size
         self.action_size = action_size
         self.actor_lr = lr_a
@@ -217,7 +221,6 @@ class PPOAgent:
 
         # compute advantages and discounted cumulative rewards
         target_values, advantages = self.compute_advantages(states, next_states, rewards, dones)
-
         target_values = tf.convert_to_tensor(target_values, dtype=tf.float32)
         advantages = tf.convert_to_tensor(advantages, dtype=tf.float32)
 
@@ -229,15 +232,16 @@ class PPOAgent:
         assert n_split > 0, 'there should be at least one split'
 
         indexes = np.arange(n_split, dtype=int)
+        np.random.shuffle(indexes)
 
         # training
         a_loss_list = []
         c_loss_list = []
         kl_list = []
-        np.random.shuffle(indexes)
         for _ in range(epochs):
             for i in indexes:
                 old_pi = pi[i * self.batch_size: (i + 1) * self.batch_size]
+
                 s_split = tf.gather(states, indices=np.arange(i * self.batch_size, (i+1) * self.batch_size), axis=0)
                 a_split = tf.gather(actions, indices=np.arange(i * self.batch_size, (i+1) * self.batch_size), axis=0)
                 tv_split = tf.gather(target_values, indices=np.arange(i * self.batch_size, (i+1) * self.batch_size), axis=0)
@@ -253,8 +257,8 @@ class PPOAgent:
                 kl_list.append(self.actor.kl_value)
 
             # update lambda once in each epoch
-            # if self.method == 'penalty':
-            #     self.actor.update_beta()
+            if self.method == 'penalty':
+                self.actor.update_beta()
 
         actor_loss = np.mean(a_loss_list)
         critic_loss = np.mean(c_loss_list)
@@ -404,17 +408,7 @@ if __name__ == '__main__':
     # create an agent
     agent = PPOAgent(state_size, action_size,
                          batch_size=200,
-                         upper_bound=action_bound,
-                         lr_a=2e-4,             # Actor Learning Rate
-                         lr_c=2e-4,             # Critic Learning Rate
-                         gamma=0.9,             # Discount Factor
-                         lmbda=0.9,             # Required for GAE
-                         beta=0.5,              # Required for KL-Penalty
-                         ent_coeff=0.0,         # Weighting for Entropy component
-                         c_loss_coeff=0.0,      # Weighting for Loss component
-                         epsilon=0.2,           # Required for PPO-Clip
-                         kl_target=0.01,        # Required for KL-Penalty Method
-                         method='clip')
+                         upper_bound=action_bound)
 
     # training with seasons
     main(env, agent)
