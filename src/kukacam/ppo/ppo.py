@@ -42,7 +42,6 @@ class PPOActor:
         self.state_size = state_size  # shape: (w, h, c)
         self.action_size = action_size  # shape: (n, )
         self.lr = learning_rate
-        self.epsilon = epsilon          # required for PPO-clip
         self.upper_bound = upper_bound
         self.epsilon = epsilon          # required for clip method
         self.beta = beta        # required for KL-penalty method

@@ -6,10 +6,12 @@ Changes compared to 'ppo1.py'
 - We use a different version for compute_advantage function that also computes the discounted returns
 - It does not require the BUFFER class. Experiences are stored in a list which is discarded after each iteration
 - The actor loss function also include critic loss term as well as entropy term
+- Gradient clipping is applied during training
 
 Effect:
 - The problem get solved within 15 seasons. The problem is considered solved when season score > -200.
 - including critic_loss and entropy improves the convergence speed. The problem gets solved within 13 seasons.
+- Applying gradient clipping slightly improves the training performance.
 '''
 import random
 import gym
@@ -50,6 +52,7 @@ class Actor:
         self.method = method
         self.kl_target = kl_target  # required for 'penalty' method
         self.kl_value = 0       # most recent kld value
+        self.grad_clip_val = 10     # use 'None' to avoid gradient clipping
 
         # create NN models
         self.model = self._build_net()
@@ -107,7 +110,13 @@ class Actor:
                                                 self.entropy_coeff * entropy)
             actor_weights = self.model.trainable_variables
         actor_grad = tape.gradient(actor_loss, actor_weights)
-        self.optimizer.apply_gradients(zip(actor_grad, actor_weights))
+
+        if self.grad_clip_val is not None:
+            clipped_grad = [tf.clip_by_value(grad, -1 * self.grad_clip_val,
+                                          self.grad_clip_val) for grad in actor_grad]
+            self.optimizer.apply_gradients(zip(clipped_grad, actor_weights))
+        else:
+            self.optimizer.apply_gradients(zip(actor_grad, actor_weights))
         return actor_loss.numpy()
 
     def update_beta(self):
@@ -127,6 +136,7 @@ class Critic:
         self.action_size = action_size
         self.lr = learning_rate
         self.train_step_count = 0
+        self.grad_clip_val = 10.0
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
         self.model = self._build_net()
 
@@ -154,7 +164,13 @@ class Critic:
             critic_value = tf.squeeze(self.model(state_batch))
             critic_loss = tf.math.reduce_mean(tf.square(disc_rewards - critic_value))
         critic_grad = tape.gradient(critic_loss, critic_weights)
-        self.optimizer.apply_gradients(zip(critic_grad, critic_weights))
+
+        if self.grad_clip_val is None:
+            self.optimizer.apply_gradients(zip(critic_grad, critic_weights))
+        else:
+            clipped_grad = [tf.clip_by_value(grad, -1.0 * self.grad_clip_val,
+                                             self.grad_clip_val) for grad in critic_grad]
+            self.optimizer.apply_gradients(zip(clipped_grad, critic_weights))
         return critic_loss.numpy()
 
     def save_weights(self, filename):
@@ -175,11 +191,11 @@ class PPOAgent:
              gamma=0.9,             # Discount factor
              lmbda=0.95,            # Required for GAE
              beta=0.5,              # Required for KL-Penalty Method
-             ent_coeff=0.01,        # Weighting factor for Entropy term
-             c_loss_coeff=0.5,      # Weighting factor Critic Loss component
+             ent_coeff=0.0,        # Weighting factor for Entropy term
+             c_loss_coeff=0.0,      # Weighting factor Critic Loss component
              epsilon=0.2,           # Required for PPO-CLIP
              kl_target=0.01,        # Required for KL-Penalty method
-             method='penalty'):
+             method='clip'):        # Use 'clip' or 'penalty' as options
         self.state_size = state_size
         self.action_size = action_size
         self.actor_lr = lr_a
@@ -348,7 +364,7 @@ def main(env, agent, path='./'):
         print('The file does not exist. It will be created.')
 
     #training
-    max_seasons = 1000
+    max_seasons = 100
     best_score = -np.inf
     # best_valid_score = 0
     scores_window = deque(maxlen=100)

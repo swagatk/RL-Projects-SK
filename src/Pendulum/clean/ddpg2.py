@@ -9,6 +9,7 @@ from tensorflow import keras
 from tensorflow.keras import layers
 import matplotlib.pyplot as plt
 import gym
+import os
 
 # required for reproducing the result
 #np.random.seed(1)
@@ -109,6 +110,7 @@ class Actor:
 
         actor_grad = tape.gradient(actor_loss, actor_weights)
         self.optimizer.apply_gradients(zip(actor_grad, actor_weights))
+        return actor_loss
 
 
 #######################
@@ -173,9 +175,9 @@ class Critic:
             y = reward_batch + self.gamma * target_critic
             critic_value = self.model([state_batch, action_batch])
             critic_loss = tf.math.reduce_mean(tf.square(y - critic_value))
-
         critic_grad = tape.gradient(critic_loss, critic_weights)
         self.optimizer.apply_gradients(zip(critic_grad, critic_weights))
+        return critic_loss
 
     def save_weights(self, filename):
         self.model.save_weights(filename)
@@ -283,9 +285,10 @@ class DDPGAgent:
         state_batch, action_batch, reward_batch,\
                         next_state_batch = self.buffer.sample()
 
-        self.actor.train(state_batch, self.critic)
-        self.critic.train(state_batch, action_batch, reward_batch,
+        a_loss = self.actor.train(state_batch, self.critic)
+        c_loss = self.critic.train(state_batch, action_batch, reward_batch,
                           next_state_batch, self.actor)
+        return a_loss, c_loss
 
     def update_targets(self):
         self.actor.update_target()
@@ -293,8 +296,18 @@ class DDPGAgent:
 
 
 if __name__=='__main__':
+
+    path = './'
+    filename = path + 'result_ddpg.txt'
+
+    if os.path.exists(filename):
+        print('Deleting existing file. A new one will be created.')
+        os.remove(filename)
+    else:
+        print('The file does not exist. It will be created.')
+
     # Hyper parameters
-    MAX_EPISODES = 100
+    MAX_EPISODES = 200
 
     LR_A = 0.001
     LR_C = 0.002
@@ -305,7 +318,7 @@ if __name__=='__main__':
         dict(name='hard', rep_iter_a=600, rep_iter_c=500)
     ][0]  # you can try different target replacement strategies
 
-    MEMORY_CAPACITY = 50000
+    MEMORY_CAPACITY = 20000
     BATCH_SIZE = 64
 
     problem = "Pendulum-v0"
@@ -347,7 +360,7 @@ if __name__=='__main__':
             episodic_reward += reward
 
             # training
-            agent.experience_replay()
+            a_loss, c_loss = agent.experience_replay()
 
             # Update target models
             agent.update_targets()
@@ -362,18 +375,22 @@ if __name__=='__main__':
                 break
 
         ep_reward_list.append(episodic_reward)
-        avg_reward = np.mean(ep_reward_list[-40:])
+        avg_reward = np.mean(ep_reward_list[-50:])
         print("Episode * {} * Avg Reward = {} ".format(ep, avg_reward))
         avg_reward_list.append(avg_reward)
-        if avg_reward > -200:
-            print('Problem is solved in {} episodes'.format(ep))
-            break
+
+        with open(filename, 'a') as file:
+            file.write('{}\t{}\t{}\t{}\t{}\n'.format(ep, episodic_reward,
+                                               avg_reward, a_loss, c_loss))
+        #if avg_reward > -200:
+        #    print('Problem is solved in {} episodes'.format(ep))
+        #    break
     env.close()
 
     # plot
     plt.plot(avg_reward_list)
     plt.xlabel('Episodes')
-    plt.ylabel('Avg episodic reward')
+    plt.ylabel('Average of last 50 episodic rewards')
     plt.grid()
     plt.savefig('./pendu_ddpg_tf2.png')
     plt.show()
