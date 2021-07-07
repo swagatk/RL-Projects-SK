@@ -47,19 +47,19 @@ if __name__ == "__main__":
     ##############################################
 
     # #### Hyper-parameters
-    SEASONS = 500
-    success_value = 70
+    SEASONS = 500       # 500 (Fetch) # 50 (Kuka)
+    success_value = 70      # Really not required
     lr_a = 0.0002  # 0.0002
     lr_c = 0.0002  # 0.0002
     epochs = 20
-    training_batch = 3072  # 1024 (kuka), 512
-    buffer_capacity = 50000
-    batch_size = 256
+    training_batch = 3072   # 5024   # 3072 (Fetch)  # 1024 (kuka), 512
+    buffer_capacity = 100000      # 50000 (Fetch)    # 20000 (kuka)
+    batch_size = 256    # 528    # 256  # 128 (kuka)
     epsilon = 0.2  # 0.07
     gamma = 0.993  # 0.99
     lmbda = 0.7  # 0.9
 
-    use_attention = True  # enable/disable for attention model
+    use_attention = False  # enable/disable for attention model
     use_mujoco = True
 
     if use_mujoco:
@@ -75,13 +75,14 @@ if __name__ == "__main__":
         #                          isDiscrete=False)
 
     # PPO Agent
-    # agent = PPOAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size, epsilon, gamma,
-    #                  lmbda, use_attention, use_mujoco)
+    agent = PPOAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size,
+                      epsilon, gamma, lmbda, use_attention, use_mujoco)
     # IPG Agent
-    # agent = IPGAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size, epsilon, gamma,
-    #                  lmbda, use_attention, use_mujoco)
+    # agent = IPGAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size,
+    #             buffer_capacity, epsilon, gamma, lmbda, use_attention, use_mujoco)
+
     # IPG HER Agent
-    agent = IPGHERAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size,
-                        buffer_capacity, epsilon, gamma, lmbda, use_attention, use_mujoco)
+    # agent = IPGHERAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size,
+    #                     buffer_capacity, epsilon, gamma, lmbda, use_attention, use_mujoco)
 
     agent.run()

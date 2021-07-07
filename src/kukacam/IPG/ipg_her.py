@@ -11,6 +11,7 @@ URL: https://github.com/hayden750/DeepHEC
 
 '''
 
+import sys
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -19,6 +20,12 @@ import os
 import datetime
 import random
 from collections import deque
+
+# Absolute path of modules
+sys.path.append("/home/swagat/GIT/RL-Projects-SK/src/kukacam/common")
+sys.path.append("/home/swagat/GIT/RL-Projects-SK/src/kukacam")
+sys.path.append("/home/swagat/GIT/RL-Projects-SK/src/kukacam/IPG")
+print(sys.path)
 
 # Local imports
 from common.FeatureNet import FeatureNetwork, AttentionFeatureNetwork
@@ -213,7 +220,10 @@ class Baseline:
 class IPGHERAgent:
     def __init__(self, env, SEASONS, success_value, lr_a, lr_c,
                  epochs, training_batch, batch_size, buffer_capacity, epsilon,
-                 gamma, lmbda, use_attention, use_mujoco):
+                 gamma, lmbda, use_attention=False, use_mujoco=False,
+                 filename=None,
+                 tb_log=False,
+                 val_freq=50):
         self.env = env
         self.action_size = self.env.action_space.shape
 
@@ -241,6 +251,9 @@ class IPGHERAgent:
         self.lmbda = lmbda
         self.use_attention = use_attention
         self.thr = 0.3          # threshold similarity between state & goal
+        self.filename = filename
+        self.TB_LOG = tb_log
+        self.val_freq = val_freq
 
         # create HER buffer to store experiences
         self.buffer = HERBuffer(self.buffer_capacity, self.batch_size)
@@ -264,13 +277,19 @@ class IPGHERAgent:
         self.baseline = Baseline(state_size=self.state_size, action_size=self.action_size,
                                                 lr=self.lr_c, feature=self.feature)
 
-    def policy(self, state, goal):
+    def policy(self, state, goal, deterministic=False):
         tf_state = tf.expand_dims(tf.convert_to_tensor(state), 0)
         tf_goal = tf.expand_dims(tf.convert_to_tensor(goal), 0)
         mean, std = self.actor(tf_state, tf_goal)
-        action = mean + np.random.uniform(-self.upper_bound, self.upper_bound, size=mean.shape) * std
-        action = np.clip(action, -self.upper_bound, self.upper_bound)
-        return action
+        if deterministic:
+            action = mean
+        else:
+            pi = tfp.distributions.Normal(mean, std)
+            action = pi.sample()
+            #action = mean + tf.random.uniform(-self.upper_bound, self.upper_bound, size=mean.shape) * std
+
+        action = tf.clip_by_value(action, -self.upper_bound, self.upper_bound)
+        return action.numpy()
 
     def compute_advantage(self, r_batch, s_batch, ns_batch, d_batch):
         # input: tensors
@@ -423,7 +442,7 @@ class IPGHERAgent:
             t = 0
             ep_reward = 0
             while True:
-                action = self.policy(state, goal)
+                action = self.policy(state, goal, deterministic=True)
                 next_obsv, reward, done, _ = env.step(action)
 
                 if self.use_mujoco:
@@ -480,29 +499,21 @@ class IPGHERAgent:
     def run(self):
         #######################
         # TENSORBOARD SETTINGS
-        TB_LOG = False # enable / disable tensorboard logging
-        if TB_LOG:
+        if self.TB_LOG:
             current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
             train_log_dir = 'logs/train/' + current_time
             train_summary_writer = tf.summary.create_file_writer(train_log_dir)
         ########################################
-        PATH_FLAG = True
+        if self.filename is None:
+            self.filename = './output.txt'
+        self.filename = uniquify(self.filename)
+
+        # path for storing trained models
         path = './'
-        if self.use_attention:
-            filename = path + 'freach_ipg_her_attn.txt'
-        else:
-            filename = path + 'freach_ipg_her.txt'
 
-        if PATH_FLAG:   # create unique filenames
-            filename = uniquify(filename)
-        else:   # delete existing files
-            if os.path.exists(filename):
-                os.remove(filename)
-
-        VALIDATION = False
-        if VALIDATION:
+        if self.val_freq is not None:
             val_scores = deque(maxlen=50)
-            val_freq = 10
+            val_score = 0
 
         # initial state and goal
         if self.use_mujoco:
@@ -523,7 +534,6 @@ class IPGHERAgent:
             states, next_states, actions, rewards, dones, goals = [], [], [], [], [], []
             ep_experience = []     # episodic experience buffer
             s_score = 0
-
             done, score = False, 0
             self.episode = 0  # initialize the episode_count for each season
             for _ in range(self.training_batch):    # time steps
@@ -593,44 +603,44 @@ class IPGHERAgent:
             # on-policy & off-policy training
             a_loss, c_loss = self.replay(states, actions, rewards, next_states, dones, goals)
 
-            success_rate = s_score / sum(dones)
-            s_scores.append(s_score)
+            avg_episodic_score = s_score / sum(dones)
+            s_scores.append(avg_episodic_score)
             mean_s_score = np.mean(s_scores)
             if mean_s_score > best_score:
                 self.save_model(path, 'actor_wts.h5', 'critic_wts.h5', 'baseline_wts.h5')
                 print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_s_score))
                 best_score = mean_s_score
 
-            if s % 50 == 0:
-                print('Season: {}, episodes: {}, success_rate:{}, Mean Success Rate:{}'\
-                      .format(s, self.episode, s_score/self.episode, mean_s_score/self.episode))
+            # if s % 50 == 0:
+            #     print('Season: {}, episodes: {}, success_rate:{}, Mean Success Rate:{}'\
+            #           .format(s, self.episode, s_score/self.episode, mean_s_score/self.episode))
 
-            if VALIDATION:
-                if s % val_freq == 0:
-                    print('Season: {}, Score: {}, Mean score: {}'.format(s, s_score, mean_s_score))
-                    val_score = self.validate(self.env)
-                    val_scores.append(val_score)
-                    mean_val_score = np.mean(val_scores)
-                    print('Season: {}, Validation Score: {}, Mean Validation Score: {}' \
-                          .format(s, val_score, mean_val_score))
+            if self.val_freq is not None and s % self.val_freq == 0:
+                print('Season: {}, Score: {}, Mean score: {}'.format(s, s_score, mean_s_score))
+                val_score = self.validate(self.env)
+                val_scores.append(val_score)
+                mean_val_score = np.mean(val_scores)
+                print('Season: {}, Validation Score: {}, Mean Validation Score: {}' \
+                      .format(s, val_score, mean_val_score))
 
-            if TB_LOG:
+            if self.TB_LOG:
                 with train_summary_writer.as_default():
                     tf.summary.scalar('1. Season Score', s_score, step=s)
                     tf.summary.scalar('2. Mean Season Score', mean_s_score, step=s)
-                    tf.summary.scalar('3. Success rate', success_rate, step=s)
-                    if VALIDATION:
-                        tf.summary.scalar('4. Validation Score', val_score, step=s)
+                    tf.summary.scalar('3. Success rate', avg_episodic_score, step=s)
+                    tf.summary.scalar('4. Validation Score', val_score, step=s)
                     tf.summary.scalar('5. Actor Loss', a_loss, step=s)
                     tf.summary.scalar('6. Critic Loss', c_loss, step=s)
 
-            with open(filename, 'a') as file:
+            with open(self.filename, 'a') as file:
                 file.write('{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n' \
-                           .format(s, self.episode, s_score, mean_s_score, a_loss, c_loss))
+                           .format(s, self.episode, avg_episodic_score, mean_s_score, a_loss, c_loss))
 
-            # if best_score > self.success_value:
-            #     print('Problem is solved in {} episodes with score {}'.format(self.episode, best_score))
-            #     break
+            if self.success_value is not None:
+                if best_score > self.success_value:
+                    print('Problem is solved in {} episodes with score {}'.format(self.episode, best_score))
+                    break
+
         # end of season loop
         end = datetime.datetime.now()
         print('Time to completion: {}'.format(end-start))
@@ -651,4 +661,36 @@ class IPGHERAgent:
         self.actor.load_weights(actor_file)
         self.critic.load_weights(critic_file)
         self.baseline.load_weights(baseline_file)
+
+    # def visualize_attention(self, actor_model, critic_model, nmax=20):
+    #
+    #     # load models if available
+    #     if actor_model and critic_model is not None:
+    #         self.load_model(actor_model, critic_model)
+    #
+    #     for _ in range(nmax):
+    #         if self.use_mujoco:
+    #             state = self.env.reset()["observation"]
+    #         else:
+    #             state = self.env.reset()
+    #             state = np.asarray(state, dtype=np.float32) / 255.0  # convert into float array
+    #
+    #         while True:
+    #             action = self.policy(state)
+    #             next_state, reward, done, _ = self.env.step(action)
+    #
+    #             if self.use_mujoco:
+    #                 next_state = next_state["observation"]
+    #             else:
+    #                 next_state = np.asarray(next_state, dtype=np.float32) / 255.0
+    #
+    #             if done:
+    #                 break
+
+
+
+
+
+
+
 

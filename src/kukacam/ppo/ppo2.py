@@ -199,9 +199,8 @@ class PPOCritic:
 class PPOAgent:
     def __init__(self, env, SEASONS, success_value, lr_a, lr_c,
                  epochs, training_steps, batch_size,
-                 epsilon, gamma, lmbda, beta=0.5, c_loss_coeff=0.0,
-                 entropy_coeff=0.0, kl_target=0.01,
-                 use_attention=False, use_mujoco=False, method='clip'):
+                 epsilon, gamma, lmbda, use_attention, use_mujoco, beta=0.5, c_loss_coeff=0.0,
+                 entropy_coeff=0.0, kl_target=0.01, method='clip'):
         self.env = env
         self.action_size = self.env.action_space.shape
 
@@ -244,11 +243,11 @@ class PPOAgent:
         self.critic = PPOCritic(self.state_size, self.action_size,
                                 self.lr_c, self.feature)       # estimates state value
 
-    def policy(self, state, greedy=False):
+    def policy(self, state, deterministic=False):
         tf_state = tf.expand_dims(tf.convert_to_tensor(state), 0)
         mean, std = self.actor(tf_state)
 
-        if greedy:
+        if deterministic:
             action = mean
         else:
             pi = tfp.distributions.Normal(mean, std)
@@ -270,7 +269,7 @@ class PPOAgent:
         dones = tf.convert_to_tensor(dones, dtype=tf.float32)
 
         # compute advantages and discounted cumulative rewards
-        target_values, advantages = self.compute_advantage(rewards, states, next_states, dones)
+        advantages, target_values = self.compute_advantage(rewards, states, next_states, dones)
 
         target_values = tf.convert_to_tensor(target_values, dtype=tf.float32)
         advantages = tf.convert_to_tensor(advantages, dtype=tf.float32)
@@ -360,7 +359,7 @@ class PPOAgent:
             t = 0
             ep_reward = 0
             while True:
-                action = self.policy(state)
+                action = self.policy(state, deterministic=True)
                 next_obsv, reward, done, _ = env.step(action)
 
                 if self.use_mujoco:
@@ -392,9 +391,9 @@ class PPOAgent:
         PATH_FLAG = True
         path = './'
         if self.use_attention:
-            filename = path + 'result_ppo_attn.txt'
+            filename = path + 'freach_ppo_attn.txt'
         else:
-            filename = path + 'result_ppo.txt'
+            filename = path + 'freach_ppo.txt'
 
         if PATH_FLAG:   # create unique filenames
             filename = uniquify(filename)
@@ -402,11 +401,19 @@ class PPOAgent:
             if os.path.exists(filename):
                 os.remove(filename)
         ###################################
-        VALIDATION = False
+        VALIDATION = True
         if VALIDATION:
             val_scores = deque(maxlen=50)
-            val_freq = 10
+            val_freq = 50
         ##################################
+
+        # initial state
+        if self.use_mujoco:
+            state = self.env.reset()["observation"]
+        else:
+            state = self.env.reset()
+            state = np.asarray(state, dtype=np.float32) / 255.0
+
         start = datetime.datetime.now()
         best_score = -np.inf
         s_scores = deque(maxlen=50)
@@ -415,14 +422,8 @@ class PPOAgent:
             states, next_states, actions, rewards, dones = [], [], [], [], []
             s_score = 0
 
-            # initial state
-            if self.use_mujoco:
-                state = self.env.reset()["observation"]
-            else:
-                state = self.env.reset()
-                state = np.asarray(state, dtype=np.float32) / 255.0
-
             done, score = False, 0
+            self.episode = 0    # initialize episode count for each season
             for t in range(self.training_steps):
                 action = self.policy(state)
                 next_state, reward, done, _ = self.env.step(action)
@@ -443,7 +444,7 @@ class PPOAgent:
                 score += reward
 
                 if done:
-                    self.episode += 1
+                    self.episode += 1   # get total count
                     s_score += score    # season score
 
                     if self.use_mujoco:
@@ -459,7 +460,7 @@ class PPOAgent:
             a_loss, c_loss, kld = self.train(states, actions, rewards,
                                              next_states, dones)
 
-            success_rate = s_score / sum(dones)
+            episodic_score = s_score / sum(dones)   # not used
             s_scores.append(s_score)
             mean_s_score = np.mean(s_scores)
             if mean_s_score > best_score:
@@ -468,9 +469,9 @@ class PPOAgent:
                       .format(s, best_score, mean_s_score))
                 best_score = mean_s_score
 
-            if s % 10 == 0:
-                print('Season: {}, success_rate: {}, mean_success_rate: {}'\
-                      .format(s, success_rate, mean_s_score/sum(dones)))
+            # if s % 50 == 0:
+            #     print('Season: {}, Episode: {}, episodic score: {}, mean_success_rate: {}'\
+            #           .format(s, self.episode, s_score/sum(dones), mean_s_score/sum(dones)))
 
             if VALIDATION:
                 if s % val_freq == 0:
@@ -491,8 +492,8 @@ class PPOAgent:
                     tf.summary.scalar('6. Critic Loss', c_loss, step=s)
 
             with open(filename, 'a') as file:
-                file.write('{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n' \
-                           .format(s, s_score, mean_s_score, a_loss, c_loss))
+                file.write('{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n' \
+                           .format(s, self.episode, s_score, mean_s_score, a_loss, c_loss))
 
             # if best_score > self.success_value:
             #     print('Problem is solved in {} episodes with score {}'.format(self.episode, best_score))

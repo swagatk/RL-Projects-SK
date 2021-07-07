@@ -200,12 +200,12 @@ class Baseline:
 
 class IPGAgent:
     def __init__(self, env, SEASONS, success_value, lr_a, lr_c,
-                 epochs, training_batch, batch_size, epsilon,
-                 gamma, lmbda, use_attention, use_mujoco):
+                 epochs, training_batch, batch_size, buffer_capacity, epsilon,
+                 gamma, lmbda, use_attention, use_mujoco, filename=None, tb_log=False, val_freq=50):
         self.env = env
         self.action_size = self.env.action_space.shape
-        self.use_mujoco = use_mujoco
 
+        self.use_mujoco = use_mujoco
         if self.use_mujoco:
             self.state_size = self.env.observation_space["observation"].shape
         else:
@@ -221,12 +221,17 @@ class IPGAgent:
         self.epochs = epochs
         self.training_batch = training_batch
         self.batch_size = batch_size
+        self.buffer_capacity = buffer_capacity
         self.epsilon = epsilon
         self.gamma = gamma
         self.lmbda = lmbda
         self.use_attention = use_attention
+        self.filename = filename
+        self.TB_LOG = tb_log
+        self.val_freq = val_freq
 
-        self.buffer = Buffer(20000, self.batch_size)
+        # Buffer for off-policy training
+        self.buffer = Buffer(self.buffer_capacity, self.batch_size)
 
         if self.use_mujoco:
             self.feature = None
@@ -241,11 +246,15 @@ class IPGAgent:
                                  self.lr_c, self.gamma, self.feature)
         self.baseline = Baseline(self.state_size, self.action_size, self.lr_c, self.feature)
 
-    def policy(self, state):
+    def policy(self, state, deterministic=False):
         tf_state = tf.expand_dims(tf.convert_to_tensor(state), 0)
         mean, std = self.actor(tf_state)
-        pi = tfp.distributions.Normal(mean, std)
-        action = pi.sample()
+
+        if deterministic:
+            action = mean
+        else:
+            pi = tfp.distributions.Normal(mean, std)
+            action = pi.sample()
         #action = mean + np.random.uniform(-self.upper_bound, self.upper_bound, size=mean.shape) * std
         action = tf.clip_by_value(action, -self.upper_bound, self.upper_bound)
         return action.numpy()
@@ -314,6 +323,7 @@ class IPGAgent:
 
         ls *= (1 - v)
 
+        # training batch size % n_split should be zero
         # s_split = tf.split(states, n_split)
         # a_split = tf.split(actions, n_split)
         # t_split = tf.split(returns, n_split)
@@ -373,7 +383,7 @@ class IPGAgent:
             t = 0
             ep_reward = 0
             while True:
-                action = self.policy(state)
+                action = self.policy(state, deterministic=False)
                 next_obsv, reward, done, _ = env.step(action)
 
                 if self.use_mujoco:
@@ -395,34 +405,28 @@ class IPGAgent:
     def run(self):
         #######################
         # TENSORBOARD SETTINGS
-        TB_LOG = False # enable / disable tensorboard logging
-        if TB_LOG:
+        if self.TB_LOG:
             current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
             train_log_dir = 'logs/train/' + current_time
             train_summary_writer = tf.summary.create_file_writer(train_log_dir)
         ########################################
-        PATH_FLAG = True
-        path = './'
-        if self.use_attention:
-            filename = path + 'result_ipg_attn.txt'
-        else:
-            filename = path + 'result_ipg.txt'
-        if PATH_FLAG:   # create unique filenames
-            filename = uniquify(filename)
-        else:   # delete existing files
-            if os.path.exists(filename):
-                os.remove(filename)
 
-        VALIDATION = False
-        if VALIDATION:
+        path = './'
+
+        if self.filename is None:
+            self.filename = './output.txt'
+        self.filename = uniquify(self.filename)
+
+        if self.val_freq is not None:
             val_scores = deque(maxlen=50)
-            val_freq = 10
+            val_score = 0
 
         # initial state
         if self.use_mujoco:
             state = self.env.reset()["observation"]
         else:
             state = self.env.reset()
+            state = np.asarray(state, dtype=np.float32) / 255.0
 
         start = datetime.datetime.now()
         best_score = -np.inf
@@ -432,7 +436,8 @@ class IPGAgent:
             states, next_states, actions, rewards, dones = [], [], [], [], []
             s_score = 0
             done, score = False, 0
-            for t in range(self.training_batch):    # time steps
+            self.episode = 0    # initialize episode count for each season
+            for _ in range(self.training_batch):    # time steps
                 action = self.policy(state)
                 next_state, reward, done, _ = self.env.step(action)
 
@@ -470,20 +475,20 @@ class IPGAgent:
             # on-policy & off-policy training
             a_loss, c_loss = self.replay(states, actions, rewards, next_states, dones)
 
-            success_rate = s_score / sum(dones)
-            s_scores.append(s_score)
+            avg_episodic_score = s_score / sum(dones)
+            s_scores.append(avg_episodic_score)
             mean_s_score = np.mean(s_scores)
             if mean_s_score > best_score:
                 self.save_model(path, 'actor_wts.h5', 'critic_wts.h5', 'baseline_wts.h5')
                 print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_s_score))
                 best_score = mean_s_score
 
-            if s % 50 == 0:
-                print('Season: {}, Success Rate: {}, Mean Success Rate {}'\
-                      .format(s, success_rate, mean_s_score/sum(dones)))
+            # if s % 50 == 0:
+            #     print('Season: {}, Episode: {}, Success Rate: {}, Mean Success Rate {}'\
+            #           .format(s, self.episode, success_rate, mean_s_score/sum(dones)))
 
-            if VALIDATION:
-                if s % val_freq == 0:
+            if self.val_freq is not None:
+                if s % self.val_freq == 0:
                     print('Season: {}, Score: {}, Mean score: {}'.format(s, s_score, mean_s_score))
                     val_score = self.validate(self.env)
                     val_scores.append(val_score)
@@ -491,23 +496,24 @@ class IPGAgent:
                     print('Season: {}, Validation Score: {}, Mean Validation Score: {}'\
                           .format(s, val_score, mean_val_score))
 
-            if TB_LOG:
+            if self.TB_LOG:
                 with train_summary_writer.as_default():
                     tf.summary.scalar('1. Season Score', s_score, step=s)
                     tf.summary.scalar('2. Mean Season Score', mean_s_score, step=s)
                     tf.summary.scalar('3. Success rate', success_rate, step=s)
-                    if VALIDATION:
+                    if self.val_freq is not None:
                         tf.summary.scalar('4. Validation Score', val_score, step=s)
                     tf.summary.scalar('5. Actor Loss', a_loss, step=s)
                     tf.summary.scalar('6. Critic Loss', c_loss, step=s)
 
-            with open(filename, 'a') as file:
-                file.write('{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'\
-                           .format(s, s_score, mean_s_score, a_loss, c_loss))
+            with open(self.filename, 'a') as file:
+                file.write('{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'\
+                           .format(s, self.episode, s_score, mean_s_score, a_loss, c_loss))
 
-            # if best_score > self.success_value:
-            #     print('Problem is solved in {} episodes with score {}'.format(self.episode, best_score))
-            #     break
+            if self.success_value is not None:
+                if best_score > self.success_value:
+                    print('Problem is solved in {} episodes with score {}'.format(self.episode, best_score))
+                    break
         # end of season-loop
         end = datetime.datetime.now()
         print('Time to Completion: {}'.format(end - start))

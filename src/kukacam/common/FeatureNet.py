@@ -16,6 +16,7 @@ class FeatureNetwork:
         self.lr = learning_rate
         # create NN models
         self.model = self._build_net()
+        # self.model = self._build_net2()
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
 
     def _build_net(self):
@@ -32,6 +33,30 @@ class FeatureNetwork:
                               padding="SAME", activation="relu")(bn2)
         bn3 = layers.BatchNormalization()(conv3)
         f = layers.Flatten()(bn3)
+        f = layers.Dense(128, activation="relu")(f)
+        f = layers.Dense(128, activation="relu")(f)
+        f = layers.Dense(64, activation="relu")(f)
+        model = tf.keras.Model(inputs=img_input, outputs=f, name='feature_net')
+        print('shared feature network')
+        model.summary()
+        keras.utils.plot_model(model, to_file='feature_net.png',
+                               show_shapes=True, show_layer_names=True)
+        return model
+
+    def _build_net2(self):
+        img_input = layers.Input(shape=self.state_size)
+
+        # shared convolutional layers
+        conv1 = layers.Conv2D(16, kernel_size=5, strides=2,
+                              padding="SAME", activation="relu")(img_input)
+        p1 = layers.MaxPooling2D(pool_size=(2, 2), strides=None, padding='SAME')(conv1)
+        conv2 = layers.Conv2D(32, kernel_size=5, strides=2,
+                              padding="SAME", activation="relu")(p1)
+        p2 = layers.MaxPooling2D(pool_size=(2, 2), strides=None, padding='SAME')(conv2)
+        conv3 = layers.Conv2D(32, kernel_size=5, strides=2,
+                              padding="SAME", activation="relu")(p2)
+        p3 = layers.MaxPooling2D(pool_size=(2, 2), strides=None, padding='SAME')(conv3)
+        f = layers.Flatten()(p3)
         f = layers.Dense(128, activation="relu")(f)
         f = layers.Dense(128, activation="relu")(f)
         f = layers.Dense(64, activation="relu")(f)
@@ -96,7 +121,7 @@ class AttentionFeatureNetwork:
             raise ValueError('Choose 1, 2 or 3 for architecture')
 
         # x = layers.BatchNormalization()(x)
-        #x = layers.MaxPooling2D(pool_size=(2, 2))(x)
+        # x = layers.MaxPooling2D(pool_size=(2, 2), padding='same')(x)
         x = layers.LayerNormalization(epsilon=1e-6)(x)
 
         # second conv layer
@@ -122,7 +147,7 @@ class AttentionFeatureNetwork:
             raise ValueError('Choose 1, 2 or 3 for architecture')
 
         # x = layers.BatchNormalization()(x)
-        #x = layers.MaxPooling2D(pool_size=(2, 2))(x)
+        # x = layers.MaxPooling2D(pool_size=(2, 2), padding='same')(x)
         x = layers.LayerNormalization(epsilon=1e-6)(x)
 
         # Third conv layer
@@ -148,6 +173,8 @@ class AttentionFeatureNetwork:
             raise ValueError('Choose 1, 2 or 3 for architecture')
 
         x = layers.LayerNormalization(epsilon=1e-6)(x)
+        #x = layers.MaxPooling2D(pool_size=(2, 2), padding='same')(x)
+
         x = layers.Flatten()(x)
         x = layers.Dense(128, activation="relu")(x)
         x = layers.Dense(128, activation="relu")(x)
