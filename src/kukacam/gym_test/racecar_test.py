@@ -5,7 +5,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from pybullet_envs.bullet.racecarZEDGymEnv import RacecarZEDGymEnv
-env = RacecarZEDGymEnv(isDiscrete=False, renders=False)
+from pybullet_envs.bullet.racecarGymEnv import RacecarGymEnv
+
+# observation is an image
+#env = RacecarZEDGymEnv(isDiscrete=False, renders=False)
+env = RacecarGymEnv(isDiscrete=False, renders=True)
+
+
+# observation is a two dimensional vector
+#env = RacecarGymEnv(isDiscrete=False, renders=True)
 
 print('shape of Observation space: ', env.observation_space.shape)
 print('shape of Action space: ', env.action_space.shape)
@@ -14,13 +22,11 @@ print('Action High value: ', env.action_space.high)
 print('Action Low Value: ', env.action_space.low)
 
 
-for ep in range(10):
+for ep in range(5):
 
     obsv = env.reset()
-    obsv2 = env.getExtendedObservation()
-    # print(np.shape(obsv2))
-    # plt.imshow(obsv2)
-    # plt.show()
+    print('Observation:', obsv)
+
     ep_reward = 0
     t = 0
     while True:

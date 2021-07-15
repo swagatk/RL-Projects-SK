@@ -198,9 +198,12 @@ class PPOCritic:
 #########################
 class PPOAgent:
     def __init__(self, env, SEASONS, success_value, lr_a, lr_c,
-                 epochs, training_steps, batch_size,
-                 epsilon, gamma, lmbda, use_attention, use_mujoco, beta=0.5, c_loss_coeff=0.0,
-                 entropy_coeff=0.0, kl_target=0.01, method='clip'):
+                 epochs, training_batch, batch_size,
+                 epsilon, gamma, lmbda,
+                 use_attention=False, use_mujoco=False,
+                 beta=0.5, c_loss_coeff=0.0,
+                 entropy_coeff=0.0, kl_target=0.01, method='clip',
+                 filename=None, tb_log=False, val_freq=None):
         self.env = env
         self.action_size = self.env.action_space.shape
 
@@ -217,7 +220,7 @@ class PPOAgent:
         self.lr_c = lr_c    # critic learning rate
         self.epochs = epochs
         self.episode = 0
-        self.training_steps = training_steps    # no. of steps in each season
+        self.training_batch = training_batch    # no. of steps in each season
         self.batch_size = batch_size
         self.gamma = gamma  # discount factor
         self.lmbda = lmbda  # required for Generalized Advantage Estimator (GAE)
@@ -228,15 +231,31 @@ class PPOAgent:
         self.kl_target = kl_target      # target value of KL divergence
         self.use_attention = use_attention
         self.method = method    # chose 'clip' or 'penalty'
+        self.TB_LOG = tb_log
+        self.val_freq = val_freq
+        self.filename = filename
+
+        if len(self.state_size) == 3:
+            self.image_input = True     # image input
+        elif len(self.state_size) == 1:
+            self.image_input = False        # vector input
+        else:
+            raise ValueError("Input can be a vector or an image")
+
+        # extract features from input images
+        if self.use_mujoco:
+            self.feature = None     # assuming non-image mujoco environment
+        elif self.use_attention and self.image_input:   # attention + image input
+            print('Currently Attention handles only image input')
+            self.feature = AttentionFeatureNetwork(self.state_size, lr_a)
+        elif self.use_attention is False and self.image_input is True:  # image input
+            print('You have selected an image input')
+            self.feature = FeatureNetwork(self.state_size, lr_a)
+        else:       # non-image input
+            print('You have selected a non-image input.')
+            self.feature = None
 
         # create actor/critic models
-        if self.use_mujoco:
-            self.feature = None
-        elif self.use_attention:
-            self.feature = AttentionFeatureNetwork(self.state_size, lr_a)
-        else:
-            self.feature = FeatureNetwork(self.state_size, lr_a)
-
         self.actor = PPOActor(self.state_size, self.action_size, self.lr_a,
                               self.epsilon, self.beta, self.c1, self.c2, self.kl_target,
                               self.upper_bound, self.feature, self.method)
@@ -382,30 +401,20 @@ class PPOAgent:
     def run(self):
         ##################################
         # TENSORBOARD SETTINGS
-        TB_LOG = False # enable / disable tensorboard logging
-        if TB_LOG:
+        if self.TB_LOG:
             current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
             train_log_dir = 'logs/train/' + current_time
             train_summary_writer = tf.summary.create_file_writer(train_log_dir)
         ########################################
-        PATH_FLAG = True
         path = './'
-        if self.use_attention:
-            filename = path + 'freach_ppo_attn.txt'
-        else:
-            filename = path + 'freach_ppo.txt'
 
-        if PATH_FLAG:   # create unique filenames
-            filename = uniquify(filename)
-        else:   # delete existing files
-            if os.path.exists(filename):
-                os.remove(filename)
-        ###################################
-        VALIDATION = True
-        if VALIDATION:
+        if self.filename is None:
+            self.filename = './ppo_output.txt'
+        self.filename = uniquify(self.filename)
+
+        if self.val_freq is not None:
             val_scores = deque(maxlen=50)
-            val_freq = 50
-        ##################################
+            val_score = 0
 
         # initial state
         if self.use_mujoco:
@@ -416,7 +425,8 @@ class PPOAgent:
 
         start = datetime.datetime.now()
         best_score = -np.inf
-        s_scores = deque(maxlen=50)
+        s_scores = []       # All season scores
+        s_ep_lens = []      # avg episodic length in each season
         for s in range(self.SEASONS):
             # discard trajectories from previous season
             states, next_states, actions, rewards, dones = [], [], [], [], []
@@ -424,7 +434,7 @@ class PPOAgent:
 
             done, score = False, 0
             self.episode = 0    # initialize episode count for each season
-            for t in range(self.training_steps):
+            for t in range(self.training_batch):
                 action = self.policy(state)
                 next_state, reward, done, _ = self.env.step(action)
 
@@ -460,44 +470,45 @@ class PPOAgent:
             a_loss, c_loss, kld = self.train(states, actions, rewards,
                                              next_states, dones)
 
-            episodic_score = s_score / sum(dones)   # not used
-            s_scores.append(s_score)
+            avg_episodic_score = s_score / sum(dones)   # not used
+            s_scores.append(avg_episodic_score)
             mean_s_score = np.mean(s_scores)
+            s_ep_lens.append(self.training_batch / sum(dones))
+            mean_ep_len = np.mean(s_ep_lens)
             if mean_s_score > best_score:
                 self.save_model(path, 'actor_wts.h5', 'critic_wts.h5')
                 print('Season: {}, Update best score: {} --> {}, Model Saved!'\
                       .format(s, best_score, mean_s_score))
                 best_score = mean_s_score
 
-            # if s % 50 == 0:
-            #     print('Season: {}, Episode: {}, episodic score: {}, mean_success_rate: {}'\
-            #           .format(s, self.episode, s_score/sum(dones), mean_s_score/sum(dones)))
-
-            if VALIDATION:
-                if s % val_freq == 0:
+            if self.val_freq is not None:
+                if s % self.val_freq == 0:
                     val_score = self.validate(self.env)
                     val_scores.append(val_score)
                     mean_val_score = np.mean(val_scores)
                     print('Season: {}, Validation Score: {}, Mean Validation Score: {}'\
                           .format(s, val_score, mean_val_score))
 
-            if TB_LOG:
+            if self.TB_LOG:
                 with train_summary_writer.as_default():
                     tf.summary.scalar('1. Season Score', s_score, step=s)
                     tf.summary.scalar('2. Mean Season Score', mean_s_score, step=s)
-                    tf.summary.scalar('3. Success rate', success_rate, step=s)
-                    if VALIDATION:
+                    tf.summary.scalar('3. Success rate', avg_episodic_score, step=s)
+                    if self.val_freq is not None:
                         tf.summary.scalar('4. Validation Score', val_score, step=s)
                     tf.summary.scalar('5. Actor Loss', a_loss, step=s)
                     tf.summary.scalar('6. Critic Loss', c_loss, step=s)
+                    tf.summary.scalar('7. Mean Episode Length', mean_ep_len)
 
-            with open(filename, 'a') as file:
-                file.write('{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n' \
-                           .format(s, self.episode, s_score, mean_s_score, a_loss, c_loss))
+            with open(self.filename, 'a') as file:
+                file.write('{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
+                           .format(s, self.episode, mean_ep_len, s_score,
+                                   mean_s_score, a_loss, c_loss))
 
-            # if best_score > self.success_value:
-            #     print('Problem is solved in {} episodes with score {}'.format(self.episode, best_score))
-            #     break
+            if self.success_value is not None:
+                if best_score > self.success_value:
+                    print('Problem is solved in {} episodes with score {}'.format(self.episode, best_score))
+                    break
 
         # season-loop ends here
         self.env.close()

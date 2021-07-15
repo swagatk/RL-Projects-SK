@@ -221,9 +221,7 @@ class IPGHERAgent:
     def __init__(self, env, SEASONS, success_value, lr_a, lr_c,
                  epochs, training_batch, batch_size, buffer_capacity, epsilon,
                  gamma, lmbda, use_attention=False, use_mujoco=False,
-                 filename=None,
-                 tb_log=False,
-                 val_freq=50):
+                 filename=None, tb_log=False, val_freq=50):
         self.env = env
         self.action_size = self.env.action_space.shape
 
@@ -255,16 +253,28 @@ class IPGHERAgent:
         self.TB_LOG = tb_log
         self.val_freq = val_freq
 
+        if len(self.state_size) == 3:
+            self.image_input = True     # image input
+        elif len(self.state_size) == 1:
+            self.image_input = False        # vector input
+        else:
+            raise ValueError("Input can be a vector or an image")
+
         # create HER buffer to store experiences
         self.buffer = HERBuffer(self.buffer_capacity, self.batch_size)
 
         # extract features from input images
-        if use_mujoco:
-            self.feature = None
-        elif self.use_attention:
+        if self.use_mujoco:
+            self.feature = None     # assuming non-image mujoco environment
+        elif self.use_attention and self.image_input:   # attention + image input
+            print('Currently Attention handles only image input')
             self.feature = AttentionFeatureNetwork(self.state_size, lr_a)
-        else:
+        elif self.use_attention is False and self.image_input is True:  # image input
+            print('You have selected an image input')
             self.feature = FeatureNetwork(self.state_size, lr_a)
+        else:       # non-image input
+            print('You have selected a non-image input.')
+            self.feature = None
 
         # Actor Model
         self.actor = IPGActor(state_size=self.state_size, goal_size=self.goal_size,
@@ -528,7 +538,8 @@ class IPGHERAgent:
 
         start = datetime.datetime.now()
         best_score = -np.inf
-        s_scores = deque(maxlen=50)     # last n season scores
+        s_scores = []             # all season scores
+        s_ep_lens = []            # average episode length for each season
         for s in range(self.SEASONS):
             # discard trajectories from previous season
             states, next_states, actions, rewards, dones, goals = [], [], [], [], [], []
@@ -606,14 +617,13 @@ class IPGHERAgent:
             avg_episodic_score = s_score / sum(dones)
             s_scores.append(avg_episodic_score)
             mean_s_score = np.mean(s_scores)
+            s_ep_lens.append(self.training_batch / sum(dones))
+            mean_ep_len = np.mean(s_ep_lens)
+
             if mean_s_score > best_score:
                 self.save_model(path, 'actor_wts.h5', 'critic_wts.h5', 'baseline_wts.h5')
                 print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_s_score))
                 best_score = mean_s_score
-
-            # if s % 50 == 0:
-            #     print('Season: {}, episodes: {}, success_rate:{}, Mean Success Rate:{}'\
-            #           .format(s, self.episode, s_score/self.episode, mean_s_score/self.episode))
 
             if self.val_freq is not None and s % self.val_freq == 0:
                 print('Season: {}, Score: {}, Mean score: {}'.format(s, s_score, mean_s_score))
@@ -631,10 +641,12 @@ class IPGHERAgent:
                     tf.summary.scalar('4. Validation Score', val_score, step=s)
                     tf.summary.scalar('5. Actor Loss', a_loss, step=s)
                     tf.summary.scalar('6. Critic Loss', c_loss, step=s)
+                    tf.summary.scalar('7. Mean Episode Length', mean_ep_len, step=s)
 
             with open(self.filename, 'a') as file:
-                file.write('{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n' \
-                           .format(s, self.episode, avg_episodic_score, mean_s_score, a_loss, c_loss))
+                file.write('{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
+                           .format(s, self.episode, mean_ep_len,
+                                   avg_episodic_score, mean_s_score, a_loss, c_loss))
 
             if self.success_value is not None:
                 if best_score > self.success_value:

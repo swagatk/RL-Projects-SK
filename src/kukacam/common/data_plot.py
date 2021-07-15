@@ -81,10 +81,13 @@ elif PROB == 'kuka':    # performance comparison for Kuka
     plot_title = 'KukaDiverseObject'
 
 elif PROB == 'racecar':
+    file1 = './results/rc_ppo.txt'
     file2 = './results/rc_ipg.txt'
     file3 = './results/rc_ipg_her.txt'
     file4 = './results/rc_ipg_her_attn.txt'
 
+    df1 = pd.read_csv(file1, sep='\t', names=['season', 'episode', 'score', 'mean_score', 'a_loss', 'c_loss'])
+    df1["method"] = 'ppo'
     df2 = pd.read_csv(file2, sep='\t', names=['season', 'episode', 'score', 'mean_score', 'a_loss', 'c_loss'])
     df2["method"] = 'ipg'
     df3 = pd.read_csv(file3, sep='\t', names=['season', 'episode', 'score', 'mean_score', 'a_loss', 'c_loss'])
@@ -92,7 +95,7 @@ elif PROB == 'racecar':
     df4 = pd.read_csv(file4, sep='\t', names=['season', 'episode', 'score', 'mean_score', 'a_loss', 'c_loss'])
     df4["method"] = 'ipg_her_attn'
 
-    df = pd.concat([df2, df3, df4]).reset_index(drop=True)
+    df = pd.concat([df1, df2, df3, df4]).reset_index(drop=True)
     plot_title = 'racecarZEDGymEnv'
 else:
     print('Nothing to do.')
@@ -104,15 +107,29 @@ print(df.shape)
 trunc_df = df[['season', 'a_loss', 'c_loss', 'method']]
 print(trunc_df.head())
 sb.set_theme()
-sb.set_style('whitegrid')
+#sb.set_style('whitegrid')
+sb.set_style('darkgrid')
 g1 = sb.relplot(x='season', y='mean_score', hue='method', kind='line', data=df)
 # g1._legend.set_bbox_to_anchor([0.9, 0.3])
 g1.set(title=plot_title)
 trunc_df_melted = trunc_df.melt(id_vars=['season', 'method'], value_vars=['a_loss', 'c_loss'],\
                                 var_name='loss_type', value_name='loss_value')
-g2 = sb.relplot(x='season', y='loss_value', hue='loss_type', style='method', kind='line', data=trunc_df_melted)
-g2.set(title=plot_title)
+# g2 = sb.relplot(x='season', y='loss_value', hue='loss_type', style='method', kind='line', data=trunc_df_melted)
+# g2.set(title=plot_title)
 #g2._legend.set_bbox_to_anchor([0.9, 0.8])
+#fig, axes = plt.subplots(2,1)
+g3 = sb.relplot(x='season', y='loss_value', hue='method', kind='line', row='loss_type', data=trunc_df_melted,
+                facet_kws=dict(sharey=False, sharex=False))
+g3._legend.set_bbox_to_anchor([0.5, 0.3])
+g3.axes[0, 0].set_title(plot_title)
+g3.axes[1, 0].set_title('')
+g3.axes[0, 0].set_ylabel('actor loss')
+g3.axes[1, 0].set_ylabel('critic loss')
+g3.axes[0, 0].set_xlabel('Seaons')
+g3.axes[1, 0].set_xlabel('')
+# g3 = sb.relplot(x='season', y='a_loss', hue='method', kind='line', data=df)
+# g4 = sb.relplot(x='season', y='c_loss', hue='method', kind='line', data=df)
+#sb.relplot(x='season', y='c_loss', hue='method', kind='line', data=df, ax=axes[1])
 plt.show()
 
 

@@ -5,6 +5,7 @@ import tensorflow as tf
 from pybullet_envs.bullet.kuka_diverse_object_gym_env import KukaDiverseObjectEnv
 from pybullet_envs.bullet.kukaCamGymEnv import KukaCamGymEnv
 from pybullet_envs.bullet.racecarZEDGymEnv import RacecarZEDGymEnv
+from pybullet_envs.bullet.racecarGymEnv import RacecarGymEnv
 from packaging import version
 import gym
 
@@ -13,6 +14,7 @@ from ppo.ppo2 import PPOAgent
 from IPG.ipg import IPGAgent
 from IPG.ipg_her import IPGHERAgent
 from common.TimeLimitWrapper import TimeLimitWrapper
+from common.CustomGymWrapper import ObsvnResizeTimeLimitWrapper
 
 if __name__ == "__main__":
 
@@ -45,13 +47,13 @@ if __name__ == "__main__":
     print('Found GPU at: {}'.format(device_name))
     ##############################################
     # #### Hyper-parameters
-    SEASONS = 50   # 35
+    SEASONS = 100   # 35
     success_value = None
-    lr_a = 0.0001  # 0.0002
-    lr_c = 0.0001  # 0.0002
+    lr_a = 0.0002  # 0.0002
+    lr_c = 0.0002  # 0.0002
     epochs = 20
     training_batch = 1024   # 5120(racecar)  # 1024 (kuka), 512
-    buffer_capacity = 20000     # 50k (racecar)  # 20K (kuka)
+    buffer_capacity = 100000     # 50k (racecar)  # 20K (kuka)
     batch_size = 128    # 512 (racecar) #   28 (kuka)
     epsilon = 0.2  # 0.07
     gamma = 0.993  # 0.99
@@ -60,7 +62,8 @@ if __name__ == "__main__":
     use_mujoco = False
     env_type = 3        # 1 - Kuka Diverse Object
                         # 2 - Kuka Grasp
-                        # 3 - Race Car
+                        # 3 - Race Car with image input
+                        # 4 - Race car with non-image input
 
     if env_type == 1:
         env = KukaDiverseObjectEnv(renders=False,
@@ -70,17 +73,21 @@ if __name__ == "__main__":
     elif env_type == 2:
         env = KukaCamGymEnv(renders=False, isDiscrete=False)
     elif env_type == 3:
-        env = TimeLimitWrapper(RacecarZEDGymEnv(renders=False,
-                                   isDiscrete=False), max_steps=20)
+        env = ObsvnResizeTimeLimitWrapper(RacecarZEDGymEnv(renders=False,
+                                   isDiscrete=False), shape=20, max_steps=20)
+    elif env_type == 4:
+        env = RacecarGymEnv(renders=False, isDiscrete=False)
     else:
         raise ValueError("Invalid environment type")
 
     # PPO Agent
     # agent = PPOAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size, epsilon, gamma,
-    #                  lmbda)
+    #                  lmbda, use_attention, use_mujoco,
+    #                  filename='rc_ppo_zed.txt', val_freq=None)
     # IPG Agent
     agent = IPGAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size, buffer_capacity,
-                     epsilon, gamma, lmbda, use_attention, use_mujoco, filename='rc_ipg.txt', val_freq=None)
+                     epsilon, gamma, lmbda, use_attention, use_mujoco,
+                     filename='rc_ipg_zed.txt', val_freq=None)
     # IPG HER Agent
     # agent = IPGHERAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size,
     #                     buffer_capacity, epsilon, gamma, lmbda, use_attention,
