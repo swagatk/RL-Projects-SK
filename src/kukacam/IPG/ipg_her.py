@@ -221,7 +221,7 @@ class IPGHERAgent:
     def __init__(self, env, SEASONS, success_value, lr_a, lr_c,
                  epochs, training_batch, batch_size, buffer_capacity, epsilon,
                  gamma, lmbda, use_attention=False, use_mujoco=False,
-                 filename=None, tb_log=False, val_freq=50):
+                 filename=None, tb_log=False, val_freq=50, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
 
@@ -252,6 +252,7 @@ class IPGHERAgent:
         self.filename = filename
         self.TB_LOG = tb_log
         self.val_freq = val_freq
+        self.path = path            # location to store results
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -507,19 +508,18 @@ class IPGHERAgent:
             self.buffer.record(state_, action_, reward_, next_state_, done_, goal_)
 
     def run(self):
+        if self.path is None:
+            self.path = './'
         #######################
         # TENSORBOARD SETTINGS
         if self.TB_LOG:
             current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-            train_log_dir = 'logs/train/' + current_time
+            train_log_dir = self.path + 'tb_logs/train/' + current_time
             train_summary_writer = tf.summary.create_file_writer(train_log_dir)
         ########################################
         if self.filename is None:
-            self.filename = './output.txt'
-        self.filename = uniquify(self.filename)
-
-        # path for storing trained models
-        path = './'
+            self.filename = 'ipg_her_output.txt'
+        self.filename = uniquify(self.path + self.filename)
 
         if self.val_freq is not None:
             val_scores = deque(maxlen=50)
@@ -621,7 +621,7 @@ class IPGHERAgent:
             mean_ep_len = np.mean(s_ep_lens)
 
             if mean_s_score > best_score:
-                self.save_model(path, 'actor_wts.h5', 'critic_wts.h5', 'baseline_wts.h5')
+                self.save_model('actor_wts.h5', 'critic_wts.h5', 'baseline_wts.h5')
                 print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_s_score))
                 best_score = mean_s_score
 
@@ -658,46 +658,21 @@ class IPGHERAgent:
         print('Time to completion: {}'.format(end-start))
         self.env.close()
 
-    def save_model(self, path, actor_filename, critic_filename, baseline_filename):
-        actor_file = path + actor_filename
-        critic_file = path + critic_filename
-        baseline_file = path + baseline_filename
+    def save_model(self, actor_filename, critic_filename, baseline_filename):
+        actor_file = self.path + actor_filename
+        critic_file = self.path + critic_filename
+        baseline_file = self.path + baseline_filename
         self.actor.save_weights(actor_file)
         self.critic.save_weights(critic_file)
         self.baseline.save_weights(baseline_file)
 
-    def load_model(self, path, actor_filename, critic_filename, baseline_filename):
-        actor_file = path + actor_filename
-        critic_file = path + critic_filename
-        baseline_file = path + baseline_filename
+    def load_model(self, actor_filename, critic_filename, baseline_filename):
+        actor_file = self.path + actor_filename
+        critic_file = self.path + critic_filename
+        baseline_file = self.path + baseline_filename
         self.actor.load_weights(actor_file)
         self.critic.load_weights(critic_file)
         self.baseline.load_weights(baseline_file)
-
-    # def visualize_attention(self, actor_model, critic_model, nmax=20):
-    #
-    #     # load models if available
-    #     if actor_model and critic_model is not None:
-    #         self.load_model(actor_model, critic_model)
-    #
-    #     for _ in range(nmax):
-    #         if self.use_mujoco:
-    #             state = self.env.reset()["observation"]
-    #         else:
-    #             state = self.env.reset()
-    #             state = np.asarray(state, dtype=np.float32) / 255.0  # convert into float array
-    #
-    #         while True:
-    #             action = self.policy(state)
-    #             next_state, reward, done, _ = self.env.step(action)
-    #
-    #             if self.use_mujoco:
-    #                 next_state = next_state["observation"]
-    #             else:
-    #                 next_state = np.asarray(next_state, dtype=np.float32) / 255.0
-    #
-    #             if done:
-    #                 break
 
 
 

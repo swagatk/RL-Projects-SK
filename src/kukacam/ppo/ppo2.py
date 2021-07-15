@@ -203,7 +203,7 @@ class PPOAgent:
                  use_attention=False, use_mujoco=False,
                  beta=0.5, c_loss_coeff=0.0,
                  entropy_coeff=0.0, kl_target=0.01, method='clip',
-                 filename=None, tb_log=False, val_freq=None):
+                 filename=None, tb_log=False, val_freq=None, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
 
@@ -234,6 +234,7 @@ class PPOAgent:
         self.TB_LOG = tb_log
         self.val_freq = val_freq
         self.filename = filename
+        self.path = path
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -353,15 +354,15 @@ class PPOAgent:
         adv = (adv - np.mean(adv)) / (np.std(adv) + 1e-10) # output: numpy array
         return adv, returns
 
-    def save_model(self, path, actor_filename, critic_filename):
-        actor_file = path + actor_filename
-        critic_file = path + critic_filename
+    def save_model(self, actor_filename, critic_filename):
+        actor_file = self.path + actor_filename
+        critic_file = self.path + critic_filename
         self.actor.save_weights(actor_file)
         self.critic.save_weights(critic_file)
 
-    def load_model(self, path, actor_filename, critic_filename):
-        actor_file = path + actor_filename
-        critic_file = path + critic_filename
+    def load_model(self, actor_filename, critic_filename):
+        actor_file = self.path + actor_filename
+        critic_file = self.path + critic_filename
         self.actor.model.load_weights(actor_file)
         self.critic.model.load_weights(critic_file)
 
@@ -403,14 +404,13 @@ class PPOAgent:
         # TENSORBOARD SETTINGS
         if self.TB_LOG:
             current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-            train_log_dir = 'logs/train/' + current_time
+            train_log_dir = self.path + 'logs/train/' + current_time
             train_summary_writer = tf.summary.create_file_writer(train_log_dir)
         ########################################
-        path = './'
 
         if self.filename is None:
-            self.filename = './ppo_output.txt'
-        self.filename = uniquify(self.filename)
+            self.filename = 'ppo_output.txt'
+        self.filename = uniquify(self.path + self.filename)
 
         if self.val_freq is not None:
             val_scores = deque(maxlen=50)
@@ -476,7 +476,7 @@ class PPOAgent:
             s_ep_lens.append(self.training_batch / sum(dones))
             mean_ep_len = np.mean(s_ep_lens)
             if mean_s_score > best_score:
-                self.save_model(path, 'actor_wts.h5', 'critic_wts.h5')
+                self.save_model('actor_wts.h5', 'critic_wts.h5')
                 print('Season: {}, Update best score: {} --> {}, Model Saved!'\
                       .format(s, best_score, mean_s_score))
                 best_score = mean_s_score

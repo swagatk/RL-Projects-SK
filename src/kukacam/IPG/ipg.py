@@ -203,7 +203,7 @@ class IPGAgent:
                  epochs, training_batch, batch_size, buffer_capacity, epsilon,
                  gamma, lmbda,
                  use_attention=False, use_mujoco=False,
-                 filename=None, tb_log=False, val_freq=50):
+                 filename=None, tb_log=False, val_freq=50, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
 
@@ -231,6 +231,7 @@ class IPGAgent:
         self.filename = filename
         self.TB_LOG = tb_log
         self.val_freq = val_freq
+        self.path = path
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -423,15 +424,13 @@ class IPGAgent:
         # TENSORBOARD SETTINGS
         if self.TB_LOG:
             current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-            train_log_dir = 'logs/train/' + current_time
+            train_log_dir = self.path + 'logs/train/' + current_time
             train_summary_writer = tf.summary.create_file_writer(train_log_dir)
         ########################################
 
-        path = './'
-
         if self.filename is None:
-            self.filename = './output.txt'
-        self.filename = uniquify(self.filename)
+            self.filename = 'ipg_output.txt'
+        self.filename = uniquify(self.path + self.filename)
 
         if self.val_freq is not None:
             val_scores = deque(maxlen=50)
@@ -498,7 +497,7 @@ class IPGAgent:
             s_ep_lens.append(self.training_batch / sum(dones))
             mean_ep_len = np.mean(s_ep_lens)
             if mean_s_score > best_score:
-                self.save_model(path, 'actor_wts.h5', 'critic_wts.h5', 'baseline_wts.h5')
+                self.save_model('actor_wts.h5', 'critic_wts.h5', 'baseline_wts.h5')
                 print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_s_score))
                 best_score = mean_s_score
 
@@ -536,18 +535,18 @@ class IPGAgent:
         print('Time to Completion: {}'.format(end - start))
         self.env.close()
 
-    def save_model(self, path, actor_filename, critic_filename, baseline_filename):
-        actor_file = path + actor_filename
-        critic_file = path + critic_filename
-        baseline_file = path + baseline_filename
+    def save_model(self, actor_filename, critic_filename, baseline_filename):
+        actor_file = self.path + actor_filename
+        critic_file = self.path + critic_filename
+        baseline_file = self.path + baseline_filename
         self.actor.save_weights(actor_file)
         self.critic.save_weights(critic_file)
         self.baseline.save_weights(baseline_file)
 
-    def load_model(self, path, actor_filename, critic_filename, baseline_filename):
-        actor_file = path + actor_filename
-        critic_file = path + critic_filename
-        baseline_file = path + baseline_filename
+    def load_model(self, actor_filename, critic_filename, baseline_filename):
+        actor_file = self.path + actor_filename
+        critic_file = self.path + critic_filename
+        baseline_file = self.path + baseline_filename
         self.actor.load_weights(actor_file)
         self.critic.load_weights(critic_file)
         self.baseline.load_weights(baseline_file)
