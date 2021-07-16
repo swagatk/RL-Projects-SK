@@ -171,7 +171,7 @@ class SACAgent:
     def __init__(self, env, SEASONS, success_value,
         epochs, training_batch, batch_size, buffer_capacity, lr_a=0.0003, lr_c=0.0003, alpha=0.2,
                  gamma=0.99, tau=0.995, use_attention=False, use_mujoco=False,
-                 filename=None, tb_log=False, val_freq=50):
+                 filename=None, tb_log=False, val_freq=50, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
 
@@ -198,6 +198,7 @@ class SACAgent:
         self.filename = filename
         self.TB_LOG = tb_log
         self.val_freq = val_freq
+        self.path = path
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -395,15 +396,15 @@ class SACAgent:
         # TENSORBOARD SETTINGS
         if self.TB_LOG:
             current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-            train_log_dir = 'logs/train/' + current_time
+            train_log_dir = self.path + 'logs/train/' + current_time
             train_summary_writer = tf.summary.create_file_writer(train_log_dir)
         ########################################
 
-        path = './'
-
         if self.filename is None:
-            self.filename = './output.txt'
-        self.filename = uniquify(self.filename)
+            self.filename = 'sac_output.txt'
+        self.filename = uniquify(self.path + self.filename)
+
+        filename2 = uniquify(self.path + 'sac_ep_output.txt')
 
         if self.val_freq is not None:
             val_scores = deque(maxlen=50)
@@ -420,14 +421,13 @@ class SACAgent:
         best_score = -np.inf
         s_scores = []       # All season scores
         s_ep_lens = []    # average episodic length for each season
-        total_ep_count = 0
         ep_scores = []      # All episodic scores
+        self.episode = 0        # counts total number of episodes
         for s in range(self.SEASONS):
             # discard trajectories from previous season
             states, next_states, actions, rewards, dones = [], [], [], [], []
             s_score = 0
-            done, score = False, 0
-            self.episode = 0        # computes no of episodes in each season
+            done, score = False, 0          # episodic values
             for _ in range(self.training_batch):    # time steps in each season
                 action, _ = self.policy(state)
                 next_state, reward, done, _ = self.env.step(action)
@@ -445,20 +445,20 @@ class SACAgent:
                 score += reward
 
                 if done:
-                    self.episode += 1           # episode count for each season
-                    total_ep_count += 1         # global episode count
+                    self.episode += 1           # global episode count
                     s_score += score            # season score
-
+                    ep_scores.append(score)     # episodic score
                     if self.use_mujoco:
                         state = self.env.reset()["observation"]
                     else:
                         state = self.env.reset()
                         state = np.asarray(state, dtype=np.float32) / 255.0
-                    done, score = False, 0
+                    done, score = False, 0      # Initialize for each episode
                 # done block ends here
             # end of season
             # off-policy training after each season
             c1_loss, c2_loss, actor_loss, alpha_loss = self.replay()
+            c_loss = np.minimum(c1_loss, c2_loss)
 
             avg_episodic_score = s_score / sum(dones)
             s_scores.append(avg_episodic_score)
@@ -466,7 +466,7 @@ class SACAgent:
             s_ep_lens.append(self.training_batch / sum(dones))
             mean_ep_len = np.mean(s_ep_lens)
             if mean_s_score > best_score:
-                self.save_model(path, 'actor_wts.h5', 'critic_wts.h5', 'baseline_wts.h5')
+                self.save_model('actor_wts.h5', 'c1_wts.h5', 'c2_wts.h5', 'c1t_wts.h5', 'c2t_wts.h5')
                 print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_s_score))
                 best_score = mean_s_score
 
@@ -486,38 +486,49 @@ class SACAgent:
                     tf.summary.scalar('3. Success rate', avg_episodic_score, step=s)
                     if self.val_freq is not None:
                         tf.summary.scalar('4. Validation Score', val_score, step=s)
-                    tf.summary.scalar('5. Actor Loss', a_loss, step=s)
+                    tf.summary.scalar('5. Actor Loss', actor_loss, step=s)
                     tf.summary.scalar('6. Critic Loss', c_loss, step=s)
                     tf.summary.scalar('7. Mean Episode Length', mean_ep_len, step=s)
+                    tf.summary.scalar('8. Alpha Loss', alpha_loss, step=s)
 
             with open(self.filename, 'a') as file:
-                file.write('{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
+                file.write('{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
                            .format(s, self.episode, mean_ep_len,
-                                   s_score, mean_s_score, a_loss, c_loss))
+                                   s_score, mean_s_score, actor_loss, c_loss, alpha_loss))
 
             if self.success_value is not None:
                 if best_score > self.success_value:
                     print('Problem is solved in {} episodes with score {}'.format(self.episode, best_score))
+                    print('Mean Episodic score: {}'.format(np.mean(ep_scores)))
                     break
         # end of season-loop
         end = datetime.datetime.now()
         print('Time to Completion: {}'.format(end - start))
         self.env.close()
+        print('Mean episodic score over {} episodes: {:.2f}'.format(self.episode, np.mean(ep_scores)))
 
-    def save_model(self, path, actor_filename, critic_filename, baseline_filename):
-        actor_file = path + actor_filename
-        critic_file = path + critic_filename
-        baseline_file = path + baseline_filename
+    def save_model(self, actor_file, c1_file, c2_file, c1t_file, c2t_file):
+        actor_file = self.path + actor_file
+        critic1_file = self.path + c1_file
+        critic2_file = self.path + c2_file
+        target_c1_file = self.path + c1t_file
+        target_c2_file = self.path + c2t_file
         self.actor.save_weights(actor_file)
-        self.critic.save_weights(critic_file)
-        self.baseline.save_weights(baseline_file)
+        self.critic1.save_weights(critic1_file)
+        self.critic2.save_weights(critic2_file)
+        self.target_critic1.save_weights(target_c1_file)
+        self.target_critic2.save_weights(target_c2_file)
 
-    def load_model(self, path, actor_filename, critic_filename, baseline_filename):
-        actor_file = path + actor_filename
-        critic_file = path + critic_filename
-        baseline_file = path + baseline_filename
+    def load_model(self, actor_file, c1_file, c2_file, c1t_file, c2t_file):
+        actor_file = self.path + actor_file
+        critic1_file = self.path + c1_file
+        critic2_file = self.path + c2_file
+        target_c1_file = self.path + c1t_file
+        target_c2_file = self.path + c2t_file
         self.actor.load_weights(actor_file)
-        self.critic.load_weights(critic_file)
-        self.baseline.load_weights(baseline_file)
+        self.critic1.load_weights(critic1_file)
+        self.critic2.load_weights(critic2_file)
+        self.target_critic1.load_weights(target_c1_file)
+        self.target_critic2.load_weights(target_c2_file)
 
 

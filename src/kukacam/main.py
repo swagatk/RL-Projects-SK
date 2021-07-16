@@ -47,47 +47,43 @@ if __name__ == "__main__":
     print('Found GPU at: {}'.format(device_name))
     ##############################################
     # #### Hyper-parameters
-    SEASONS = 100   # 35
+    SEASONS = 50   # 35
     success_value = None
     lr_a = 0.0002  # 0.0002
     lr_c = 0.0002  # 0.0002
     epochs = 20
     training_batch = 1024   # 5120(racecar)  # 1024 (kuka), 512
-    buffer_capacity = 100000     # 50k (racecar)  # 20K (kuka)
+    buffer_capacity = 50000     # 50k (racecar)  # 20K (kuka)
     batch_size = 128    # 512 (racecar) #   28 (kuka)
     epsilon = 0.2  # 0.07
     gamma = 0.993  # 0.99
     lmbda = 0.7  # 0.9
     use_attention = False  # enable/disable for attention model
     use_mujoco = False
-    env_type = 3        # 1 - Kuka Diverse Object
-                        # 2 - Kuka Grasp
-                        # 3 - Race Car with image input
-                        # 4 - Race car with non-image input
 
-    if env_type == 1:
-        env = KukaDiverseObjectEnv(renders=False,
-                                   isDiscrete=False,
-                                   maxSteps=20,
-                                   removeHeightHack=False)
-    elif env_type == 2:
-        env = KukaCamGymEnv(renders=False, isDiscrete=False)
-    elif env_type == 3:
-        env = ObsvnResizeTimeLimitWrapper(RacecarZEDGymEnv(renders=False,
-                                   isDiscrete=False), shape=20, max_steps=20)
-    elif env_type == 4:
-        env = RacecarGymEnv(renders=False, isDiscrete=False)
-    else:
-        raise ValueError("Invalid environment type")
+
+
+    # Kuka DiverseObject Environment
+    # env = KukaDiverseObjectEnv(renders=False,
+    #                            isDiscrete=False,
+    #                            maxSteps=20,
+    #                            removeHeightHack=False)
+
+    # RaceCar Bullet Environment with image observation
+    env = ObsvnResizeTimeLimitWrapper(RacecarZEDGymEnv(renders=False,
+                               isDiscrete=False), shape=20, max_steps=20)
+
+    # RaceCar Bullet Environment with vector observation
+    # env = RacecarGymEnv(renders=False, isDiscrete=False)
 
     # PPO Agent
-    # agent = PPOAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size, epsilon, gamma,
-    #                  lmbda, use_attention, use_mujoco,
-    #                  filename='rc_ppo_zed.txt', val_freq=None)
+    agent = PPOAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size, epsilon, gamma,
+                     lmbda, use_attention, use_mujoco,
+                     filename='rc_ppo_zed.txt', val_freq=None)
     # IPG Agent
-    agent = IPGAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size, buffer_capacity,
-                     epsilon, gamma, lmbda, use_attention, use_mujoco,
-                     filename='rc_ipg_zed.txt', val_freq=None)
+    # agent = IPGAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size, buffer_capacity,
+    #                  epsilon, gamma, lmbda, use_attention, use_mujoco,
+    #                  filename='rc_ipg_zed.txt', val_freq=None)
     # IPG HER Agent
     # agent = IPGHERAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size,
     #                     buffer_capacity, epsilon, gamma, lmbda, use_attention,

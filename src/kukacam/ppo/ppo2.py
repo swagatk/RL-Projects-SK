@@ -427,13 +427,12 @@ class PPOAgent:
         best_score = -np.inf
         s_scores = []       # All season scores
         s_ep_lens = []      # avg episodic length in each season
+        self.episode = 0    # global episode count
         for s in range(self.SEASONS):
             # discard trajectories from previous season
             states, next_states, actions, rewards, dones = [], [], [], [], []
             s_score = 0
-
             done, score = False, 0
-            self.episode = 0    # initialize episode count for each season
             for t in range(self.training_batch):
                 action = self.policy(state)
                 next_state, reward, done, _ = self.env.step(action)
@@ -470,7 +469,7 @@ class PPOAgent:
             a_loss, c_loss, kld = self.train(states, actions, rewards,
                                              next_states, dones)
 
-            avg_episodic_score = s_score / sum(dones)   # not used
+            avg_episodic_score = s_score / sum(dones)
             s_scores.append(avg_episodic_score)
             mean_s_score = np.mean(s_scores)
             s_ep_lens.append(self.training_batch / sum(dones))
