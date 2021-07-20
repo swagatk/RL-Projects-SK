@@ -86,8 +86,9 @@ elif PROB == 'racecar':
     file3 = './results/rc_ipg_her.txt'
     file4 = './results/rc_ipg_her_attn.txt'
 
-    df1 = pd.read_csv(file1, sep='\t', names=['season', 'episode', 'score', 'mean_score', 'a_loss', 'c_loss'])
+    df1 = pd.read_csv(file1, sep='\t', names=['season', 'episode', 'ep_len', 'score', 'mean_score', 'a_loss', 'c_loss'])
     df1["method"] = 'ppo'
+    del df1["ep_len"]
     df2 = pd.read_csv(file2, sep='\t', names=['season', 'episode', 'score', 'mean_score', 'a_loss', 'c_loss'])
     df2["method"] = 'ipg'
     df3 = pd.read_csv(file3, sep='\t', names=['season', 'episode', 'score', 'mean_score', 'a_loss', 'c_loss'])
@@ -118,6 +119,7 @@ trunc_df_melted = trunc_df.melt(id_vars=['season', 'method'], value_vars=['a_los
 # g2.set(title=plot_title)
 #g2._legend.set_bbox_to_anchor([0.9, 0.8])
 #fig, axes = plt.subplots(2,1)
+
 g3 = sb.relplot(x='season', y='loss_value', hue='method', kind='line', row='loss_type', data=trunc_df_melted,
                 facet_kws=dict(sharey=False, sharex=False))
 g3._legend.set_bbox_to_anchor([0.5, 0.3])
