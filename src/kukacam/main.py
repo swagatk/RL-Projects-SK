@@ -13,7 +13,7 @@ import gym
 from ppo.ppo2 import PPOAgent
 from IPG.ipg import IPGAgent
 from IPG.ipg_her import IPGHERAgent
-from SAC.sac import SACAgent
+from SAC.sac2 import SACAgent
 from common.TimeLimitWrapper import TimeLimitWrapper
 from common.CustomGymWrapper import ObsvnResizeTimeLimitWrapper
 
@@ -52,11 +52,11 @@ if __name__ == "__main__":
     success_value = None
     lr_a = 0.0002  # 0.0002
     lr_c = 0.0002  # 0.0002
-    epochs = 20
+    epochs = 50
     training_batch = 1024   # 5120(racecar)  # 1024 (kuka), 512
     training_episodes = 10000    # needed for SAC
-    buffer_capacity = 50000     # 50k (racecar)  # 20K (kuka)
-    batch_size = 128    # 512 (racecar) #   28 (kuka)
+    buffer_capacity = 100000     # 50k (racecar)  # 20K (kuka)
+    batch_size = 256   # 512 (racecar) #   28 (kuka)
     epsilon = 0.2  # 0.07
     gamma = 0.993  # 0.99
     lmbda = 0.7  # 0.9

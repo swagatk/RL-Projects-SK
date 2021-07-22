@@ -1,5 +1,5 @@
 import gym
-from SAC.sac import SACAgent
+from SAC.sac2 import SACAgent
 
 ######################
 # HYPERPARAMETERS
@@ -20,8 +20,6 @@ use_attention = False  # enable/disable for attention model
 use_mujoco = False
 
 env = gym.make('MountainCarContinuous-v0')
-
-
 agent = SACAgent(env, success_value,
              epochs, training_episodes, batch_size, buffer_capacity, lr_a, lr_c, alpha,
              gamma, tau, use_attention, use_mujoco,
