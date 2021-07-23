@@ -73,7 +73,8 @@ class SACActor:
         return mean, std
 
     def policy(self, state):
-        # input is a tensor
+        # input: tensor
+        # output: tensor
         mean = tf.squeeze(self.model(state))
         std = tf.squeeze(tf.exp(self.model.logstd))
 
@@ -89,7 +90,7 @@ class SACActor:
         else:   # matrix
             log_pi_a = tf.reduce_sum((log_pi_ - tf.math.log(1 - action ** 2 + 1e-16)), axis=1, keepdims=True)
 
-        return action.numpy(), log_pi_a.numpy()
+        return action, log_pi_a
 
     def train(self, states, alpha, critic1, critic2):
         with tf.GradientTape() as tape:
@@ -508,14 +509,13 @@ class SACAgent:
 
 class SACAgent2:
     # the environment variable is not a part of this class
-    def __init__(self, state_size, action_size, action_upper_bound, success_value, epochs,
+    def __init__(self, state_size, action_size, action_upper_bound, epochs,
                   batch_size, buffer_capacity, learning_rate=0.0003,
                  gamma=0.99, tau=0.995, alpha=0.2, use_attention=False,
                   path='./'):
         self.action_size = action_size
         self.state_size = state_size
         self.upper_bound = action_upper_bound
-        self.success_value = success_value
         self.lr = learning_rate
         self.epochs = epochs
         self.batch_size = batch_size
@@ -574,7 +574,7 @@ class SACAgent2:
         else:       # for a batch of samples
             tf_state = tf.convert_to_tensor(state, dtype=tf.float32)
 
-        action, log_pi = self.actor.policy(tf_state)
+        action, log_pi = self.actor.policy(tf_state) # returns tensors
         return action.numpy(), log_pi.numpy()
 
     def update_alpha(self, states):

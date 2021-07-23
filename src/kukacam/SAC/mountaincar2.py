@@ -7,6 +7,10 @@ import numpy as np
 import tensorflow as tf
 import datetime
 from collections import deque
+import sys
+
+sys.path.append(r'/content/gdrive/MyDrive/Colab/RL-Projects-SK/src/kukacam/')
+
 
 # local imports
 from SAC.sac2 import SACAgent2
@@ -28,8 +32,9 @@ tau = 0.995     # polyak averaging factor
 alpha = 0.2     # Entropy Coefficient
 use_attention = False  # enable/disable for attention model
 use_mujoco = False
-TB_LOG = False
-save_path = './'
+TB_LOG = True
+tb_log_path = '/content/gdrive/MyDrive/Colab/tb_log/'
+save_path = '/content/gdrive/MyDrive/Colab/kuka/sac/'
 
 #################
 # Functions
@@ -57,12 +62,12 @@ def validate(env, agent, max_eps=50):
 
 
 # Main training function
-def run(env, agent, training_episodes, filename, val_freq, save_path):
+def run(env, agent, training_episodes, success_value, filename, val_freq, path):
     #######################
     # TENSORBOARD SETTINGS
     if TB_LOG:
         current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        train_log_dir = save_path + 'logs/train/' + current_time
+        train_log_dir = tb_log_path + current_time
         train_summary_writer = tf.summary.create_file_writer(train_log_dir)
     ########################################
 
@@ -156,13 +161,12 @@ if __name__ == '__main__':
     env = gym.make('MountainCarContinuous-v0')
     state_size = env.observation_space.shape
     action_size = env.action_space.shape
-    action_upper_bound = env.action_space.high
+    action_upper_bound = env.action_space.high[0]
 
     agent = SACAgent2(state_size, action_size, action_upper_bound, epochs,
-                      batch_size, buffer_capacity, learning_rate, alpha,
-                 gamma, tau, use_attention, path=save_path)
+                      batch_size, buffer_capacity, learning_rate, 
+                 gamma, tau, alpha, use_attention, path=save_path)
 
     # train
-    run(env, agent, training_episodes, success_value,
-        filename='mc_sac.txt', val_freq=None, path=save_path)
+    run(env, agent, training_episodes, success_value, filename='mc_sac.txt', val_freq=None, path=save_path)
 
