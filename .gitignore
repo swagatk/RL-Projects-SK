@@ -13,7 +13,7 @@ results/
 **/result 
 **/.idea
 **/.ipynb_checkpoints
-**/wand
-**/.idea
-**/.ipynb_checkpoints
+wand/
+.idea/
+.ipynb_checkpoints/
 
