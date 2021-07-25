@@ -2,7 +2,15 @@
 Soft Actor Critic Algorithm
 Original Source: https://github.com/shakti365/soft-actor-critic
 
-This version is modified for 'MountainCarContinuous-v0' environment.
+- policy function is now a part of the actor network. 
+- tf.GradientTape() part of the actor/critic networks are modified to ensure proper flow of gradients. This is something that should be
+    replicated to other algorithms such as PPO, IPG, DDPG, TD3 etc. (To do)
+- Two versions of SACAgent class definitions are provided. The first version takes 'env' as an input argument which makes it difficult to account
+    for changes in environment specifications. The second version SACAgent2 keeps the environment separate from agent definition making it easier
+    for the user to pre-process environment input/output signals before passing them to the agent. This is something we will replicate
+    in future algorithms. 
+- SACAgent2 will supersede SACAgent in the future. 
+
 '''
 import numpy as np
 import tensorflow as tf
@@ -276,15 +284,15 @@ class SACAgent:
         else:
             tf_state = tf.convert_to_tensor(state, dtype=tf.float32)
 
-        action, log_pi = self.actor.policy(tf_state)
-        return action, log_pi
+        action, log_pi = self.actor.policy(tf_state)   # returns tensors
+        return action.numpy(), log_pi.numpy()
 
     def update_alpha(self, states):
         # input: tensor
         with tf.GradientTape() as tape:
             # sample actions from the policy for the current states
-            pi_a, log_pi_a = self.actor.policy(states)
-            alpha_loss = tf.reduce_mean(-self.alpha * (log_pi_a + self.target_entropy))
+            _, log_pi_a = self.actor.policy(states)
+            alpha_loss = - tf.reduce_mean(self.alpha * (log_pi_a + self.target_entropy))
         # outside gradient tape block
         variables = [self.alpha]
         grads = tape.gradient(alpha_loss, variables)
@@ -581,7 +589,7 @@ class SACAgent2:
         # input: tensor
         with tf.GradientTape() as tape:
             # sample actions from the policy for the current states
-            pi_a, log_pi_a = self.actor.policy(states)
+            _, log_pi_a = self.actor.policy(states)
             alpha_loss = tf.reduce_mean(-self.alpha * (log_pi_a + self.target_entropy))
         # outside gradient tape block
         variables = [self.alpha]
