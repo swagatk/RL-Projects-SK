@@ -11,22 +11,23 @@ Algorithms being compared are: PPO, SAC, IPG, IPG+HER, SAC+HER
 2. KukaGrasp
 3. RaceCar
 """
-# Imports
+# Import
 import tensorflow as tf
+import pybullet as p
 from pybullet_envs.bullet.kuka_diverse_object_gym_env import KukaDiverseObjectEnv
 from pybullet_envs.bullet.kukaCamGymEnv import KukaCamGymEnv
 from pybullet_envs.bullet.racecarZEDGymEnv import RacecarZEDGymEnv
 from pybullet_envs.bullet.racecarGymEnv import RacecarGymEnv
 from packaging import version
 from collections import deque
-from datetime import datetime
+import datetime
 import numpy as np
 import gym
 import sys
 import wandb
 
 # Add the current folder to python's import path
-sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/kukacam/')
+#sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/kukacam/')
 
 # Local imports
 from ppo.ppo2 import PPOAgent
@@ -36,6 +37,12 @@ from SAC.sac2 import SACAgent2
 from common.TimeLimitWrapper import TimeLimitWrapper
 from common.CustomGymWrapper import ObsvnResizeTimeLimitWrapper
 from common.utils import uniquify
+
+############################
+# Google Colab Settings
+p.connect(p.DIRECT)
+# Add the current folder to python's import path
+sys.path.append('/content/gdrive/MyDrive/Colab/RL-Projects-SK/src/kukacam/')
 
 
 ########################################
@@ -76,7 +83,7 @@ lr_c = 0.0002
 epochs = 50
 training_batch = 1024   # 5120(racecar)  # 1024 (kuka), 512
 training_episodes = 10000    # needed for SAC
-buffer_capacity = 100000     # 50k (racecar)  # 20K (kuka)
+buffer_capacity = 20000     # 50k (racecar)  # 20K (kuka)
 batch_size = 256   # 512 (racecar) #   28 (kuka)
 epsilon = 0.2  # 0.07
 gamma = 0.993  # 0.99
@@ -86,7 +93,7 @@ alpha = 0.2             # Entropy Coefficient
 use_attention = False  # enable/disable for attention model
 use_mujoco = False
 TB_LOG = True
-save_path = './log/'
+save_path = '/content/gdrive/MyDrive/Colab/kuka/sac/'
 algo = 'sac'
 
 #################################3
@@ -224,6 +231,8 @@ def run(env, agent, training_episodes, success_value, filename, val_freq):
     env.close()
     print('Mean episodic score over {} episodes: {:.2f}'.format(training_episodes, np.mean(ep_scores)))
 
+    p.disconnect(p.DIRECT) # on google colab
+
 if __name__ == "__main__":
 
     # Kuka DiverseObject Environment
@@ -264,7 +273,7 @@ if __name__ == "__main__":
 
     
     agent = SACAgent2(state_size, action_size, action_upper_bound, epochs,
-                      batch_size, buffer_capacity, learning_rate, 
+                      batch_size, buffer_capacity, lr_a, lr_c, 
                  gamma, tau, alpha, use_attention, path=save_path)
 
-    agent.run()
+    run(env, agent, training_episodes, success_value, 'kuka_sac.txt', val_freq=None)

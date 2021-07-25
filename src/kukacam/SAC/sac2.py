@@ -490,41 +490,43 @@ class SACAgent:
         self.env.close()
         print('Mean episodic score over {} episodes: {:.2f}'.format(self.training_episodes, np.mean(ep_scores)))
 
-    def save_model(self, actor_file, c1_file, c2_file, c1t_file, c2t_file):
-        actor_file = self.path + actor_file
-        critic1_file = self.path + c1_file
-        critic2_file = self.path + c2_file
-        target_c1_file = self.path + c1t_file
-        target_c2_file = self.path + c2t_file
+    def save_model(self, path, actor_file, c1_file, c2_file, c1t_file, c2t_file):
+        actor_file = path + actor_file
+        critic1_file = path + c1_file
+        critic2_file = path + c2_file
+        target_c1_file = path + c1t_file
+        target_c2_file = path + c2t_file
         self.actor.save_weights(actor_file)
         self.critic1.save_weights(critic1_file)
         self.critic2.save_weights(critic2_file)
         self.target_critic1.save_weights(target_c1_file)
         self.target_critic2.save_weights(target_c2_file)
 
-    def load_model(self, actor_file, c1_file, c2_file, c1t_file, c2t_file):
-        actor_file = self.path + actor_file
-        critic1_file = self.path + c1_file
-        critic2_file = self.path + c2_file
-        target_c1_file = self.path + c1t_file
-        target_c2_file = self.path + c2t_file
+    def load_model(self, path, actor_file, c1_file, c2_file, c1t_file, c2t_file):
+        actor_file = path + actor_file
+        critic1_file = path + c1_file
+        critic2_file = path + c2_file
+        target_c1_file = path + c1t_file
+        target_c2_file = path + c2t_file
         self.actor.load_weights(actor_file)
         self.critic1.load_weights(critic1_file)
         self.critic2.load_weights(critic2_file)
         self.target_critic1.load_weights(target_c1_file)
         self.target_critic2.load_weights(target_c2_file)
 
+    
 
 class SACAgent2:
     # the environment variable is not a part of this class
     def __init__(self, state_size, action_size, action_upper_bound, epochs,
-                  batch_size, buffer_capacity, learning_rate=0.0003,
+                  batch_size, buffer_capacity, lr_a=0.0003, lr_c=0.0003,
                  gamma=0.99, tau=0.995, alpha=0.2, use_attention=False,
                   path='./'):
         self.action_size = action_size
         self.state_size = state_size
         self.upper_bound = action_upper_bound
-        self.lr = learning_rate
+        self.lr_a = lr_a
+        self.lr_c = lr_c
         self.epochs = epochs
         self.batch_size = batch_size
         self.buffer_capacity = buffer_capacity
@@ -544,34 +546,34 @@ class SACAgent2:
         # Select a suitable feature extractor
         if self.use_attention and self.image_input:   # attention + image input
             print('Currently Attention handles only image input')
-            self.feature = AttentionFeatureNetwork(self.state_size, self.lr)
+            self.feature = AttentionFeatureNetwork(self.state_size, self.lr_a)
         elif self.use_attention is False and self.image_input is True:  # image input
             print('You have selected an image input')
-            self.feature = FeatureNetwork(self.state_size, self.lr)
+            self.feature = FeatureNetwork(self.state_size, self.lr_a)
         else:       # non-image input
             print('You have selected a non-image input.')
             self.feature = None
 
         # create actor for learning policy
         self.actor = SACActor(self.state_size, self.action_size, self.upper_bound,
-                              self.lr, self.feature)
+                              self.lr_a, self.feature)
 
         # create two critics
         self.critic1 = SACCritic(self.state_size, self.action_size,
-                                 self.lr, self.gamma, self.feature)
+                                 self.lr_c, self.gamma, self.feature)
         self.critic2 = SACCritic(self.state_size, self.action_size,
-                                 self.lr, self.gamma, self.feature)
+                                 self.lr_c, self.gamma, self.feature)
 
         # create two target critics
         self.target_critic1 = SACCritic(self.state_size, self.action_size,
-                                        self.lr, self.gamma, self.feature)
+                                        self.lr_c, self.gamma, self.feature)
         self.target_critic2 = SACCritic(self.state_size, self.action_size,
-                                        self.lr, self.gamma, self.feature)
+                                        self.lr_c, self.gamma, self.feature)
 
         # create alpha as a trainable variable
         # This is the entropy coefficient required for soft target
         self.alpha = tf.Variable(alpha, dtype=tf.float32)
-        self.alpha_optimizer = tf.keras.optimizers.Adam(self.lr)
+        self.alpha_optimizer = tf.keras.optimizers.Adam(self.lr_a)
 
         # Buffer for off-policy training
         self.buffer = Buffer(self.buffer_capacity, self.batch_size)
@@ -652,28 +654,31 @@ class SACAgent2:
 
         return mean_c1_loss, mean_c2_loss, mean_actor_loss, mean_alpha_loss
 
-    def save_model(self, path, actor_file, c1_file, c2_file, c1t_file, c2t_file):
-        actor_file = path + actor_file
-        critic1_file = path + c1_file
-        critic2_file = path + c2_file
-        target_c1_file = path + c1t_file
-        target_c2_file = path + c2t_file
+    
+    
+    def save_model(self, save_path):
+        actor_file = save_path + 'sac_actor_wts.h5'
+        critic1_file = save_path + 'sac_c1_wts.h5'
+        critic2_file = save_path + 'sac_c2_wts.h5'
+        target_c1_file = save_path + 'sac_c1t_wts.h5'
+        target_c2_file = save_path + 'sac_c2t_wts.h5'
         self.actor.save_weights(actor_file)
         self.critic1.save_weights(critic1_file)
         self.critic2.save_weights(critic2_file)
         self.target_critic1.save_weights(target_c1_file)
         self.target_critic2.save_weights(target_c2_file)
 
-    def load_model(self, path, actor_file, c1_file, c2_file, c1t_file, c2t_file):
-        actor_file = path + actor_file
-        critic1_file = path + c1_file
-        critic2_file = path + c2_file
-        target_c1_file = path + c1t_file
-        target_c2_file = path + c2t_file
+    def load_model(self, load_path):
+        actor_file = load_path + 'sac_actor_wts.h5'
+        critic1_file = load_path + 'sac_c1_wts.h5'
+        critic2_file = load_path + 'sac_c2_wts.h5'
+        target_c1_file = load_path + 'sac_c1t_wts.h5'
+        target_c2_file = load_path + 'sac_c2t_wts.h5'
         self.actor.load_weights(actor_file)
         self.critic1.load_weights(critic1_file)
         self.critic2.load_weights(critic2_file)
         self.target_critic1.load_weights(target_c1_file)
         self.target_critic2.load_weights(target_c2_file)
+
 
 
