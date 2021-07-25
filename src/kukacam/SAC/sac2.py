@@ -651,8 +651,9 @@ class SACAgent2:
         mean_c2_loss = np.mean(c2_losses)
         mean_actor_loss = np.mean(actor_losses)
         mean_alpha_loss = np.mean(alpha_losses)
+        mean_critic_loss = np.mean([mean_c1_loss, mean_c2_loss])
 
-        return mean_c1_loss, mean_c2_loss, mean_actor_loss, mean_alpha_loss
+        return  mean_actor_loss, mean_critic_loss, mean_alpha_loss
 
     
     

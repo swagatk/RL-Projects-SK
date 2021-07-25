@@ -13,7 +13,6 @@ Algorithms being compared are: PPO, SAC, IPG, IPG+HER, SAC+HER
 """
 # Import
 import tensorflow as tf
-import pybullet as p
 from pybullet_envs.bullet.kuka_diverse_object_gym_env import KukaDiverseObjectEnv
 from pybullet_envs.bullet.kukaCamGymEnv import KukaCamGymEnv
 from pybullet_envs.bullet.racecarZEDGymEnv import RacecarZEDGymEnv
@@ -23,11 +22,8 @@ from collections import deque
 import datetime
 import numpy as np
 import gym
-import sys
+from tensorflow.python.keras.backend import dtype
 import wandb
-
-# Add the current folder to python's import path
-#sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/kukacam/')
 
 # Local imports
 from ppo.ppo2 import PPOAgent
@@ -38,11 +34,10 @@ from common.TimeLimitWrapper import TimeLimitWrapper
 from common.CustomGymWrapper import ObsvnResizeTimeLimitWrapper
 from common.utils import uniquify
 
-############################
-# Google Colab Settings
-p.connect(p.DIRECT)
 # Add the current folder to python's import path
+import sys
 sys.path.append('/content/gdrive/MyDrive/Colab/RL-Projects-SK/src/kukacam/')
+
 
 
 ########################################
@@ -80,9 +75,8 @@ SEASONS = 50   # 35
 success_value = None
 lr_a = 0.0002  
 lr_c = 0.0002  
-epochs = 50
+epochs = 20
 training_batch = 1024   # 5120(racecar)  # 1024 (kuka), 512
-training_episodes = 10000    # needed for SAC
 buffer_capacity = 20000     # 50k (racecar)  # 20K (kuka)
 batch_size = 256   # 512 (racecar) #   28 (kuka)
 epsilon = 0.2  # 0.07
@@ -92,11 +86,29 @@ tau = 0.995             # polyak averaging factor
 alpha = 0.2             # Entropy Coefficient
 use_attention = False  # enable/disable for attention model
 use_mujoco = False
+use_HER = True
+val_freq = None
 TB_LOG = True
 save_path = '/content/gdrive/MyDrive/Colab/kuka/sac/'
 algo = 'sac'
+env_name = 'kukad'
+COLAB = False
 
+############################
+# Google Colab Settings
+if COLAB:
+    import pybullet as p
+    p.connect(p.DIRECT)
 #################################3
+# TENSORBOARD SETTINGS
+if TB_LOG:
+    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    train_log_dir = save_path + 'tb_log/' + current_time
+    wandb.tensorboard.patch(root_logdir=train_log_dir)   
+    train_summary_writer = tf.summary.create_file_writer(train_log_dir)
+########################################
+
+###############################333
 # Functions
 
 # validate function
@@ -121,42 +133,62 @@ def validate(env, agent, max_eps=50):
 
 
 # Main training function
-def run(env, agent, training_episodes, success_value, filename, val_freq):
-    #######################
-    # TENSORBOARD SETTINGS
-    if TB_LOG:
-        current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-        train_log_dir = save_path + 'tb_log/' + current_time
-        wandb.tensorboard.patch(root_logdir=train_log_dir)   
-        train_summary_writer = tf.summary.create_file_writer(train_log_dir)
-    ########################################
+def run(env, agent):
 
-    if filename is None:
-        filename = 'sac_output.txt'
+    tag = '_her' if use_HER else ''
+    # file for storing results
+    filename = env_name + '_' + algo + tag + '.txt'
     filename = uniquify(save_path + filename)
 
     if val_freq is not None:
         val_scores = deque(maxlen=50)
         val_score = 0
 
+    # initial state
+    obs = env.reset()
+    state = np.asarray(obs, dtype=np.float32) / 255.0
+    if use_HER:
+        goal = np.asarray(env.reset(), dtype=np.float32) / 255.0
+
     start = datetime.datetime.now()
     best_score = -np.inf
     ep_lens = []  # episodic length
-    ep_scores = []  # All episodic scores
-    time_steps = 0
-    for ep in range(training_episodes):
-        # initial state
-        obs = env.reset()
-        state = np.asarray(obs, dtype=np.float32) / 255.0
-        ep_score = 0  # score for each episode
-        t = 0  # length of each episode
-        while True:
+    ep_scores = []      # All episodic scores
+    time_steps = 0      # global step count
+    s_scores = []       # season scores
+    total_ep_cnt = 0  # total episode count
+    for s in range(SEASONS):
+        states, next_states, actions, rewards, dones = [], [], [], [], []
+
+        if use_HER:
+            goals = []
+            temp_experience = []      # temporary experience buffer
+
+        s_score = 0
+        ep_cnt = 0      # no. of episodes in each season
+        ep_score = 0    # episodic reward
+        done = False
+        for t in range(training_batch):
             action, _ = agent.policy(state)
             next_obs, reward, done, _ = env.step(action)
             next_state = np.asarray(next_obs, dtype=np.float32) / 255.0
 
+            # this is used for on-policy training
+            states.append(state)
+            next_states.append(next_state)
+            actions.append(action)
+            rewards.append(reward)
+            dones.append(done)
+
             # store in replay buffer for off-policy training
-            agent.buffer.record((state, action, reward, next_state, done))
+            if use_HER:
+                goals.append(goal)
+                agent.buffer.record((state, action, reward, next_state, done, goal)) # check this
+                # Also store in a separate buffer
+                temp_experience.append([state, action, reward, next_state, done, goal])
+            else:
+                agent.buffer.record((state, action, reward, next_state, done))
+
 
             state = next_state
             ep_score += reward
@@ -164,29 +196,56 @@ def run(env, agent, training_episodes, success_value, filename, val_freq):
 
             if done:
                 time_steps += t
-                break
-            # done block ends here
-        # end of one episode
-        # off-policy training after each episode
-        if algo == 'sac':
-            c1_loss, c2_loss, actor_loss, alpha_loss = agent.replay()
-        elif algo == 'ppo':
-            actor_loss, critic_loss = agent.replay()
-        else:
-            actor_loss, critic_loss = agent.replay()
+                s_score += ep_score
+                ep_cnt += 1         # episode count in each season
+                total_ep_cnt += 1   # global episode count
+                ep_scores.append(ep_score)
+                ep_lens.append(t)
 
-        ep_scores.append(ep_score)
-        ep_lens.append(t)
+                if use_HER:
+                    hind_goal = temp_experience[-1][3]  # Final state strategy
+                    # add hindsight experience to the main buffer
+                    agent.add_her_experience(temp_experience, hind_goal)
+                    temp_experience = []    # clear the temporary buffer
+
+                obs = env.reset()
+                state = np.asarray(obs, dtype=np.float32) / 255.0
+                if use_HER: 
+                    state = np.asarray(env.reset(), dtype=np.float32) / 255.0
+                ep_score = 0
+                done = False
+
+                # off-policy training after each episode
+                if algo == 'sac':
+                    actor_loss, critic_loss, alpha_loss = agent.replay()
+
+            # done block ends here
+        # end of one season
+
+        # off-policy training after each season 
+        if algo == 'ppo':
+            pass
+        elif algo == 'ipg':
+            if use_HER:
+                a_loss, c_loss = agent.replay(states, actions, rewards, next_states, dones, goals)
+            else:
+                a_loss, c_loss = agent.replay(states, actions, rewards, next_states, dones)
+        else:
+            pass
+
+        s_score = np.mean(ep_scores[-ep_cnt:])  # mean of last ep_cnt episodes
+        s_scores.append(s_score)
+        mean_s_score = np.mean(s_scores)
         mean_ep_score = np.mean(ep_scores)
         mean_ep_len = np.mean(ep_lens)
 
-        if ep > 100 and mean_ep_score > best_score:
+        if  mean_s_score > best_score:
             agent.save_model(save_path)
-            print('Episode: {}, Update best score: {}-->{}, Model saved!'.format(ep, best_score, mean_ep_score))
-            best_score = mean_ep_score
+            print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_s_score))
+            best_score = mean_s_score
 
         if val_freq is not None:
-            if ep % val_freq == 0:
+            if total_ep_cnt % val_freq == 0:
                 print('Episode: {}, Score: {}, Mean score: {}'.format(ep, ep_score, mean_ep_score))
                 val_score = validate(env)
                 val_scores.append(val_score)
@@ -196,43 +255,43 @@ def run(env, agent, training_episodes, success_value, filename, val_freq):
 
         if TB_LOG:
             with train_summary_writer.as_default():
-                tf.summary.scalar('1. Episodic Score', ep_score, step=ep)
-                tf.summary.scalar('2. Mean Season Score', mean_ep_score, step=ep)
+                tf.summary.scalar('1. Season Score', s_score, step=s)
+                tf.summary.scalar('2. Mean season Score', mean_s_score, step=s)
                 if val_freq is not None:
-                    tf.summary.scalar('3. Validation Score', val_score, step=ep)
-                tf.summary.scalar('4. Actor Loss', actor_loss, step=ep)
-                tf.summary.scalar('5. Critic1 Loss', c1_loss, step=ep)
-                tf.summary.scalar('6. Critic2 Loss', c2_loss, step=ep)
-                tf.summary.scalar('7. Mean Episode Length', mean_ep_len, step=ep)
-                tf.summary.scalar('8. Alpha Loss', alpha_loss, step=ep)
+                    tf.summary.scalar('3. Validation Score', val_score, step=s)
+                tf.summary.scalar('4. Actor Loss', actor_loss, step=s)
+                tf.summary.scalar('5. Critic Loss', c_loss, step=s)
+                tf.summary.scalar('6. Mean Episode Length', mean_ep_len, step=s)
+                tf.summary.scalar('7. Alpha Loss', alpha_loss, step=s)
 
         if algo == 'sac':
             with open(filename, 'a') as file:
-                file.write('{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
-                        .format(ep, time_steps, mean_ep_len,
-                                ep_score, mean_ep_score, actor_loss, c1_loss, c2_loss, alpha_loss))
-        elif algo == 'ppo':
-            pass
+                file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
+                        .format(s, total_ep_cnt, time_steps, mean_ep_len,
+                                s_score, mean_s_score, actor_loss, critic_loss, alpha_loss))
         elif algo == 'ipg':
-            pass
-        elif algo == 'ipg_her':
-            pass
-        else:
-            raise ValueError("Invalid Choice of Algorithm. Select sac/ppo/ipg/ipg_her")
+            with open(filename, 'a') as file:
+                file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
+                        .format(s, total_ep_cnt, time_steps, mean_ep_len,
+                                s_score, mean_s_score, actor_loss, critic_loss))
 
         if success_value is not None:
             if best_score > success_value:
-                print('Problem is solved in {} episodes with score {}'.format(ep, best_score))
-                print('Mean Episodic score: {}'.format(mean_ep_score))
+                print('Problem is solved in {} seasons with best score {}'.format(s, best_score))
+                print('Mean season score: {}'.format(mean_s_score))
                 break
     # end of episode-loop
     end = datetime.datetime.now()
     print('Time to Completion: {}'.format(end - start))
     env.close()
-    print('Mean episodic score over {} episodes: {:.2f}'.format(training_episodes, np.mean(ep_scores)))
+    print('Mean episodic score over {} episodes: {:.2f}'.format(total_ep_cnt, np.mean(ep_scores)))
 
-    p.disconnect(p.DIRECT) # on google colab
+    if COLAB:
+        p.disconnect(p.DIRECT) # on google colab
+    # end of run function
 
+
+######################################
 if __name__ == "__main__":
 
     # Kuka DiverseObject Environment
@@ -266,14 +325,8 @@ if __name__ == "__main__":
     #                     use_mujoco, filename='rc_ipg_her.txt', val_freq=None)
 
     # SAC Agent
-    # agent = SACAgent(env, success_value,
-    #                  epochs, training_episodes, batch_size, buffer_capacity, lr_a, lr_c, alpha,
-    #                  gamma, tau, use_attention, use_mujoco,
-    #                  filename='kuka_sac.txt', tb_log=False, val_freq=None)
-
-    
     agent = SACAgent2(state_size, action_size, action_upper_bound, epochs,
                       batch_size, buffer_capacity, lr_a, lr_c, 
-                 gamma, tau, alpha, use_attention, path=save_path)
+                                    gamma, tau, alpha, use_attention)
 
-    run(env, agent, training_episodes, success_value, 'kuka_sac.txt', val_freq=None)
+    run(env, agent)
