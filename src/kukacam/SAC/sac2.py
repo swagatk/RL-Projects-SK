@@ -520,8 +520,7 @@ class SACAgent2:
     # the environment variable is not a part of this class
     def __init__(self, state_size, action_size, action_upper_bound, epochs,
                   batch_size, buffer_capacity, lr_a=0.0003, lr_c=0.0003,
-                 gamma=0.99, tau=0.995, alpha=0.2, use_attention=False,
-                  path='./'):
+                 gamma=0.99, tau=0.995, alpha=0.2, use_attention=False):
         self.action_size = action_size
         self.state_size = state_size
         self.upper_bound = action_upper_bound
@@ -534,7 +533,6 @@ class SACAgent2:
         self.gamma = gamma                  # discount factor
         self.tau = tau                      # polyak averaging factor
         self.use_attention = use_attention
-        self.path = path
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -655,8 +653,6 @@ class SACAgent2:
 
         return  mean_actor_loss, mean_critic_loss, mean_alpha_loss
 
-    
-    
     def save_model(self, save_path):
         actor_file = save_path + 'sac_actor_wts.h5'
         critic1_file = save_path + 'sac_c1_wts.h5'

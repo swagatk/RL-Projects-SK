@@ -62,7 +62,7 @@ def validate(env, agent, max_eps=50):
 
 
 # Main training function
-def run(env, agent, training_episodes, success_value, filename, val_freq, path):
+def run(env, agent, training_episodes, success_value, filename, val_freq):
     #######################
     # TENSORBOARD SETTINGS
     if TB_LOG:
@@ -168,5 +168,5 @@ if __name__ == '__main__':
                  gamma, tau, alpha, use_attention, path=save_path)
 
     # train
-    run(env, agent, training_episodes, success_value, filename='mc_sac.txt', val_freq=None, path=save_path)
+    run(env, agent, training_episodes, success_value, filename='mc_sac.txt', val_freq=None)
 
