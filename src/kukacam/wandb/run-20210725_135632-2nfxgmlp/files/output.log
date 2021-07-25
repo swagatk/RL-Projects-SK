@@ -1,4 +1,0 @@
-Traceback (most recent call last):
-  File "main2.py", line 276, in <module>
-    batch_size, buffer_capacity, learning_rate,
-NameError: name 'learning_rate' is not defined
