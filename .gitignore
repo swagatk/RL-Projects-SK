@@ -16,4 +16,4 @@ results/
 wand/
 .idea/
 .ipynb_checkpoints/
-
+**/tb_log

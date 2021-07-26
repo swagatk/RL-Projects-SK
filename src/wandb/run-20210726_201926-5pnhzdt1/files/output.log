@@ -1,0 +1,241 @@
+2021-07-26 20:19:32.698208: I tensorflow/stream_executor/cuda/cuda_gpu_executor.cc:941] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero
+2021-07-26 20:19:32.698686: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1720] Found device 0 with properties:
+pciBusID: 0000:01:00.0 name: GeForce RTX 2060 computeCapability: 7.5
+coreClock: 1.2GHz coreCount: 30 deviceMemorySize: 5.79GiB deviceMemoryBandwidth: 312.97GiB/s
+2021-07-26 20:19:32.698719: I tensorflow/stream_executor/platform/default/dso_loader.cc:49] Successfully opened dynamic library libcudart.so.10.1
+2021-07-26 20:19:32.698783: I tensorflow/stream_executor/platform/default/dso_loader.cc:49] Successfully opened dynamic library libcublas.so.10
+2021-07-26 20:19:32.698807: I tensorflow/stream_executor/platform/default/dso_loader.cc:49] Successfully opened dynamic library libcublasLt.so.10
+2021-07-26 20:19:32.698828: I tensorflow/stream_executor/platform/default/dso_loader.cc:49] Successfully opened dynamic library libcufft.so.10
+2021-07-26 20:19:32.698850: I tensorflow/stream_executor/platform/default/dso_loader.cc:49] Successfully opened dynamic library libcurand.so.10
+2021-07-26 20:19:32.698870: I tensorflow/stream_executor/platform/default/dso_loader.cc:49] Successfully opened dynamic library libcusolver.so.10
+2021-07-26 20:19:32.698890: I tensorflow/stream_executor/platform/default/dso_loader.cc:49] Successfully opened dynamic library libcusparse.so.10
+2021-07-26 20:19:32.698912: I tensorflow/stream_executor/platform/default/dso_loader.cc:49] Successfully opened dynamic library libcudnn.so.7
+2021-07-26 20:19:32.698985: I tensorflow/stream_executor/cuda/cuda_gpu_executor.cc:941] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero
+2021-07-26 20:19:32.699454: I tensorflow/stream_executor/cuda/cuda_gpu_executor.cc:941] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero
+2021-07-26 20:19:32.699852: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1862] Adding visible gpu devices: 0
+2021-07-26 20:19:32.699889: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1261] Device interconnect StreamExecutor with strength 1 edge matrix:
+2021-07-26 20:19:32.699899: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1267]      0
+2021-07-26 20:19:32.699906: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1280] 0:   N
+2021-07-26 20:19:32.700008: I tensorflow/stream_executor/cuda/cuda_gpu_executor.cc:941] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero
+2021-07-26 20:19:32.700468: I tensorflow/stream_executor/cuda/cuda_gpu_executor.cc:941] successful NUMA node read from SysFS had negative value (-1), but there must be at least one NUMA node, so returning NUMA node zero
+2021-07-26 20:19:32.700891: I tensorflow/core/common_runtime/gpu/gpu_device.cc:1406] Created TensorFlow device (/job:localhost/replica:0/task:0/device:GPU:0 with 4899 MB memory) -> physical GPU (device: 0, name: GeForce RTX 2060, pci bus id: 0000:01:00.0, compute capability: 7.5)
+2021-07-26 20:19:32.700916: I tensorflow/compiler/jit/xla_gpu_device.cc:99] Not creating XLA devices, tf_xla_enable_xla_devices not set
+You have selected an image input
+shared feature network
+Model: "feature_net"
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #
+=================================================================
+input_1 (InputLayer)         [(None, 48, 48, 3)]       0
+_________________________________________________________________
+conv2d (Conv2D)              (None, 24, 24, 16)        1216
+_________________________________________________________________
+batch_normalization (BatchNo (None, 24, 24, 16)        64
+_________________________________________________________________
+conv2d_1 (Conv2D)            (None, 12, 12, 32)        12832
+_________________________________________________________________
+batch_normalization_1 (Batch (None, 12, 12, 32)        128
+_________________________________________________________________
+conv2d_2 (Conv2D)            (None, 6, 6, 32)          25632
+_________________________________________________________________
+batch_normalization_2 (Batch (None, 6, 6, 32)          128
+_________________________________________________________________
+flatten (Flatten)            (None, 1152)              0
+_________________________________________________________________
+dense (Dense)                (None, 128)               147584
+_________________________________________________________________
+dense_1 (Dense)              (None, 128)               16512
+_________________________________________________________________
+dense_2 (Dense)              (None, 64)                8256
+=================================================================
+Total params: 212,352
+Trainable params: 212,192
+Non-trainable params: 160
+_________________________________________________________________
+Model: "actor"
+_________________________________________________________________
+Layer (type)                 Output Shape              Param #
+=================================================================
+input_2 (InputLayer)         [(None, 48, 48, 3)]       0
+_________________________________________________________________
+feature_net (Functional)     (None, 64)                212352
+_________________________________________________________________
+dense_3 (Dense)              (None, 256)               16640
+_________________________________________________________________
+dense_4 (Dense)              (None, 128)               32896
+_________________________________________________________________
+dense_5 (Dense)              (None, 64)                8256
+_________________________________________________________________
+dense_6 (Dense)              (None, 3)                 195
+_________________________________________________________________
+tf.math.multiply (TFOpLambda (None, 3)                 0
+=================================================================
+Total params: 270,339
+Trainable params: 270,179
+Non-trainable params: 160
+_________________________________________________________________
+Model: "model"
+__________________________________________________________________________________________________
+Layer (type)                    Output Shape         Param #     Connected to
+==================================================================================================
+input_3 (InputLayer)            [(None, 48, 48, 3)]  0
+__________________________________________________________________________________________________
+feature_net (Functional)        (None, 64)           212352      input_3[0][0]
+__________________________________________________________________________________________________
+dense_7 (Dense)                 (None, 32)           2080        feature_net[1][0]
+__________________________________________________________________________________________________
+input_4 (InputLayer)            [(None, 3)]          0
+__________________________________________________________________________________________________
+dense_8 (Dense)                 (None, 32)           1056        dense_7[0][0]
+__________________________________________________________________________________________________
+dense_9 (Dense)                 (None, 32)           128         input_4[0][0]
+__________________________________________________________________________________________________
+concatenate (Concatenate)       (None, 64)           0           dense_8[0][0]
+                                                                 dense_9[0][0]
+__________________________________________________________________________________________________
+dense_10 (Dense)                (None, 128)          8320        concatenate[0][0]
+__________________________________________________________________________________________________
+dense_11 (Dense)                (None, 64)           8256        dense_10[0][0]
+__________________________________________________________________________________________________
+dense_12 (Dense)                (None, 1)            65          dense_11[0][0]
+==================================================================================================
+Total params: 232,257
+Trainable params: 232,097
+Non-trainable params: 160
+__________________________________________________________________________________________________
+Model: "model_1"
+__________________________________________________________________________________________________
+Layer (type)                    Output Shape         Param #     Connected to
+==================================================================================================
+input_5 (InputLayer)            [(None, 48, 48, 3)]  0
+__________________________________________________________________________________________________
+feature_net (Functional)        (None, 64)           212352      input_5[0][0]
+__________________________________________________________________________________________________
+dense_13 (Dense)                (None, 32)           2080        feature_net[2][0]
+__________________________________________________________________________________________________
+input_6 (InputLayer)            [(None, 3)]          0
+__________________________________________________________________________________________________
+dense_14 (Dense)                (None, 32)           1056        dense_13[0][0]
+__________________________________________________________________________________________________
+dense_15 (Dense)                (None, 32)           128         input_6[0][0]
+__________________________________________________________________________________________________
+concatenate_1 (Concatenate)     (None, 64)           0           dense_14[0][0]
+                                                                 dense_15[0][0]
+__________________________________________________________________________________________________
+dense_16 (Dense)                (None, 128)          8320        concatenate_1[0][0]
+__________________________________________________________________________________________________
+dense_17 (Dense)                (None, 64)           8256        dense_16[0][0]
+__________________________________________________________________________________________________
+dense_18 (Dense)                (None, 1)            65          dense_17[0][0]
+==================================================================================================
+Total params: 232,257
+Trainable params: 232,097
+Non-trainable params: 160
+__________________________________________________________________________________________________
+Model: "model_2"
+__________________________________________________________________________________________________
+Layer (type)                    Output Shape         Param #     Connected to
+==================================================================================================
+input_7 (InputLayer)            [(None, 48, 48, 3)]  0
+__________________________________________________________________________________________________
+feature_net (Functional)        (None, 64)           212352      input_7[0][0]
+__________________________________________________________________________________________________
+dense_19 (Dense)                (None, 32)           2080        feature_net[3][0]
+__________________________________________________________________________________________________
+input_8 (InputLayer)            [(None, 3)]          0
+__________________________________________________________________________________________________
+dense_20 (Dense)                (None, 32)           1056        dense_19[0][0]
+__________________________________________________________________________________________________
+dense_21 (Dense)                (None, 32)           128         input_8[0][0]
+__________________________________________________________________________________________________
+concatenate_2 (Concatenate)     (None, 64)           0           dense_20[0][0]
+                                                                 dense_21[0][0]
+__________________________________________________________________________________________________
+dense_22 (Dense)                (None, 128)          8320        concatenate_2[0][0]
+__________________________________________________________________________________________________
+dense_23 (Dense)                (None, 64)           8256        dense_22[0][0]
+__________________________________________________________________________________________________
+dense_24 (Dense)                (None, 1)            65          dense_23[0][0]
+==================================================================================================
+Total params: 232,257
+Trainable params: 232,097
+Non-trainable params: 160
+__________________________________________________________________________________________________
+Model: "model_3"
+__________________________________________________________________________________________________
+Layer (type)                    Output Shape         Param #     Connected to
+==================================================================================================
+input_9 (InputLayer)            [(None, 48, 48, 3)]  0
+__________________________________________________________________________________________________
+feature_net (Functional)        (None, 64)           212352      input_9[0][0]
+__________________________________________________________________________________________________
+dense_25 (Dense)                (None, 32)           2080        feature_net[4][0]
+__________________________________________________________________________________________________
+input_10 (InputLayer)           [(None, 3)]          0
+__________________________________________________________________________________________________
+dense_26 (Dense)                (None, 32)           1056        dense_25[0][0]
+__________________________________________________________________________________________________
+dense_27 (Dense)                (None, 32)           128         input_10[0][0]
+__________________________________________________________________________________________________
+concatenate_3 (Concatenate)     (None, 64)           0           dense_26[0][0]
+                                                                 dense_27[0][0]
+__________________________________________________________________________________________________
+dense_28 (Dense)                (None, 128)          8320        concatenate_3[0][0]
+__________________________________________________________________________________________________
+dense_29 (Dense)                (None, 64)           8256        dense_28[0][0]
+__________________________________________________________________________________________________
+dense_30 (Dense)                (None, 1)            65          dense_29[0][0]
+==================================================================================================
+Total params: 232,257
+Trainable params: 232,097
+Non-trainable params: 160
+__________________________________________________________________________________________________
+2021-07-26 20:19:34.972645: I tensorflow/stream_executor/platform/default/dso_loader.cc:49] Successfully opened dynamic library libcudnn.so.7
+2021-07-26 20:19:36.003720: W tensorflow/stream_executor/gpu/asm_compiler.cc:63] Running ptxas --version returned 256
+2021-07-26 20:19:36.043229: W tensorflow/stream_executor/gpu/redzone_allocator.cc:314] Internal: ptxas exited with non-zero error code 256, output:
+Relying on driver to perform ptx compilation.
+Modify $PATH to customize ptxas location.
+This message will be only logged once.
+2021-07-26 20:19:36.332174: I tensorflow/stream_executor/platform/default/dso_loader.cc:49] Successfully opened dynamic library libcublas.so.10
+/home/swagat/GIT/RL-Projects-SK/src/kukacam/SAC/sac2.py:601: VisibleDeprecationWarning: Creating an ndarray from ragged nested sequences (which is a list-or-tuple of lists-or-tuples-or ndarrays with different lengths or shapes) is deprecated. If you meant to do this, you must specify 'dtype=object' when creating the ndarray
+  target_wts1 = np.array(self.target_critic1.model.get_weights())
+/home/swagat/GIT/RL-Projects-SK/src/kukacam/SAC/sac2.py:602: VisibleDeprecationWarning: Creating an ndarray from ragged nested sequences (which is a list-or-tuple of lists-or-tuples-or ndarrays with different lengths or shapes) is deprecated. If you meant to do this, you must specify 'dtype=object' when creating the ndarray
+  wts1 = np.array(self.critic1.model.get_weights())
+/home/swagat/GIT/RL-Projects-SK/src/kukacam/SAC/sac2.py:603: VisibleDeprecationWarning: Creating an ndarray from ragged nested sequences (which is a list-or-tuple of lists-or-tuples-or ndarrays with different lengths or shapes) is deprecated. If you meant to do this, you must specify 'dtype=object' when creating the ndarray
+  target_wts2 = np.array(self.target_critic2.model.get_weights())
+/home/swagat/GIT/RL-Projects-SK/src/kukacam/SAC/sac2.py:604: VisibleDeprecationWarning: Creating an ndarray from ragged nested sequences (which is a list-or-tuple of lists-or-tuples-or ndarrays with different lengths or shapes) is deprecated. If you meant to do this, you must specify 'dtype=object' when creating the ndarray
+  wts2 = np.array(self.critic2.model.get_weights())
+Season: 0, Update best score: -inf-->0.3602941176470588, Model saved!
+[34m[1mwandb[39m[22m: Network error resolved after 0:02:49.040612, resuming normal operation.
+Season: 1, Update best score: 0.3602941176470588-->0.36764705882352944, Model saved!
+[34m[1mwandb[39m[22m: Network error resolved after 0:02:13.431677, resuming normal operation.
+[34m[1mwandb[39m[22m: Network error resolved after 0:02:51.042942, resuming normal operation.
+[34m[1mwandb[39m[22m: Network error resolved after 0:02:52.140816, resuming normal operation.
+Traceback (most recent call last):
+  File "/home/swagat/GIT/RL-Projects-SK/src/kukacam/main2.py", line 344, in <module>
+    # IPG HER Agent
+  File "/home/swagat/GIT/RL-Projects-SK/src/kukacam/main2.py", line 224, in run
+    # off-policy training after each episode
+  File "/home/swagat/GIT/RL-Projects-SK/src/kukacam/SAC/sac2.py", line 622, in replay
+    next_states = tf.convert_to_tensor(next_states, dtype=tf.float32)
+  File "/home/swagat/anaconda3/envs/tf2py37/lib/python3.7/site-packages/tensorflow/python/util/dispatch.py", line 201, in wrapper
+    return target(*args, **kwargs)
+  File "/home/swagat/anaconda3/envs/tf2py37/lib/python3.7/site-packages/tensorflow/python/framework/ops.py", line 1405, in convert_to_tensor_v2_with_dispatch
+    value, dtype=dtype, dtype_hint=dtype_hint, name=name)
+  File "/home/swagat/anaconda3/envs/tf2py37/lib/python3.7/site-packages/tensorflow/python/framework/ops.py", line 1415, in convert_to_tensor_v2
+    as_ref=False)
+  File "/home/swagat/anaconda3/envs/tf2py37/lib/python3.7/site-packages/tensorflow/python/profiler/trace.py", line 163, in wrapped
+    return func(*args, **kwargs)
+  File "/home/swagat/anaconda3/envs/tf2py37/lib/python3.7/site-packages/tensorflow/python/framework/ops.py", line 1540, in convert_to_tensor
+    ret = conversion_func(value, dtype=dtype, name=name, as_ref=as_ref)
+  File "/home/swagat/anaconda3/envs/tf2py37/lib/python3.7/site-packages/tensorflow/python/framework/constant_op.py", line 339, in _constant_tensor_conversion_function
+    return constant(v, dtype=dtype, name=name)
+  File "/home/swagat/anaconda3/envs/tf2py37/lib/python3.7/site-packages/tensorflow/python/framework/constant_op.py", line 265, in constant
+    allow_broadcast=True)
+  File "/home/swagat/anaconda3/envs/tf2py37/lib/python3.7/site-packages/tensorflow/python/framework/constant_op.py", line 276, in _constant_impl
+    return _constant_eager_impl(ctx, value, dtype, shape, verify_shape)
+  File "/home/swagat/anaconda3/envs/tf2py37/lib/python3.7/site-packages/tensorflow/python/framework/constant_op.py", line 301, in _constant_eager_impl
+    t = convert_to_eager_tensor(value, ctx, dtype)
+  File "/home/swagat/anaconda3/envs/tf2py37/lib/python3.7/site-packages/tensorflow/python/framework/constant_op.py", line 98, in convert_to_eager_tensor
+    return ops.EagerTensor(value, ctx.device_name, dtype)
+KeyboardInterrupt

@@ -8,6 +8,8 @@ from pybullet_envs.bullet.racecarZEDGymEnv import RacecarZEDGymEnv
 from pybullet_envs.bullet.racecarGymEnv import RacecarGymEnv
 from packaging import version
 import gym
+import sys
+sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/kukacam/')
 
 # Local imports
 from ppo.ppo2 import PPOAgent

@@ -2,6 +2,7 @@
 Interpolated Policy Gradient (IPG) Method
 - Originally implemented by Mr. Sampson Hayden
 '''
+import wandb
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -17,7 +18,7 @@ from common.buffer import Buffer
 from common.utils import uniquify
 
 # wandb config
-wandb.config.update({"algorithm":'IPG'})
+# wandb.config.update({"algorithm":'IPG'})
 ###############
 # ACTOR NETWORK
 ###############

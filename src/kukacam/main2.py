@@ -36,7 +36,8 @@ from common.utils import uniquify
 
 # Add the current folder to python's import path
 import sys
-sys.path.append('/content/gdrive/MyDrive/Colab/RL-Projects-SK/src/kukacam/')
+# sys.path.append('/content/gdrive/MyDrive/Colab/RL-Projects-SK/src/kukacam/')
+sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/kukacam/')
 
 
 
@@ -65,35 +66,41 @@ if device_name != '/device:GPU:0':
     raise SystemError('GPU device not found')
 print('Found GPU at: {}'.format(device_name))
 ##############################################
-# wandb related configuration
-wandb.login()
-wandb.init(project='kukacam')
-#########################################
 # #### Hyper-parameters
 ##############################
-SEASONS = 50   # 35
-success_value = None
-lr_a = 0.0002  
-lr_c = 0.0002  
-epochs = 20
-training_batch = 1024   # 5120(racecar)  # 1024 (kuka), 512
-buffer_capacity = 20000     # 50k (racecar)  # 20K (kuka)
-batch_size = 256   # 512 (racecar) #   28 (kuka)
-epsilon = 0.2  # 0.07
-gamma = 0.993  # 0.99
-lmbda = 0.7  # 0.9
-tau = 0.995             # polyak averaging factor
-alpha = 0.2             # Entropy Coefficient
-use_attention = False  # enable/disable for attention model
-use_mujoco = False
-use_HER = True
+config_dict = dict(
+    lr_a = 0.0002, 
+    lr_c = 0.0002, 
+    epochs = 20, 
+    training_batch = 1024,    # 5120(racecar)  # 1024 (kuka), 512
+    buffer_capacity = 20000,    # 50k (racecar)  # 20K (kuka)
+    batch_size = 128,  # 512 (racecar) #   128 (kuka)
+    epsilon = 0.2,  # 0.07      # Clip factor required in PPO
+    gamma = 0.993,  # 0.99      # discounted factor
+    lmbda = 0.7,  # 0.9         # required for GAE in PPO
+    tau = 0.995,                # polyak averaging factor
+    alpha = 0.2,                # Entropy Coefficient   required in SAC
+    use_attention = False,      # enable/disable attention model
+    algo = 'sac',
+)
+
+# Additional hyperparameters
+use_HER = False             # enable/disable HER
+seasons = 50 
+COLAB = False
+env_name = 'kuka'
 val_freq = None
 TB_LOG = True
-save_path = '/content/gdrive/MyDrive/Colab/kuka/sac/'
-algo = 'sac'
-env_name = 'kukad'
-COLAB = False
-
+success_value = None 
+#save_path = '/content/gdrive/MyDrive/Colab/kuka/sac/'
+save_path = './'
+use_mujoco = False
+#######################################33
+# wandb related configuration
+# wandb.login()
+wandb.tensorboard.patch(root_logdir=save_path + 'tb_log/')   
+wandb.init(project='kukacam', config=config_dict)
+#########################################
 ############################
 # Google Colab Settings
 if COLAB:
@@ -104,10 +111,8 @@ if COLAB:
 if TB_LOG:
     current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     train_log_dir = save_path + 'tb_log/' + current_time
-    wandb.tensorboard.patch(root_logdir=train_log_dir)   
     train_summary_writer = tf.summary.create_file_writer(train_log_dir)
 ########################################
-
 ###############################333
 # Functions
 
@@ -135,9 +140,9 @@ def validate(env, agent, max_eps=50):
 # Main training function
 def run(env, agent):
 
-    tag = '_her' if use_HER else ''
     # file for storing results
-    filename = env_name + '_' + algo + tag + '.txt'
+    tag = '_her' if use_HER else ''
+    filename = env_name + '_' + wandb.config.algo + tag + '.txt'
     filename = uniquify(save_path + filename)
 
     if val_freq is not None:
@@ -157,7 +162,7 @@ def run(env, agent):
     time_steps = 0      # global step count
     s_scores = []       # season scores
     total_ep_cnt = 0  # total episode count
-    for s in range(SEASONS):
+    for s in range(seasons):
         states, next_states, actions, rewards, dones = [], [], [], [], []
 
         if use_HER:
@@ -168,7 +173,7 @@ def run(env, agent):
         ep_cnt = 0      # no. of episodes in each season
         ep_score = 0    # episodic reward
         done = False
-        for t in range(training_batch):
+        for t in range(wandb.config.training_batch):
             action, _ = agent.policy(state)
             next_obs, reward, done, _ = env.step(action)
             next_state = np.asarray(next_obs, dtype=np.float32) / 255.0
@@ -208,6 +213,18 @@ def run(env, agent):
                     agent.add_her_experience(temp_experience, hind_goal)
                     temp_experience = []    # clear the temporary buffer
 
+
+                # off-policy training after each episode
+                if wandb.config.algo == 'sac':
+                    actor_loss, critic_loss, alpha_loss = agent.replay()
+                    wandb.log({'ep_reward': ep_score,
+                            'mean_ep_score': np.mean(ep_scores),
+                            'ep_actor_loss': actor_loss,
+                            'ep_critic_loss': critic_loss,
+                            'ep_alpha_loss': alpha_loss},
+                            step = total_ep_cnt)
+
+                # prepare for next episode
                 obs = env.reset()
                 state = np.asarray(obs, dtype=np.float32) / 255.0
                 if use_HER: 
@@ -215,17 +232,13 @@ def run(env, agent):
                 ep_score = 0
                 done = False
 
-                # off-policy training after each episode
-                if algo == 'sac':
-                    actor_loss, critic_loss, alpha_loss = agent.replay()
-
             # done block ends here
         # end of one season
 
         # off-policy training after each season 
-        if algo == 'ppo':
+        if wandb.config.algo == 'ppo':
             pass
-        elif algo == 'ipg':
+        elif wandb.config.algo == 'ipg':
             if use_HER:
                 a_loss, c_loss = agent.replay(states, actions, rewards, next_states, dones, goals)
             else:
@@ -246,12 +259,12 @@ def run(env, agent):
 
         if val_freq is not None:
             if total_ep_cnt % val_freq == 0:
-                print('Episode: {}, Score: {}, Mean score: {}'.format(ep, ep_score, mean_ep_score))
+                print('Episode: {}, Score: {}, Mean score: {}'.format(total_ep_cnt, ep_score, mean_ep_score))
                 val_score = validate(env)
                 val_scores.append(val_score)
                 mean_val_score = np.mean(val_scores)
                 print('Episode: {}, Validation Score: {}, Mean Validation Score: {}' \
-                      .format(ep, val_score, mean_val_score))
+                      .format(total_ep_cnt, val_score, mean_val_score))
 
         if TB_LOG:
             with train_summary_writer.as_default():
@@ -260,16 +273,18 @@ def run(env, agent):
                 if val_freq is not None:
                     tf.summary.scalar('3. Validation Score', val_score, step=s)
                 tf.summary.scalar('4. Actor Loss', actor_loss, step=s)
-                tf.summary.scalar('5. Critic Loss', c_loss, step=s)
+                tf.summary.scalar('5. Critic Loss', critic_loss, step=s)
                 tf.summary.scalar('6. Mean Episode Length', mean_ep_len, step=s)
-                tf.summary.scalar('7. Alpha Loss', alpha_loss, step=s)
+                if wandb.config.algo == 'sac':
+                    tf.summary.scalar('7. Alpha Loss', alpha_loss, step=s)
 
-        if algo == 'sac':
+
+        if wandb.config.algo == 'sac':
             with open(filename, 'a') as file:
                 file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
                         .format(s, total_ep_cnt, time_steps, mean_ep_len,
                                 s_score, mean_s_score, actor_loss, critic_loss, alpha_loss))
-        elif algo == 'ipg':
+        elif wandb.config.algo == 'ipg':
             with open(filename, 'a') as file:
                 file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
                         .format(s, total_ep_cnt, time_steps, mean_ep_len,
@@ -325,8 +340,15 @@ if __name__ == "__main__":
     #                     use_mujoco, filename='rc_ipg_her.txt', val_freq=None)
 
     # SAC Agent
-    agent = SACAgent2(state_size, action_size, action_upper_bound, epochs,
-                      batch_size, buffer_capacity, lr_a, lr_c, 
-                                    gamma, tau, alpha, use_attention)
+    agent = SACAgent2(state_size, action_size, action_upper_bound, 
+                        wandb.config.epochs,
+                        wandb.config.batch_size, 
+                        wandb.config.buffer_capacity, 
+                        wandb.config.lr_a, 
+                        wandb.config.lr_c, 
+                        wandb.config.gamma, 
+                        wandb.config.tau, 
+                        wandb.config.alpha, 
+                        wandb.config.use_attention)
 
     run(env, agent)

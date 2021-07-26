@@ -1,0 +1,1 @@
+{"ep_reward": 0, "mean_ep_score": 0.3425925925925926, "ep_actor_loss": 15.898663520812988, "ep_critic_loss": 2.960153096864815e-06, "ep_alpha_loss": -14.744253158569336, "_runtime": 1725, "_timestamp": 1627337232, "_step": 107}
