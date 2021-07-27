@@ -90,9 +90,13 @@ class SACActor:
                                   show_shapes=True, show_layer_names=True)
         return model
 
-    def __call__(self, state):
+    def __call__(self, state, goal=None):
         # input is a tensor
-        mean = tf.squeeze(self.model(state))
+        if self.use_HER:
+            assert goal is not None, "goal must be specified for HER"
+            mean = tf.squeeze(self.model([state, goal]))
+        else:
+            mean = tf.squeeze(self.model(state))
         std = tf.squeeze(tf.exp(self.model.logstd))
         return mean, std
 
@@ -188,7 +192,7 @@ class SACCritic:
         return q_value
 
     def train(self, states, actions, rewards, next_states, dones, actor,
-              target_critic1, target_critic2, alpha):
+              target_critic1, target_critic2, alpha, goals=None):
         with tf.GradientTape() as tape:
             # Get Q estimates using actions from replay buffer
             q_values = tf.squeeze(self.model([states, actions]))
@@ -208,6 +212,16 @@ class SACCritic:
             soft_q_target = min_q_target - alpha * log_pi_a
 
             y = tf.stop_gradient(rewards * self.gamma * (1 - dones) * soft_q_target)
+            critic_loss = tf.math.reduce_mean(tf.square(y - q_values))
+            critic_wts = self.model.trainable_variables
+        # outside gradient tape
+        critic_grad = tape.gradient(critic_loss, critic_wts)
+        self.optimizer.apply_gradients(zip(critic_grad, critic_wts))
+        return critic_loss.numpy()
+    
+    def train2(self, state_batch, action_batch, y):
+        with tf.GradientTape() as tape:
+            q_values = self.model([state_batch, action_batch])
             critic_loss = tf.math.reduce_mean(tf.square(y - q_values))
             critic_wts = self.model.trainable_variables
         # outside gradient tape
@@ -604,32 +618,36 @@ class SACAgent2:
         else:
             self.buffer = Buffer(self.buffer_capacity, self.batch_size)
 
-    def policy(self, state):
+    def policy(self, state, goal=None):
+        # input is numpy array
         if state.ndim < len(self.state_size) + 1:      # single instance
             tf_state = tf.expand_dims(tf.convert_to_tensor(state, dtype=tf.float32), 0)
+            if self.use_HER:
+                assert goal is not None, "goal must be provided for HER"
+                tf_goal = tf.expand_dims(tf.convert_to_tensor(goal, dtype=tf.float32), 0)
+
         else:       # for a batch of samples
             tf_state = tf.convert_to_tensor(state, dtype=tf.float32)
+            if self.use_HER:
+                assert goal is not None, "goal must be provided for HER"
+                tf_goal = tf.convert_to_tensor(goal, dtype=tf.float32)
 
-        action, log_pi = self.actor.policy(tf_state) # returns tensors
-        return action.numpy(), log_pi.numpy()
-
-    def policy_her(self, state, goal):
-        if state.ndim < len(self.state_size) + 1:      # single instance
-            tf_state = tf.expand_dims(tf.convert_to_tensor(state, dtype=tf.float32), 0)
-            tf_goal = tf.expand_dims(tf.convert_to_tensor(goal, dtype=tf.float32), 0)
-        else:       # for a batch of samples
-            tf_state = tf.convert_to_tensor(state, dtype=tf.float32)
-            tf_goal = tf.convert_to_tensor(goal, dtype=tf.float32)
-
-        action, log_pi = self.actor.policy(tf_state, tf_goal) # returns tensors
+        if self.use_HER:
+            action, log_pi = self.actor.policy(tf_state, tf_goal) # returns tensors
+        else:
+            action, log_pi = self.actor.policy(tf_state) # returns tensors
         return action.numpy(), log_pi.numpy()
 
 
-    def update_alpha(self, states):
+    def update_alpha(self, states, goals=None):
         # input: tensor
         with tf.GradientTape() as tape:
             # sample actions from the policy for the current states
-            _, log_pi_a = self.actor.policy(states)
+            if self.use_HER:
+                assert goals is not None, "goals must be provided for HER"
+                _, log_pi_a = self.actor.policy(states, goals)
+            else:
+                _, log_pi_a = self.actor.policy(states)
             alpha_loss = tf.reduce_mean(-self.alpha * (log_pi_a + self.target_entropy))
         # outside gradient tape block
         variables = [self.alpha]
@@ -649,11 +667,36 @@ class SACAgent2:
         self.target_critic1.model.set_weights(target_wts1)
         self.target_critic2.model.set_weights(target_wts2)
 
+    def update_q_networks(self, states, actions, rewards, next_states, dones, goals=None):
+
+        if self.use_HER:
+            pi_a, log_pi_a = self.actor.policy(next_states, goals)
+        else:
+            pi_a, log_pi_a = self.actor.policy(next_states)
+
+        q1_target = self.target_critic1(next_states, pi_a)
+        q2_target = self.critic2(next_states, pi_a)
+
+        min_q_target = tf.minimum(q1_target, q2_target)
+
+        soft_q_target = min_q_target  - self.alpha * log_pi_a  
+
+        y = rewards + self.gamma * (1 - dones) * soft_q_target
+
+        c1_loss = self.critic1.train(states, actions, y)
+        c2_loss = self.critic2.train(states, actions, y)
+
+        mean_c_loss = np.mean([c1_loss, c2_loss])
+        return mean_c_loss 
+
     def replay(self):
-        c1_losses, c2_losses, actor_losses, alpha_losses = [], [], [], []
+        critic_losses, actor_losses, alpha_losses = [], [], []
         for epoch in range(self.epochs):
             # sample a minibatch from the replay buffer
-            states, actions, rewards, next_states, dones = self.buffer.sample()
+            if self.use_HER:
+                states, actions, rewards, next_states, dones, goals = self.buffer.sample()
+            else:
+                states, actions, rewards, next_states, dones = self.buffer.sample()
 
             # convert to tensors
             states = tf.convert_to_tensor(states, dtype=tf.float32)
@@ -661,15 +704,24 @@ class SACAgent2:
             rewards = tf.convert_to_tensor(rewards, dtype=tf.float32)
             next_states = tf.convert_to_tensor(next_states, dtype=tf.float32)
             dones = tf.convert_to_tensor(dones, dtype=tf.float32)
+            if self.use_HER:
+                goals = tf.convert_to_tensor(goals, dtype=tf.float32)
 
             # update Q (Critic) network weights
-            c1_loss = self.critic1.train(states, actions, rewards, next_states, dones,
-                                         self.actor, self.target_critic1, self.target_critic2,
-                                         self.alpha)
+            # c1_loss = self.critic1.train(states, actions, rewards, next_states, dones,
+            #                              self.actor, self.target_critic1, self.target_critic2,
+            #                              self.alpha)
 
-            c2_loss = self.critic2.train(states, actions, rewards, next_states, dones,
-                                         self.actor, self.target_critic1, self.target_critic2,
-                                         self.alpha)
+            # c2_loss = self.critic2.train(states, actions, rewards, next_states, dones,
+            #                              self.actor, self.target_critic1, self.target_critic2,
+            #                              self.alpha)
+            # critic_loss = np.mean([c1_loss, c2_loss])
+
+            if self.use_HER:
+                critic_loss = self.update_q_networks(states, actions, rewards, next_states, dones, goals)
+            else:
+                critic_loss = self.update_q_networks(states, actions, rewards, next_states, dones)
+
 
             # update (actor) policy networks
             actor_loss = self.actor.train(states, self.alpha, self.critic1, self.critic2)
@@ -680,13 +732,10 @@ class SACAgent2:
             # update target network weights
             self.update_target_networks()
 
-            c1_losses.append(c1_loss)
-            c2_losses.append(c2_loss)
+            critic_losses.append(critic_loss)
             actor_losses.append(actor_loss)
             alpha_losses.append(alpha_loss)
         # epoch loop ends here
-        mean_c1_loss = np.mean(c1_losses)
-        mean_c2_loss = np.mean(c2_losses)
         mean_actor_loss = np.mean(actor_losses)
         mean_alpha_loss = np.mean(alpha_losses)
         mean_critic_loss = np.mean([mean_c1_loss, mean_c2_loss])

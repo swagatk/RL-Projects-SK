@@ -195,6 +195,16 @@ class SACCritic:
         self.optimizer.apply_gradients(zip(critic_grad, critic_wts))
         return critic_loss.numpy()
 
+    def train2(self, state_batch, action_batch, y):
+        with tf.GradientTape() as tape:
+            q_values = self.model([state_batch, action_batch])
+            critic_loss = tf.math.reduce_mean(tf.square(y - q_values))
+            critic_wts = self.model.trainable_variables
+        # outside gradient tape
+        critic_grad = tape.gradient(critic_loss, critic_wts)
+        self.optimizer.apply_gradients(zip(critic_grad, critic_wts))
+        return critic_loss.numpy()
+
     def save_weights(self, filename):
         self.model.save_weights(filename)
 
@@ -609,8 +619,28 @@ class SACAgent2:
         self.target_critic1.model.set_weights(target_wts1)
         self.target_critic2.model.set_weights(target_wts2)
 
+    
+    def update_q_networks(self, states, actions, rewards, next_states, dones):
+
+        pi_a, log_pi_a = self.actor.policy(next_states) # output: tensor
+
+        q1_target = self.target_critic1(next_states, pi_a) # input: tensor
+        q2_target = self.critic2(next_states, pi_a)
+
+        min_q_target = tf.minimum(q1_target, q2_target)
+
+        soft_q_target = min_q_target  - self.alpha * log_pi_a  
+
+        y = rewards + self.gamma * (1 - dones) * soft_q_target
+
+        c1_loss = self.critic1.train2(states, actions, y)
+        c2_loss = self.critic2.train2(states, actions, y)
+
+        mean_c_loss = np.mean([c1_loss, c2_loss])
+        return mean_c_loss 
+
     def replay(self):
-        c1_losses, c2_losses, actor_losses, alpha_losses = [], [], [], []
+        critic_losses, actor_losses, alpha_losses = [], [], []
         for epoch in range(self.epochs):
             # sample a minibatch from the replay buffer
             states, actions, rewards, next_states, dones = self.buffer.sample()
@@ -623,14 +653,15 @@ class SACAgent2:
             dones = tf.convert_to_tensor(dones, dtype=tf.float32)
 
             # update Q (Critic) network weights
-            c1_loss = self.critic1.train(states, actions, rewards, next_states, dones,
-                                         self.actor, self.target_critic1, self.target_critic2,
-                                         self.alpha)
+            # c1_loss = self.critic1.train(states, actions, rewards, next_states, dones,
+            #                              self.actor, self.target_critic1, self.target_critic2,
+            #                              self.alpha)
 
-            c2_loss = self.critic2.train(states, actions, rewards, next_states, dones,
-                                         self.actor, self.target_critic1, self.target_critic2,
-                                         self.alpha)
-
+            # c2_loss = self.critic2.train(states, actions, rewards, next_states, dones,
+            #                              self.actor, self.target_critic1, self.target_critic2,
+            #                              self.alpha)
+            # mean_critic_loss = np.mean([c1_loss, c2_loss])
+            critic_loss = self.update_q_networks(states, actions, rewards, next_states, dones)
             # update (actor) policy networks
             actor_loss = self.actor.train(states, self.alpha, self.critic1, self.critic2)
 
@@ -640,16 +671,13 @@ class SACAgent2:
             # update target network weights
             self.update_target_networks()
 
-            c1_losses.append(c1_loss)
-            c2_losses.append(c2_loss)
+            critic_losses.append(critic_loss)
             actor_losses.append(actor_loss)
             alpha_losses.append(alpha_loss)
         # epoch loop ends here
-        mean_c1_loss = np.mean(c1_losses)
-        mean_c2_loss = np.mean(c2_losses)
+        mean_critic_loss = np.mean(critic_losses)
         mean_actor_loss = np.mean(actor_losses)
         mean_alpha_loss = np.mean(alpha_losses)
-        mean_critic_loss = np.mean([mean_c1_loss, mean_c2_loss])
 
         return  mean_actor_loss, mean_critic_loss, mean_alpha_loss
 

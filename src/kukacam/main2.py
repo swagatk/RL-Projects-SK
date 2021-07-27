@@ -94,7 +94,7 @@ env_name = 'kuka'
 val_freq = None
 WB_LOG = True
 success_value = None 
-LOG_FILE: True
+LOG_FILE = True
 #save_path = '/content/gdrive/MyDrive/Colab/kuka/sac/'
 
 #current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -164,6 +164,7 @@ def run(env, agent):
     time_steps = 0      # global step count
     s_scores = []       # season scores
     total_ep_cnt = 0  # total episode count
+    global_time_steps = 0   # global training step counts
     for s in range(seasons):
         states, next_states, actions, rewards, dones = [], [], [], [], []
 
@@ -171,8 +172,9 @@ def run(env, agent):
             goals = []
             temp_experience = []      # temporary experience buffer
 
-        s_score = 0
+        s_score = 0     # season score
         ep_cnt = 0      # no. of episodes in each season
+        ep_steps = 0    # no. of steps in each episode
         ep_score = 0    # episodic reward
         done = False
         for t in range(wandb.config.training_batch):
@@ -199,15 +201,15 @@ def run(env, agent):
 
             state = next_state
             ep_score += reward
-            t += 1
+            ep_steps += 1       
 
             if done:
-                time_steps += t
+                global_time_steps += ep_steps
                 s_score += ep_score
                 ep_cnt += 1         # episode count in each season
                 total_ep_cnt += 1   # global episode count
                 ep_scores.append(ep_score)
-                ep_lens.append(t)
+                ep_lens.append(ep_steps)
 
                 if use_HER:
                     hind_goal = temp_experience[-1][3]  # Final state strategy
@@ -219,11 +221,11 @@ def run(env, agent):
                 # off-policy training after each episode
                 if wandb.config.algo == 'sac':
                     a_loss, c_loss, alpha_loss = agent.replay()
-                    wandb.log({'ep_reward': ep_score,
-                            'mean_ep_score': np.mean(ep_scores),
+                    wandb.log({'mean_ep_score': np.mean(ep_scores),
                             'ep_actor_loss': a_loss,
                             'ep_critic_loss': c_loss,
-                            'ep_alpha_loss': alpha_loss},
+                            'ep_alpha_loss': alpha_loss,
+                            'mean_ep_len': np.mean(ep_lens)},
                             step = total_ep_cnt)
 
                 # prepare for next episode
@@ -231,7 +233,7 @@ def run(env, agent):
                 state = np.asarray(obs, dtype=np.float32) / 255.0
                 if use_HER: 
                     state = np.asarray(env.reset(), dtype=np.float32) / 255.0
-                ep_score = 0
+                ep_steps, ep_score = 0, 0
                 done = False
 
             # done block ends here
@@ -274,8 +276,7 @@ def run(env, agent):
                     'Mean Season Score' : mean_s_score,
                     'Actor Loss' : a_loss,
                     'Critic Loss' : c_loss,
-                    'Mean episode length' : mean_ep_len},
-                    step = s)
+                    'Mean episode length' : mean_ep_len})
 
         if LOG_FILE:
             if wandb.config.algo == 'sac':
