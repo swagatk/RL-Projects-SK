@@ -12,6 +12,7 @@ Algorithms being compared are: PPO, SAC, IPG, IPG+HER, SAC+HER
 3. RaceCar
 """
 # Import
+from logging import currentframe
 import tensorflow as tf
 from pybullet_envs.bullet.kuka_diverse_object_gym_env import KukaDiverseObjectEnv
 from pybullet_envs.bullet.kukaCamGymEnv import KukaCamGymEnv
@@ -22,6 +23,7 @@ from collections import deque
 import datetime
 import numpy as np
 import gym
+import os
 from tensorflow.python.keras.backend import dtype
 import wandb
 
@@ -92,8 +94,13 @@ env_name = 'kuka'
 val_freq = None
 WB_LOG = True
 success_value = None 
+LOG_FILE: True
 #save_path = '/content/gdrive/MyDrive/Colab/kuka/sac/'
-save_path = './'
+
+#current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+current_time = datetime.datetime.now().strftime("%Y%m%d")
+save_path = './' + current_time
+
 use_mujoco = False
 #######################################33
 # wandb related configuration
@@ -106,6 +113,7 @@ if COLAB:
     import pybullet as p
     p.connect(p.DIRECT)
 #################################3
+
 ###############################333
 # Functions
 
@@ -132,10 +140,12 @@ def validate(env, agent, max_eps=50):
 # Main training function
 def run(env, agent):
 
-    # file for storing results
-    tag = '_her' if use_HER else ''
-    filename = env_name + '_' + wandb.config.algo + tag + '.txt'
-    filename = uniquify(save_path + filename)
+    # create folder for storing result files
+    if LOG_FILE:
+        os.makedirs(save_path, exist_ok=True)
+        tag = '_her' if use_HER else ''
+        filename = env_name + '_' + wandb.config.algo + tag + '.txt'
+        filename = uniquify(save_path + filename)
 
     if val_freq is not None:
         val_scores = deque(maxlen=50)
@@ -267,17 +277,17 @@ def run(env, agent):
                     'Mean episode length' : mean_ep_len},
                     step = s)
 
-
-        if wandb.config.algo == 'sac':
-            with open(filename, 'a') as file:
-                file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
-                        .format(s, total_ep_cnt, time_steps, mean_ep_len,
-                                s_score, mean_s_score, a_loss, c_loss, alpha_loss))
-        elif wandb.config.algo == 'ipg':
-            with open(filename, 'a') as file:
-                file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
-                        .format(s, total_ep_cnt, time_steps, mean_ep_len,
-                                s_score, mean_s_score, a_loss, c_loss))
+        if LOG_FILE:
+            if wandb.config.algo == 'sac':
+                with open(filename, 'a') as file:
+                    file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
+                            .format(s, total_ep_cnt, time_steps, mean_ep_len,
+                                    s_score, mean_s_score, a_loss, c_loss, alpha_loss))
+            elif wandb.config.algo == 'ipg':
+                with open(filename, 'a') as file:
+                    file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
+                            .format(s, total_ep_cnt, time_steps, mean_ep_len,
+                                    s_score, mean_s_score, a_loss, c_loss))
 
         if success_value is not None:
             if best_score > success_value:
