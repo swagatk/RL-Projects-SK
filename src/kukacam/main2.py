@@ -90,15 +90,14 @@ seasons = 50
 COLAB = False
 env_name = 'kuka'
 val_freq = None
-TB_LOG = True
+WB_LOG = True
 success_value = None 
 #save_path = '/content/gdrive/MyDrive/Colab/kuka/sac/'
 save_path = './'
 use_mujoco = False
 #######################################33
 # wandb related configuration
-# wandb.login()
-wandb.tensorboard.patch(root_logdir=save_path + 'tb_log/')   
+wandb.login()
 wandb.init(project='kukacam', config=config_dict)
 #########################################
 ############################
@@ -107,12 +106,6 @@ if COLAB:
     import pybullet as p
     p.connect(p.DIRECT)
 #################################3
-# TENSORBOARD SETTINGS
-if TB_LOG:
-    current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    train_log_dir = save_path + 'tb_log/' + current_time
-    train_summary_writer = tf.summary.create_file_writer(train_log_dir)
-########################################
 ###############################333
 # Functions
 
@@ -135,7 +128,6 @@ def validate(env, agent, max_eps=50):
     # outside for loop
     mean_ep_reward = np.mean(ep_reward_list)
     return mean_ep_reward
-
 
 # Main training function
 def run(env, agent):
@@ -216,11 +208,11 @@ def run(env, agent):
 
                 # off-policy training after each episode
                 if wandb.config.algo == 'sac':
-                    actor_loss, critic_loss, alpha_loss = agent.replay()
+                    a_loss, c_loss, alpha_loss = agent.replay()
                     wandb.log({'ep_reward': ep_score,
                             'mean_ep_score': np.mean(ep_scores),
-                            'ep_actor_loss': actor_loss,
-                            'ep_critic_loss': critic_loss,
+                            'ep_actor_loss': a_loss,
+                            'ep_critic_loss': c_loss,
                             'ep_alpha_loss': alpha_loss},
                             step = total_ep_cnt)
 
@@ -265,30 +257,27 @@ def run(env, agent):
                 mean_val_score = np.mean(val_scores)
                 print('Episode: {}, Validation Score: {}, Mean Validation Score: {}' \
                       .format(total_ep_cnt, val_score, mean_val_score))
+                wandb.log({'val_score': val_score, 
+                            'mean_val_score': val_score})
 
-        if TB_LOG:
-            with train_summary_writer.as_default():
-                tf.summary.scalar('1. Season Score', s_score, step=s)
-                tf.summary.scalar('2. Mean season Score', mean_s_score, step=s)
-                if val_freq is not None:
-                    tf.summary.scalar('3. Validation Score', val_score, step=s)
-                tf.summary.scalar('4. Actor Loss', actor_loss, step=s)
-                tf.summary.scalar('5. Critic Loss', critic_loss, step=s)
-                tf.summary.scalar('6. Mean Episode Length', mean_ep_len, step=s)
-                if wandb.config.algo == 'sac':
-                    tf.summary.scalar('7. Alpha Loss', alpha_loss, step=s)
+        wandb.log({'Season Score': s_score, 
+                    'Mean Season Score' : mean_s_score,
+                    'Actor Loss' : a_loss,
+                    'Critic Loss' : c_loss,
+                    'Mean episode length' : mean_ep_len},
+                    step = s)
 
 
         if wandb.config.algo == 'sac':
             with open(filename, 'a') as file:
                 file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
                         .format(s, total_ep_cnt, time_steps, mean_ep_len,
-                                s_score, mean_s_score, actor_loss, critic_loss, alpha_loss))
+                                s_score, mean_s_score, a_loss, c_loss, alpha_loss))
         elif wandb.config.algo == 'ipg':
             with open(filename, 'a') as file:
                 file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
                         .format(s, total_ep_cnt, time_steps, mean_ep_len,
-                                s_score, mean_s_score, actor_loss, critic_loss))
+                                s_score, mean_s_score, a_loss, c_loss))
 
         if success_value is not None:
             if best_score > success_value:

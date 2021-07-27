@@ -207,3 +207,9 @@ This message will be only logged once.
   wts2 = np.array(self.critic2.model.get_weights())
 [34m[1mwandb[39m[22m: [33mWARNING[39m Step cannot be set when using syncing with tensorboard. Please log your step values as a metric such as 'global_step'
 [34m[1mwandb[39m[22m: Network error resolved after 0:05:57.706084, resuming normal operation.
+[34m[1mwandb[39m[22m: Network error resolved after 0:02:57.098568, resuming normal operation.
+Season: 0, Update best score: -inf-->0.3358208955223881, Model saved!
+[34m[1mwandb[39m[22m: Network error resolved after 0:02:43.426318, resuming normal operation.
+[34m[1mwandb[39m[22m: Network error resolved after 0:02:53.383379, resuming normal operation.
+[34m[1mwandb[39m[22m: Network error resolved after 0:01:35.625646, resuming normal operation.
+Season: 1, Update best score: 0.3358208955223881-->0.3418234912394549, Model saved!
