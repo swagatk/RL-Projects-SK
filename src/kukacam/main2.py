@@ -42,7 +42,8 @@ import wandb
 from ppo.ppo2 import PPOAgent
 from IPG.ipg import IPGAgent
 from IPG.ipg_her import IPGHERAgent
-from SAC.sac2 import SACAgent2
+from SAC.sac2 import SACAgent2          # critic.train2()
+# from SAC.sac3 import SACAgent2        # critic.train()
 from common.TimeLimitWrapper import TimeLimitWrapper
 from common.CustomGymWrapper import ObsvnResizeTimeLimitWrapper
 from common.utils import uniquify
@@ -185,9 +186,9 @@ def run(env, agent):
         done = False
         for t in range(wandb.config.training_batch):
             if use_HER:
-                action, _ = agent.policy(state)
-            else:
                 action, _ = agent.policy(state, goal)
+            else:
+                action, _ = agent.policy(state)
 
             next_obs, reward, done, _ = env.step(action)
             next_state = np.asarray(next_obs, dtype=np.float32) / 255.0
