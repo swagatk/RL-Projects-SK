@@ -16,7 +16,7 @@ class FeatureNetwork:
         self.lr = learning_rate
         # create NN models
         self.model = self._build_net()
-        #self.model = self._build_net2()
+        #self.model = self._build_net2() # bigger network
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
 
     def _build_net(self):

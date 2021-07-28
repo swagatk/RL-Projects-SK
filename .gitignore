@@ -1,7 +1,7 @@
 # ignore the following directories
 
 __pycache__/
-**/logs
+**/logs/
 *.h5
 *.txt
 *.swp
@@ -13,7 +13,9 @@ results/
 **/result 
 **/.idea
 **/.ipynb_checkpoints
+**/wandb/
 wandb/
 .idea/
 .ipynb_checkpoints/
 **/tb_log
+*.log
