@@ -81,9 +81,9 @@ config_dict = dict(
     lr_a = 0.0002, 
     lr_c = 0.0002, 
     epochs = 20, 
-    training_batch = 1024,    # 5120(racecar)  # 1024 (kuka), 512
+    training_batch = 512,    #1024,    # 5120(racecar)  # 1024 (kuka), 512
     buffer_capacity = 20000,    # 50k (racecar)  # 20K (kuka)
-    batch_size = 128,  # 512 (racecar) #   128 (kuka)
+    batch_size = 64,  # 512 (racecar) #   128 (kuka)
     epsilon = 0.2,  # 0.07      # Clip factor required in PPO
     gamma = 0.993,  # 0.99      # discounted factor
     lmbda = 0.7,  # 0.9         # required for GAE in PPO
@@ -95,7 +95,7 @@ config_dict = dict(
 
 # Additional hyperparameters
 use_HER = False             # enable/disable HER
-seasons = 50 
+seasons = 35 
 COLAB = False
 env_name = 'kuka'
 val_freq = None
