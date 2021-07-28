@@ -75,7 +75,7 @@ class IPGActor:
         net_out = net_out * self.upper_bound  # element-wise product
         model = tf.keras.Model(inputs=[state_input, goal_input], outputs=net_out, name='actor')
         model.summary()
-        tf.keras.utils.plot_model(model, to_file='ipg_actor_net.png',
+        tf.keras.utils.plot_model(model, to_file='ipg_her_actor_net.png',
                                   show_shapes=True, show_layer_names=True)
         return model
 
@@ -154,7 +154,7 @@ class DDPGCritic:
         net_out = layers.Dense(1)(out)
         model = tf.keras.Model(inputs=[state_input, action_input], outputs=net_out)
         model.summary()
-        tf.keras.utils.plot_model(model, to_file='critic_net.png',
+        tf.keras.utils.plot_model(model, to_file='ipg_critic_net.png',
                                   show_shapes=True, show_layer_names=True)
         return model
 

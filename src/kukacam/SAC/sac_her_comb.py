@@ -1,5 +1,6 @@
 """
 SAC + HER Algorithm.
+- This file will eventually supercede both sac.py and sac2.py
 """
 import numpy as np
 import tensorflow as tf
@@ -15,7 +16,7 @@ sys.path.append(os.path.dirname(__file__))
 
 # Local imports
 from common.FeatureNet import FeatureNetwork, AttentionFeatureNetwork
-from common.buffer import HERBuffer
+from common.buffer import Buffer, HERBuffer
 from common.utils import uniquify
 
 
@@ -23,21 +24,23 @@ from common.utils import uniquify
 # ACTOR NETWORK
 ###############
 
-class SACHERActor:
-    '''
-    goals and states have same size
-    '''
+class SACActor:
     def __init__(self, state_size, action_size, upper_bound,
-                 learning_rate, feature):
+                 learning_rate, feature, use_HER=False):
         self.state_size = state_size  # shape: (w, h, c)
         self.action_size = action_size  # shape: (n, )
         self.lr = learning_rate
         self.upper_bound = upper_bound
-        self.goal_size = state_size
+        self.use_HER = use_HER
         
         # create NN models
         self.feature_model = feature
-        self.model = self._build_net(trainable=True)    # returns mean action
+
+        if self.use_HER:
+            self.goal_size = state_size
+            self.model = self._build_her_net(trainable=True)    # returns mean action
+        else:
+            self.model = self._build_net(trainable=True)    # returns mean action
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
 
         # additional output
@@ -46,6 +49,27 @@ class SACHERActor:
         self.model.trainable_variables.append(logstd)
 
     def _build_net(self, trainable=True):
+        # input is a stack of 1-channel YUV images
+        last_init = tf.random_uniform_initializer(minval=-0.03, maxval=0.03)
+        state_input = tf.keras.layers.Input(shape=self.state_size)
+
+        if self.feature_model is None:
+            f = tf.keras.layers.Dense(128, activation='relu', trainable=trainable)(state_input)
+        else:
+            f = self.feature_model(state_input)
+
+        f = tf.keras.layers.Dense(128, activation='relu', trainable=trainable)(f)
+        f = tf.keras.layers.Dense(64, activation="relu", trainable=trainable)(f)
+        net_out = tf.keras.layers.Dense(self.action_size[0], activation='tanh',
+                                        kernel_initializer=last_init, trainable=trainable)(f)
+        net_out = net_out * self.upper_bound  # element-wise product
+        model = tf.keras.Model(state_input, net_out, name='actor')
+        model.summary()
+        tf.keras.utils.plot_model(model, to_file='actor_net.png',
+                                  show_shapes=True, show_layer_names=True)
+        return model
+
+    def _build_her_net(self, trainable=True):
         last_init = tf.random_uniform_initializer(minval=-0.03, maxval=0.03)
         state_input = tf.keras.layers.Input(shape=self.state_size)
         goal_input = tf.keras.layers.Input(shape=self.goal_size)
@@ -65,21 +89,28 @@ class SACHERActor:
         net_out = net_out * self.upper_bound  # element-wise product
         model = tf.keras.Model(inputs=[state_input, goal_input], outputs=net_out, name='actor')
         model.summary()
-        tf.keras.utils.plot_model(model, to_file='sac_her_actor_net.png',
+        tf.keras.utils.plot_model(model, to_file='ipg_actor_net.png',
                                   show_shapes=True, show_layer_names=True)
         return model
 
-    def __call__(self, state, goal):
-        # input: tensor
-        # output: tensor
-        mean = tf.squeeze(self.model([state, goal]))
+    def __call__(self, state, goal=None):
+        # input is a tensor
+        if self.use_HER:
+            assert goal is not None, "goal must be specified for HER"
+            mean = tf.squeeze(self.model([state, goal]))
+        else:
+            mean = tf.squeeze(self.model(state))
         std = tf.squeeze(tf.exp(self.model.logstd))
-        return mean, std 
+        return mean, std
 
-    def policy(self, state, goal):
+    def policy(self, state, goal=None):
         # input: tensor
         # output: tensor
-        mean = tf.squeeze(self.model([state, goal]))
+        if self.use_HER:
+            assert goal is not None, "goal must be provided for HER"
+            mean = tf.squeeze(self.model([state, goal]))
+        else:
+            mean = tf.squeeze(self.model(state))
         std = tf.squeeze(tf.exp(self.model.logstd))
 
         pi = tfp.distributions.Normal(mean, std)
@@ -96,23 +127,21 @@ class SACHERActor:
 
         return action, log_pi_a
     
-    def train(self, states, alpha, critic1, critic2, goals):
+    def train(self, states, alpha, critic1, critic2, goals=None):
         with tf.GradientTape() as tape:
-            # obtain actions using the current policy
-            actions, log_pi_a = self.policy(states, goals)
+            if self.use_HER:
+                actions, log_pi_a = self.policy(states, goals)
+            else:
+                actions, log_pi_a = self.policy(states)
             
-            # estimate q values 
+            # estimate q value
             q1 = critic1(states, actions)
             q2 = critic2(states, actions)
-
-            # Apply the clipped double Q trick
-            # get the minimum of two Q values
             min_q = tf.minimum(q1, q2)
 
             # compute soft q target using entropy
             soft_q = min_q - alpha * log_pi_a
             actor_loss = -tf.reduce_mean(soft_q)
-
         # outside gradient tape block
         actor_wts = self.model.trainable_variables
         actor_grads = tape.gradient(actor_loss, actor_wts)
@@ -126,7 +155,7 @@ class SACHERActor:
         self.model.load_weights(filename)
 
 
-class SACHERCritic:
+class SACCritic:
     """
     Approximates Q(s,a) function
     """
@@ -163,7 +192,7 @@ class SACHERCritic:
         net_out = layers.Dense(1)(out)
         model = tf.keras.Model(inputs=[state_input, action_input], outputs=net_out)
         model.summary()
-        tf.keras.utils.plot_model(model, to_file='sac_critic_net.png',
+        tf.keras.utils.plot_model(model, to_file='critic_net.png',
                                   show_shapes=True, show_layer_names=True)
         return model
 
@@ -173,13 +202,13 @@ class SACHERCritic:
         return q_value
 
     def train(self, states, actions, rewards, next_states, dones, actor,
-              target_critic1, target_critic2, alpha, goals):
+              target_critic1, target_critic2, alpha, goals=None):
         with tf.GradientTape() as tape:
             # Get Q estimates using actions from replay buffer
             q_values = tf.squeeze(self.model([states, actions]))
 
             # Sample actions from the policy network for next states
-            a_next, log_pi_a = actor.policy(next_states, goals)
+            a_next, log_pi_a = actor.policy(next_states)
 
             # Get Q value estimates from target Q networks
             q1_target = target_critic1(next_states, a_next)
@@ -204,8 +233,8 @@ class SACHERCritic:
         with tf.GradientTape() as tape:
             q_values = self.model([state_batch, action_batch])
             critic_loss = tf.math.reduce_mean(tf.square(y - q_values))
+            critic_wts = self.model.trainable_variables
         # outside gradient tape
-        critic_wts = self.model.trainable_variables
         critic_grad = tape.gradient(critic_loss, critic_wts)
         self.optimizer.apply_gradients(zip(critic_grad, critic_wts))
         return critic_loss.numpy()
@@ -531,11 +560,12 @@ class SACAgent:
 
     
 
-class SACHERAgent2:
+class SACAgent2:
     # the environment variable is not a part of this class
     def __init__(self, state_size, action_size, action_upper_bound, epochs,
                   batch_size, buffer_capacity, lr_a=0.0003, lr_c=0.0003,
-                 gamma=0.99, tau=0.995, alpha=0.2, use_attention=False):
+                 gamma=0.99, tau=0.995, alpha=0.2, use_attention=False,
+                 use_HER=False):
         self.action_size = action_size
         self.state_size = state_size
         self.upper_bound = action_upper_bound
@@ -548,7 +578,10 @@ class SACHERAgent2:
         self.gamma = gamma                  # discount factor
         self.tau = tau                      # polyak averaging factor
         self.use_attention = use_attention
-        self.goal_size = self.state_size
+        self.use_HER = use_HER              # enable /disable HER
+
+        if self.use_HER:
+            self.goal_size = self.state_size
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -569,19 +602,19 @@ class SACHERAgent2:
             self.feature = None
 
         # create actor for learning policy
-        self.actor = SACHERActor(self.state_size, self.action_size, self.upper_bound,
-                              self.lr_a, self.feature)
+        self.actor = SACActor(self.state_size, self.action_size, self.upper_bound,
+                              self.lr_a, self.feature, self.use_HER)
 
         # create two critics
-        self.critic1 = SACHERCritic(self.state_size, self.action_size,
+        self.critic1 = SACCritic(self.state_size, self.action_size,
                                  self.lr_c, self.gamma, self.feature)
-        self.critic2 = SACHERCritic(self.state_size, self.action_size,
+        self.critic2 = SACCritic(self.state_size, self.action_size,
                                  self.lr_c, self.gamma, self.feature)
 
         # create two target critics
-        self.target_critic1 = SACHERCritic(self.state_size, self.action_size,
+        self.target_critic1 = SACCritic(self.state_size, self.action_size,
                                         self.lr_c, self.gamma, self.feature)
-        self.target_critic2 = SACHERCritic(self.state_size, self.action_size,
+        self.target_critic2 = SACCritic(self.state_size, self.action_size,
                                         self.lr_c, self.gamma, self.feature)
 
         # create alpha as a trainable variable
@@ -590,26 +623,40 @@ class SACHERAgent2:
         self.alpha_optimizer = tf.keras.optimizers.Adam(self.lr_a)
 
         # Buffer for off-policy training
-        self.buffer = HERBuffer(self.buffer_capacity, self.batch_size)
+        if self.use_HER:
+            self.buffer = HERBuffer(self.buffer_capacity, self.batch_size)
+        else:
+            self.buffer = Buffer(self.buffer_capacity, self.batch_size)
 
-    def policy(self, state, goal):
-        # input: numpy array
-        # output: numpy array
-        if state.ndim < len(self.state_size) + 1:      # single sample
+    def policy(self, state, goal=None):
+        # input is numpy array
+        if state.ndim < len(self.state_size) + 1:      # single instance
             tf_state = tf.expand_dims(tf.convert_to_tensor(state, dtype=tf.float32), 0)
-            tf_goal = tf.expand_dims(tf.convert_to_tensor(goal, dtype=tf.float32), 0)
+            if self.use_HER:
+                assert goal is not None, "goal must be provided for HER"
+                tf_goal = tf.expand_dims(tf.convert_to_tensor(goal, dtype=tf.float32), 0)
+
         else:       # for a batch of samples
             tf_state = tf.convert_to_tensor(state, dtype=tf.float32)
-            tf_goal = tf.convert_to_tensor(goal, dtype=tf.float32)
+            if self.use_HER:
+                assert goal is not None, "goal must be provided for HER"
+                tf_goal = tf.convert_to_tensor(goal, dtype=tf.float32)
 
-        action, log_pi = self.actor.policy(tf_state, tf_goal) # returns tensors
+        if self.use_HER:
+            action, log_pi = self.actor.policy(tf_state, tf_goal) # returns tensors
+        else:
+            action, log_pi = self.actor.policy(tf_state) # returns tensors
         return action.numpy(), log_pi.numpy()
 
-    def update_alpha(self, states, goals):
+    def update_alpha(self, states, goals=None):
         # input: tensor
         with tf.GradientTape() as tape:
             # sample actions from the policy for the current states
-            _, log_pi_a = self.actor.policy(states, goals)
+            if self.use_HER:
+                assert goals is not None, "goals must be provided for HER"
+                _, log_pi_a = self.actor.policy(states, goals)
+            else:
+                _, log_pi_a = self.actor.policy(states)
             alpha_loss = tf.reduce_mean(-self.alpha * (log_pi_a + self.target_entropy))
         # outside gradient tape block
         variables = [self.alpha]
@@ -629,27 +676,24 @@ class SACHERAgent2:
         self.target_critic1.model.set_weights(target_wts1)
         self.target_critic2.model.set_weights(target_wts2)
 
-    def update_q_networks(self, states, actions, rewards, next_states, dones, goals):
-        # input: tensors, output: numpy arrays
+    def update_q_networks(self, states, actions, rewards, next_states, dones, goals=None):
 
-        # sample actions from current policy for next states
-        pi_a, log_pi_a = self.actor.policy(next_states, goals)
+        if self.use_HER:
+            pi_a, log_pi_a = self.actor.policy(next_states, goals)
+        else:
+            pi_a, log_pi_a = self.actor.policy(next_states)
 
-        # get Q value estimates from target Q networks
         q1_target = self.target_critic1(next_states, pi_a)
         q2_target = self.critic2(next_states, pi_a)
 
-        # apply the clipped double Q trick
         min_q_target = tf.minimum(q1_target, q2_target)
 
-        # add the entropy term to get soft Q target
         soft_q_target = min_q_target  - self.alpha * log_pi_a  
 
-        # target signal for critic network
         y = rewards + self.gamma * (1 - dones) * soft_q_target
 
-        c1_loss = self.critic1.train2(states, actions, y)
-        c2_loss = self.critic2.train2(states, actions, y)
+        c1_loss = self.critic1.train(states, actions, y)
+        c2_loss = self.critic2.train(states, actions, y)
 
         mean_c_loss = np.mean([c1_loss, c2_loss])
         return mean_c_loss 
@@ -658,7 +702,10 @@ class SACHERAgent2:
         critic_losses, actor_losses, alpha_losses = [], [], []
         for epoch in range(self.epochs):
             # sample a minibatch from the replay buffer
-            states, actions, rewards, next_states, dones, goals = self.buffer.sample()
+            if self.use_HER:
+                states, actions, rewards, next_states, dones, goals = self.buffer.sample()
+            else:
+                states, actions, rewards, next_states, dones = self.buffer.sample()
 
             # convert to tensors
             states = tf.convert_to_tensor(states, dtype=tf.float32)
@@ -666,26 +713,31 @@ class SACHERAgent2:
             rewards = tf.convert_to_tensor(rewards, dtype=tf.float32)
             next_states = tf.convert_to_tensor(next_states, dtype=tf.float32)
             dones = tf.convert_to_tensor(dones, dtype=tf.float32)
-            goals = tf.convert_to_tensor(goals, dtype=tf.float32)
+            if self.use_HER:
+                goals = tf.convert_to_tensor(goals, dtype=tf.float32)
 
             # update Q (Critic) network weights
             # c1_loss = self.critic1.train(states, actions, rewards, next_states, dones,
             #                              self.actor, self.target_critic1, self.target_critic2,
-            #                              self.alpha, goals)
+            #                              self.alpha)
 
             # c2_loss = self.critic2.train(states, actions, rewards, next_states, dones,
             #                              self.actor, self.target_critic1, self.target_critic2,
-            #                              self.alpha, goals)
+            #                              self.alpha)
             # critic_loss = np.mean([c1_loss, c2_loss])
 
-            # update critic
-            critic_loss = self.update_q_networks(states, actions, rewards, next_states, dones, goals)
-
-            # update actor
-            actor_loss = self.actor.train(states, self.alpha, self.critic1, self.critic2, goals)
-
-            # update alpha - entropy coefficient
-            alpha_loss = self.update_alpha(states, goals)
+            if self.use_HER:
+                # update critic
+                critic_loss = self.update_q_networks(states, actions, rewards, next_states, dones, goals)
+                # update actor
+                actor_loss = self.actor.train2(states, self.alpha, self.critic1, self.critic2, goals)
+                # update alpha - entropy coefficient
+                alpha_loss = self.update_alpha(states, goals)
+            else:
+                critic_loss = self.update_q_networks(states, actions, rewards, next_states, dones)
+                actor_loss = self.actor.train2(states, self.alpha, self.critic1, self.critic2)
+                # update entropy coefficient
+                alpha_loss = self.update_alpha(states)
 
             # update target network weights
             self.update_target_networks()

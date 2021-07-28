@@ -62,7 +62,6 @@ class SACActor:
         else:
             f = self.feature_model(state_input)
 
-        f = tf.keras.layers.Dense(256, activation='relu', trainable=trainable)(f)
         f = tf.keras.layers.Dense(128, activation='relu', trainable=trainable)(f)
         f = tf.keras.layers.Dense(64, activation="relu", trainable=trainable)(f)
         net_out = tf.keras.layers.Dense(self.action_size[0], activation='tanh',

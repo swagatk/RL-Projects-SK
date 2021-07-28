@@ -2,14 +2,25 @@
 Main script file for comparing performance of different algorithms
 for the KukaDiverseObject Gym Environment. 
 Algorithms being compared are: PPO, SAC, IPG, IPG+HER, SAC+HER
+It will eventually supercede `main.py`
 
+Differences compared to 'main.py': 
 - the `run` function is separated from the RL-Agent. This will allow users to pre-process
     the inputs/ outputs before passing them to Agents. 
+
+- It is integrated with `weights & Biases` for visualization
 
 - The environments that will be tried:
 1. KukaDiverseObject
 2. KukaGrasp
 3. RaceCar
+
+To-DO list:
+- Create an array to store the successful terminal states (for which reward = 1) and use it as hind_goal
+- Does it affect the training performance if we use output of feature network while computing the her_reward.
+- Does attention affect HER performance? If yes, how?
+- visualize gradients for attention
+- Incorporate LSTM into the model and analyze its effect
 """
 # Import
 from logging import currentframe
@@ -38,13 +49,9 @@ from common.utils import uniquify
 
 # Add the current folder to python's import path
 import sys
-# sys.path.append('/content/gdrive/MyDrive/Colab/RL-Projects-SK/src/kukacam/')
-sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/kukacam/')
-
-
-
+sys.path.append(os.path.dirname(__file__))
 ########################################
-# check tensorflow version
+# check versions
 print("Tensorflow Version: ", tf.__version__)
 assert version.parse(tf.__version__).release[0] >= 2, \
     "This program requires Tensorflow 2.0 or above"
@@ -95,15 +102,16 @@ val_freq = None
 WB_LOG = True
 success_value = None 
 LOG_FILE = True
-#save_path = '/content/gdrive/MyDrive/Colab/kuka/sac/'
+use_mujoco = False
 
+#save_path = '/content/gdrive/MyDrive/Colab/kuka/sac/'
 #current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 current_time = datetime.datetime.now().strftime("%Y%m%d")
-save_path = './' + current_time
+save_path = './log/' + current_time + '/'
 
-use_mujoco = False
 #######################################33
 # wandb related configuration
+print("WandB version", wandb.__version__)
 wandb.login()
 wandb.init(project='kukacam', config=config_dict)
 #########################################
@@ -113,10 +121,9 @@ if COLAB:
     import pybullet as p
     p.connect(p.DIRECT)
 #################################3
-
 ###############################333
 # Functions
-
+################################
 # validate function
 def validate(env, agent, max_eps=50):
     ep_reward_list = []
@@ -161,7 +168,6 @@ def run(env, agent):
     best_score = -np.inf
     ep_lens = []  # episodic length
     ep_scores = []      # All episodic scores
-    time_steps = 0      # global step count
     s_scores = []       # season scores
     total_ep_cnt = 0  # total episode count
     global_time_steps = 0   # global training step counts
@@ -178,7 +184,11 @@ def run(env, agent):
         ep_score = 0    # episodic reward
         done = False
         for t in range(wandb.config.training_batch):
-            action, _ = agent.policy(state)
+            if use_HER:
+                action, _ = agent.policy(state)
+            else:
+                action, _ = agent.policy(state, goal)
+
             next_obs, reward, done, _ = env.step(action)
             next_state = np.asarray(next_obs, dtype=np.float32) / 255.0
 
@@ -193,18 +203,17 @@ def run(env, agent):
             if use_HER:
                 goals.append(goal)
                 agent.buffer.record((state, action, reward, next_state, done, goal)) # check this
-                # Also store in a separate buffer
+                # Also store in a separate temporary buffer
                 temp_experience.append([state, action, reward, next_state, done, goal])
             else:
                 agent.buffer.record((state, action, reward, next_state, done))
 
-
             state = next_state
             ep_score += reward
             ep_steps += 1       
+            global_time_steps += 1
 
             if done:
-                global_time_steps += ep_steps
                 s_score += ep_score
                 ep_cnt += 1         # episode count in each season
                 total_ep_cnt += 1   # global episode count
@@ -217,22 +226,22 @@ def run(env, agent):
                     agent.add_her_experience(temp_experience, hind_goal)
                     temp_experience = []    # clear the temporary buffer
 
-
                 # off-policy training after each episode
                 if wandb.config.algo == 'sac':
                     a_loss, c_loss, alpha_loss = agent.replay()
-                    wandb.log({'mean_ep_score': np.mean(ep_scores),
-                            'ep_actor_loss': a_loss,
-                            'ep_critic_loss': c_loss,
-                            'ep_alpha_loss': alpha_loss,
-                            'mean_ep_len': np.mean(ep_lens)},
-                            step = total_ep_cnt)
+                    wandb.log({'time_steps' : global_time_steps,
+                        'Episodes' : total_ep_cnt,
+                        'mean_ep_score': np.mean(ep_scores),
+                        'ep_actor_loss' : a_loss,
+                        'ep_critic_loss' : c_loss,
+                        'ep_alpha_loss' : alpha_loss,
+                        'mean_ep_len' : np.mean(ep_lens)},
+                        step = total_ep_cnt)
 
                 # prepare for next episode
-                obs = env.reset()
-                state = np.asarray(obs, dtype=np.float32) / 255.0
+                state = np.asarray(env.reset(), dtype=np.float32) / 255.0
                 if use_HER: 
-                    state = np.asarray(env.reset(), dtype=np.float32) / 255.0
+                    goal = np.asarray(env.reset(), dtype=np.float32) / 255.0
                 ep_steps, ep_score = 0, 0
                 done = False
 
@@ -272,22 +281,23 @@ def run(env, agent):
                 wandb.log({'val_score': val_score, 
                             'mean_val_score': val_score})
 
-        wandb.log({'Season Score': s_score, 
+        wandb.log({'Season Score' : s_score, 
                     'Mean Season Score' : mean_s_score,
                     'Actor Loss' : a_loss,
                     'Critic Loss' : c_loss,
-                    'Mean episode length' : mean_ep_len})
+                    'Mean episode length' : mean_ep_len,
+                    'Season' : s})
 
         if LOG_FILE:
             if wandb.config.algo == 'sac':
                 with open(filename, 'a') as file:
                     file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
-                            .format(s, total_ep_cnt, time_steps, mean_ep_len,
+                            .format(s, total_ep_cnt, global_time_steps, mean_ep_len,
                                     s_score, mean_s_score, a_loss, c_loss, alpha_loss))
             elif wandb.config.algo == 'ipg':
                 with open(filename, 'a') as file:
                     file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
-                            .format(s, total_ep_cnt, time_steps, mean_ep_len,
+                            .format(s, total_ep_cnt, global_time_steps, mean_ep_len,
                                     s_score, mean_s_score, a_loss, c_loss))
 
         if success_value is not None:
