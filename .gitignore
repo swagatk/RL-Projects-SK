@@ -19,3 +19,4 @@ wandb/
 .ipynb_checkpoints/
 **/tb_log
 *.log
+**/log/

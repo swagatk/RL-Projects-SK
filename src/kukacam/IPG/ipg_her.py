@@ -34,7 +34,7 @@ from common.buffer import HERBuffer
 from common.utils import uniquify
 
 
-class IPGActor:
+class IPGHERActor:
     def __init__(self, state_size, goal_size, action_size, upper_bound,
                  lr, epsilon, feature):
         self.state_size = state_size  # shape: (w, h, c)
@@ -118,7 +118,6 @@ class IPGActor:
     def load_weights(self, filename):
         self.model.load_weights(filename)
 
-
 class DDPGCritic:
     def __init__(self, state_size, action_size, learning_rate,
                  gamma, feature_model):
@@ -174,7 +173,6 @@ class DDPGCritic:
     def load_weights(self, filename):
         self.model.load_weights(filename)
 
-
 class Baseline:
     def __init__(self, state_size, action_size, lr, feature):
         self.state_size = state_size
@@ -215,7 +213,6 @@ class Baseline:
 
     def load_weights(self, filename):
         self.model.load_weights(filename)
-
 
 class IPGHERAgent:
     def __init__(self, env, SEASONS, success_value, lr_a, lr_c,
@@ -278,7 +275,7 @@ class IPGHERAgent:
             self.feature = None
 
         # Actor Model
-        self.actor = IPGActor(state_size=self.state_size, goal_size=self.goal_size,
+        self.actor = IPGHERActor(state_size=self.state_size, goal_size=self.goal_size,
                               action_size=self.action_size, upper_bound=self.upper_bound,
                               lr=self.lr_a, epsilon=self.epsilon, feature=self.feature)
         # Critic Model
@@ -677,8 +674,9 @@ class IPGHERAgent:
 
 
 class IPGHERAgent2:
-    def __init__(self, state_size, action_size, action_upper_bound, lr_a, lr_c,
-                 epochs, batch_size, buffer_capacity, epsilon,
+    def __init__(self, state_size, action_size, action_upper_bound, 
+                 epochs, batch_size, buffer_capacity, 
+                 lr_a, lr_c, epsilon,
                  gamma, lmbda, use_attention=False):
         self.state_size = state_size
         self.action_size = action_size 
@@ -717,7 +715,7 @@ class IPGHERAgent2:
             self.feature = None
 
         # Actor Model
-        self.actor = IPGActor(state_size=self.state_size, goal_size=self.goal_size,
+        self.actor = IPGHERActor(state_size=self.state_size, goal_size=self.goal_size,
                               action_size=self.action_size, upper_bound=self.upper_bound,
                               lr=self.lr_a, epsilon=self.epsilon, feature=self.feature)
         # Critic Model

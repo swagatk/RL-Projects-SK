@@ -20,7 +20,7 @@ class Buffer:
     def __len__(self):
         return len(self.buffer)
 
-    def record(self, experience: tuple):
+    def record(self, experience: list):
         self.buffer.append(experience)
 
     def sample(self):
@@ -83,8 +83,8 @@ class HERBuffer:
     def __len__(self):
         return len(self.buffer)
 
-    def record(self, state, action, reward, next_state, done, goal):
-        self.buffer.append([state, action, reward, next_state, done, goal])
+    def record(self, experience: list):
+        self.buffer.append(experience)
 
     def sample(self):
         valid_batch_size = min(len(self.buffer), self.batch_size)

@@ -1,6 +1,7 @@
 """ main for running ppo and ipg agents """
 
 # Imports
+from numpy.lib.npyio import save
 import tensorflow as tf
 from pybullet_envs.bullet.kuka_diverse_object_gym_env import KukaDiverseObjectEnv
 from pybullet_envs.bullet.kukaCamGymEnv import KukaCamGymEnv
@@ -8,98 +9,185 @@ from pybullet_envs.bullet.racecarZEDGymEnv import RacecarZEDGymEnv
 from pybullet_envs.bullet.racecarGymEnv import RacecarGymEnv
 from packaging import version
 import gym
+import os
+import datetime
+
+# Add the current folder to python's import path
 import sys
-sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/kukacam/')
+sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 
 # Local imports
-from ppo.ppo2 import PPOAgent
+from PPO.ppo2 import PPOAgent
 from IPG.ipg import IPGAgent
 from IPG.ipg_her import IPGHERAgent
 from SAC.sac2 import SACAgent
+from SAC.sac_her import SACHERAgent
 from common.TimeLimitWrapper import TimeLimitWrapper
 from common.CustomGymWrapper import ObsvnResizeTimeLimitWrapper
 
+########################################
+# check tensorflow version
+print("Tensorflow Version: ", tf.__version__)
+assert version.parse(tf.__version__).release[0] >= 2, \
+    "This program requires Tensorflow 2.0 or above"
+#######################################
+
+######################################
+# avoid CUDNN_STATUS_INTERNAL_ERROR
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        for gpu in gpus:
+            tf.config.experimental.set_memory_growth(gpu, True)
+    except RuntimeError as e:
+        print(e)
+
+config = tf.compat.v1.ConfigProto()
+config.gpu_options.allow_growth = True
+config.log_device_placement = True
+sess = tf.compat.v1.Session(config=config)
+################################################
+# check GPU device
+device_name = tf.test.gpu_device_name()
+if device_name != '/device:GPU:0':
+    raise SystemError('GPU device not found')
+print('Found GPU at: {}'.format(device_name))
+##############################################
+# #### Hyper-parameters
+##########################################
+config_dict = dict(
+    lr_a = 0.0002, 
+    lr_c = 0.0002, 
+    epochs = 20, 
+    training_batch = 1024,    # 5120(racecar)  # 1024 (kuka), 512
+    buffer_capacity = 100000,    # 50k (racecar)  # 20K (kuka)
+    batch_size = 256,  # 512 (racecar) #   128 (kuka)
+    epsilon = 0.2,  # 0.07      # Clip factor required in PPO
+    gamma = 0.993,  # 0.99      # discounted factor
+    lmbda = 0.7,  # 0.9         # required for GAE in PPO
+    tau = 0.995,                # polyak averaging factor
+    alpha = 0.2,                # Entropy Coefficient   required in SAC
+    use_attention = False,      # enable/disable attention model
+    algo = 'sac_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
+)
+
+####################################3
+#  Additional parameters 
+#########################################3
+seasons = 35 
+COLAB = False
+env_name = 'kuka'
+val_freq = None
+WB_LOG = False
+success_value = None 
+LOG_FILE = False
+############################
+# Google Colab Settings
+if COLAB:
+    import pybullet as p
+    p.connect(p.DIRECT)
+    save_path = '/content/gdrive/MyDrive/Colab/kuka/sac/'
+else:
+    save_path = './log/'
+##############################################3
+#current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+current_time = datetime.datetime.now().strftime("%Y%m%d")
+save_path = save_path + '_' + current_time + '/'
+logfile = env_name + '_' + config_dict['algo'] + '.txt'
+###########################################
+# wandb related configuration
+import wandb
+if WB_LOG:
+    print("WandB version", wandb.__version__)
+    wandb.login()
+    wandb.init(project='kukacam', config=config_dict)
+#######################################################33
+#################################3
 if __name__ == "__main__":
 
-    ########################################
-    # check tensorflow version
-    print("Tensorflow Version: ", tf.__version__)
-    assert version.parse(tf.__version__).release[0] >= 2, \
-        "This program requires Tensorflow 2.0 or above"
-    #######################################
-
-    ######################################
-    # avoid CUDNN_STATUS_INTERNAL_ERROR
-    gpus = tf.config.experimental.list_physical_devices('GPU')
-    if gpus:
-        try:
-            for gpu in gpus:
-                tf.config.experimental.set_memory_growth(gpu, True)
-        except RuntimeError as e:
-            print(e)
-
-    config = tf.compat.v1.ConfigProto()
-    config.gpu_options.allow_growth = True
-    config.log_device_placement = True
-    sess = tf.compat.v1.Session(config=config)
-    ################################################
-    # check GPU device
-    device_name = tf.test.gpu_device_name()
-    if device_name != '/device:GPU:0':
-        raise SystemError('GPU device not found')
-    print('Found GPU at: {}'.format(device_name))
-    ##############################################
-    # #### Hyper-parameters
-    SEASONS = 50   # 35
-    success_value = None
-    lr_a = 0.0002  # 0.0002
-    lr_c = 0.0002  # 0.0002
-    epochs = 50
-    training_batch = 1024   # 5120(racecar)  # 1024 (kuka), 512
-    training_episodes = 10000    # needed for SAC
-    buffer_capacity = 100000     # 50k (racecar)  # 20K (kuka)
-    batch_size = 256   # 512 (racecar) #   28 (kuka)
-    epsilon = 0.2  # 0.07
-    gamma = 0.993  # 0.99
-    lmbda = 0.7  # 0.9
-    tau = 0.995             # polyak averaging factor
-    alpha = 0.2             # Entropy Coefficient
-    use_attention = False  # enable/disable for attention model
-    use_mujoco = False
-
-
-
-
-    # Kuka DiverseObject Environment
+    # Instantiate Gym Environment
     env = KukaDiverseObjectEnv(renders=False,
                                isDiscrete=False,
                                maxSteps=20,
                                removeHeightHack=False)
 
-    # RaceCar Bullet Environment with image observation
-    # env = ObsvnResizeTimeLimitWrapper(RacecarZEDGymEnv(renders=False,
-    #                            isDiscrete=False), shape=20, max_steps=20)
+    # Select RL Agent
+    if config_dict['algo'] == 'ppo':
+        agent = PPOAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size, epsilon, gamma,
+                         lmbda, use_attention, use_mujoco,
+                         filename='rc_ppo_zed.txt', val_freq=None)
+    elif config_dict['algo'] == 'ipg':
+        agent = IPGAgent(env, seasons, success_value, 
+                            config_dict['epochs'],
+                            config_dict['training_batch'],
+                            config_dict['batch_size'],
+                            config_dict['buffer_capacity'],
+                            config_dict['lr_a'],
+                            config_dict['lr_c'],
+                            config_dict['gamma'],
+                            config_dict['epsilon'],
+                            config_dict['lmbda'],
+                            config_dict['use_attention'],
+                            validation=True,
+                            filename=logfile, 
+                            wb_log=False,  
+                            chkpt=False,
+                            path=save_path)
+    elif config_dict['algo'] == 'ipg_her':
+        agent = IPGHERAgent(env, seasons, success_value, 
+                            config_dict['epochs'],
+                            config_dict['training_batch'],
+                            config_dict['batch_size'],
+                            config_dict['buffer_capacity'],
+                            config_dict['lr_a'],
+                            config_dict['lr_c'],
+                            config_dict['gamma'],
+                            config_dict['epsilon'],
+                            config_dict['lmbda'],
+                            config_dict['use_attention'],
+                            validation=True,
+                            filename=logfile, 
+                            wb_log=False,  
+                            chkpt=False,
+                            path=save_path)
+    elif config_dict['algo'] == 'sac':
+        # SAC Agent
+        agent = SACAgent(env, seasons, success_value,
+                            config_dict['epochs'],
+                            config_dict['training_batch'],
+                            config_dict['batch_size'],
+                            config_dict['buffer_capacity'],
+                            config_dict['lr_a'],
+                            config_dict['lr_c'],
+                            config_dict['gamma'],
+                            config_dict['tau'],
+                            config_dict['alpha'],
+                            config_dict['use_attention'],
+                            validation=True,
+                            filename=logfile, 
+                            wb_log=False,  
+                            chkpt=False,
+                            path=save_path)
 
-    # RaceCar Bullet Environment with vector observation
-    # env = RacecarGymEnv(renders=False, isDiscrete=False)
+    elif config_dict['algo'] == 'sac_her':
+        agent = SACHERAgent(env, seasons, success_value,
+                            config_dict['epochs'],
+                            config_dict['training_batch'],
+                            config_dict['batch_size'],
+                            config_dict['buffer_capacity'],
+                            config_dict['lr_a'],
+                            config_dict['lr_c'],
+                            config_dict['gamma'],
+                            config_dict['tau'],
+                            config_dict['alpha'],
+                            config_dict['use_attention'],
+                            validation=True,
+                            filename=logfile, 
+                            wb_log=False,  
+                            chkpt=False,
+                            path=save_path)
+    else:
+        raise ValueError('Invalid Choice of Algorithm. Exiting ...')
 
-    # PPO Agent
-    # agent = PPOAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size, epsilon, gamma,
-    #                  lmbda, use_attention, use_mujoco,
-    #                  filename='rc_ppo_zed.txt', val_freq=None)
-    # IPG Agent
-    # agent = IPGAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size, buffer_capacity,
-    #                  epsilon, gamma, lmbda, use_attention, use_mujoco,
-    #                  filename='rc_ipg_zed.txt', val_freq=None)
-    # IPG HER Agent
-    # agent = IPGHERAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size,
-    #                     buffer_capacity, epsilon, gamma, lmbda, use_attention,
-    #                     use_mujoco, filename='rc_ipg_her.txt', val_freq=None)
-
-    # SAC Agent
-    agent = SACAgent(env, success_value,
-                     epochs, training_episodes, batch_size, buffer_capacity, lr_a, lr_c, alpha,
-                     gamma, tau, use_attention, use_mujoco,
-                     filename='kuka_sac.txt', tb_log=False, val_freq=None)
-
+    # Train
     agent.run()

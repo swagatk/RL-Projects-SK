@@ -37,20 +37,22 @@ import gym
 import os
 from tensorflow.python.keras.backend import dtype
 import wandb
+import sys
+
+# Add the current folder to python's import path
+sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 
 # Local imports
-from ppo.ppo2 import PPOAgent
-from IPG.ipg import IPGAgent
-from IPG.ipg_her import IPGHERAgent
+from PPO.ppo2 import PPOAgent2
+from IPG.ipg import IPGAgent2
+from IPG.ipg_her import IPGHERAgent2
 from SAC.sac2 import SACAgent2          # critic.train2()
+from SAC.sac_her import SACHERAgent2
 # from SAC.sac3 import SACAgent2        # critic.train()
 from common.TimeLimitWrapper import TimeLimitWrapper
 from common.CustomGymWrapper import ObsvnResizeTimeLimitWrapper
 from common.utils import uniquify
 
-# Add the current folder to python's import path
-import sys
-sys.path.append(os.path.dirname(__file__))
 ########################################
 # check versions
 print("Tensorflow Version: ", tf.__version__)
@@ -82,20 +84,20 @@ config_dict = dict(
     lr_a = 0.0002, 
     lr_c = 0.0002, 
     epochs = 20, 
-    training_batch = 512,    #1024,    # 5120(racecar)  # 1024 (kuka), 512
-    buffer_capacity = 20000,    # 50k (racecar)  # 20K (kuka)
-    batch_size = 64,  # 512 (racecar) #   128 (kuka)
+    training_batch = 1024,    # 5120(racecar)  # 1024 (kuka), 512
+    buffer_capacity = 100000,    # 50k (racecar)  # 20K (kuka)
+    batch_size = 256,  # 512 (racecar) #   128 (kuka)
     epsilon = 0.2,  # 0.07      # Clip factor required in PPO
     gamma = 0.993,  # 0.99      # discounted factor
     lmbda = 0.7,  # 0.9         # required for GAE in PPO
     tau = 0.995,                # polyak averaging factor
     alpha = 0.2,                # Entropy Coefficient   required in SAC
     use_attention = False,      # enable/disable attention model
-    algo = 'sac',
+    algo = 'sac_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
 )
-
-# Additional hyperparameters
-use_HER = False             # enable/disable HER
+####################################3
+#  Additional Hyper-parameters
+use_HER = True             # enable/disable HER
 seasons = 35 
 COLAB = False
 env_name = 'kuka'
@@ -103,18 +105,18 @@ val_freq = None
 WB_LOG = True
 success_value = None 
 LOG_FILE = True
-use_mujoco = False
+load_path = None
 
 #save_path = '/content/gdrive/MyDrive/Colab/kuka/sac/'
-#current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-current_time = datetime.datetime.now().strftime("%Y%m%d")
+current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 save_path = './log/' + current_time + '/'
 
 #######################################33
 # wandb related configuration
-print("WandB version", wandb.__version__)
-wandb.login()
-wandb.init(project='kukacam', config=config_dict)
+if WB_LOG:
+    print("WandB version", wandb.__version__)
+    wandb.login()
+    wandb.init(project='kukacam', config=config_dict)
 #########################################
 ############################
 # Google Colab Settings
@@ -148,11 +150,16 @@ def validate(env, agent, max_eps=50):
 # Main training function
 def run(env, agent):
 
+    if load_path is not None:
+        agent.load_model(load_path)
+        print('---Model parameters are loaded---')
+
+
     # create folder for storing result files
     if LOG_FILE:
         os.makedirs(save_path, exist_ok=True)
         tag = '_her' if use_HER else ''
-        filename = env_name + '_' + wandb.config.algo + tag + '.txt'
+        filename = env_name + '_' + config_dict['algo'] + tag + '.txt'
         filename = uniquify(save_path + filename)
 
     if val_freq is not None:
@@ -184,7 +191,7 @@ def run(env, agent):
         ep_steps = 0    # no. of steps in each episode
         ep_score = 0    # episodic reward
         done = False
-        for t in range(wandb.config.training_batch):
+        for t in range(config_dict['training_batch']):
             if use_HER:
                 action, _ = agent.policy(state, goal)
             else:
@@ -203,11 +210,11 @@ def run(env, agent):
             # store in replay buffer for off-policy training
             if use_HER:
                 goals.append(goal)
-                agent.buffer.record((state, action, reward, next_state, done, goal)) # check this
+                agent.buffer.record([state, action, reward, next_state, done, goal]) # check this
                 # Also store in a separate temporary buffer
                 temp_experience.append([state, action, reward, next_state, done, goal])
             else:
-                agent.buffer.record((state, action, reward, next_state, done))
+                agent.buffer.record([state, action, reward, next_state, done])
 
             state = next_state
             ep_score += reward
@@ -228,16 +235,17 @@ def run(env, agent):
                     temp_experience = []    # clear the temporary buffer
 
                 # off-policy training after each episode
-                if wandb.config.algo == 'sac':
-                    a_loss, c_loss, alpha_loss = agent.replay()
-                    wandb.log({'time_steps' : global_time_steps,
-                        'Episodes' : total_ep_cnt,
-                        'mean_ep_score': np.mean(ep_scores),
-                        'ep_actor_loss' : a_loss,
-                        'ep_critic_loss' : c_loss,
-                        'ep_alpha_loss' : alpha_loss,
-                        'mean_ep_len' : np.mean(ep_lens)},
-                        step = total_ep_cnt)
+                if config_dict['algo'] == 'sac_her':
+                    a_loss, c_loss, alpha_loss = agent.train()
+                    if WB_LOG:
+                        wandb.log({'time_steps' : global_time_steps,
+                            'Episodes' : total_ep_cnt,
+                            'mean_ep_score': np.mean(ep_scores),
+                            'ep_actor_loss' : a_loss,
+                            'ep_critic_loss' : c_loss,
+                            'ep_alpha_loss' : alpha_loss,
+                            'mean_ep_len' : np.mean(ep_lens)},
+                            step = total_ep_cnt)
 
                 # prepare for next episode
                 state = np.asarray(env.reset(), dtype=np.float32) / 255.0
@@ -249,16 +257,6 @@ def run(env, agent):
             # done block ends here
         # end of one season
 
-        # off-policy training after each season 
-        if wandb.config.algo == 'ppo':
-            pass
-        elif wandb.config.algo == 'ipg':
-            if use_HER:
-                a_loss, c_loss = agent.replay(states, actions, rewards, next_states, dones, goals)
-            else:
-                a_loss, c_loss = agent.replay(states, actions, rewards, next_states, dones)
-        else:
-            pass
 
         s_score = np.mean(ep_scores[-ep_cnt:])  # mean of last ep_cnt episodes
         s_scores.append(s_score)
@@ -279,23 +277,25 @@ def run(env, agent):
                 mean_val_score = np.mean(val_scores)
                 print('Episode: {}, Validation Score: {}, Mean Validation Score: {}' \
                       .format(total_ep_cnt, val_score, mean_val_score))
-                wandb.log({'val_score': val_score, 
-                            'mean_val_score': val_score})
+                if WB_LOG:
+                    wandb.log({'val_score': val_score, 
+                                'mean_val_score': val_score})
 
-        wandb.log({'Season Score' : s_score, 
-                    'Mean Season Score' : mean_s_score,
-                    'Actor Loss' : a_loss,
-                    'Critic Loss' : c_loss,
-                    'Mean episode length' : mean_ep_len,
-                    'Season' : s})
+        if WB_LOG:
+            wandb.log({'Season Score' : s_score, 
+                        'Mean Season Score' : mean_s_score,
+                        'Actor Loss' : a_loss,
+                        'Critic Loss' : c_loss,
+                        'Mean episode length' : mean_ep_len,
+                        'Season' : s})
 
         if LOG_FILE:
-            if wandb.config.algo == 'sac':
+            if config_dict['algo'] == 'sac_her':
                 with open(filename, 'a') as file:
                     file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
                             .format(s, total_ep_cnt, global_time_steps, mean_ep_len,
                                     s_score, mean_s_score, a_loss, c_loss, alpha_loss))
-            elif wandb.config.algo == 'ipg':
+            elif config_dict['algo'] == 'ipg':
                 with open(filename, 'a') as file:
                     file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
                             .format(s, total_ep_cnt, global_time_steps, mean_ep_len,
@@ -330,36 +330,67 @@ if __name__ == "__main__":
     action_size = env.action_space.shape
     action_upper_bound = env.action_space.high
 
-    # RaceCar Bullet Environment with image observation
-    # env = ObsvnResizeTimeLimitWrapper(RacecarZEDGymEnv(renders=False,
-    #                            isDiscrete=False), shape=20, max_steps=20)
 
-    # RaceCar Bullet Environment with vector observation
-    # env = RacecarGymEnv(renders=False, isDiscrete=False)
+    # RL Agent
+    if config_dict['algo'] == 'sac':
+        agent = SACAgent2(state_size, action_size, action_upper_bound, 
+                            config_dict['epochs'],
+                            config_dict['batch_size'],
+                            config_dict['buffer_capacity'],
+                            config_dict['lr_a'],
+                            config_dict['lr_c'],
+                            config_dict['gamma'],
+                            config_dict['tau'],
+                            config_dict['alpha'],
+                            config_dict['use_attention'])
+    elif config_dict['algo'] == 'sac_her':
+        agent = SACHERAgent2(state_size, action_size, action_upper_bound, 
+                            config_dict['epochs'],
+                            config_dict['batch_size'],
+                            config_dict['buffer_capacity'],
+                            config_dict['lr_a'],
+                            config_dict['lr_c'],
+                            config_dict['gamma'],
+                            config_dict['tau'],
+                            config_dict['alpha'],
+                            config_dict['use_attention'])
 
-    # PPO Agent
-    # agent = PPOAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size, epsilon, gamma,
-    #                  lmbda, use_attention, use_mujoco,
-    #                  filename='rc_ppo_zed.txt', val_freq=None)
-    # IPG Agent
-    # agent = IPGAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size, buffer_capacity,
-    #                  epsilon, gamma, lmbda, use_attention, use_mujoco,
-    #                  filename='rc_ipg_zed.txt', val_freq=None)
-    # IPG HER Agent
-    # agent = IPGHERAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size,
-    #                     buffer_capacity, epsilon, gamma, lmbda, use_attention,
-    #                     use_mujoco, filename='rc_ipg_her.txt', val_freq=None)
+    elif config_dict['algo'] == 'ipg':
+        agent = IPGAgent2(state_size, action_size, action_upper_bound, 
+                            config_dict['epochs'],
+                            config_dict['batch_size'],
+                            config_dict['buffer_capacity'],
+                            config_dict['lr_a'],
+                            config_dict['lr_c'],
+                            config_dict['gamma'],
+                            config_dict['tau'],
+                            config_dict['alpha'],
+                            config_dict['use_attention'])
+    elif config_dict['algo'] == 'ipg_her':
+        agent = IPGHERAgent2(state_size, action_size, action_upper_bound, 
+                            config_dict['epochs'],
+                            config_dict['batch_size'],
+                            config_dict['buffer_capacity'],
+                            config_dict['lr_a'],
+                            config_dict['lr_c'],
+                            config_dict['gamma'],
+                            config_dict['tau'],
+                            config_dict['alpha'],
+                            config_dict['use_attention'])
+    elif config_dict['algo'] == 'ppo':
+        agent = PPOAgent2(state_size, action_size, action_upper_bound, 
+                            config_dict['epochs'],
+                            config_dict['batch_size'],
+                            config_dict['buffer_capacity'],
+                            config_dict['lr_a'],
+                            config_dict['lr_c'],
+                            config_dict['gamma'],
+                            config_dict['tau'],
+                            config_dict['alpha'],
+                            config_dict['use_attention'])
+    else:
+        raise ValueError("invalid choice for algo. Exiting ...") 
 
-    # SAC Agent
-    agent = SACAgent2(state_size, action_size, action_upper_bound, 
-                        wandb.config.epochs,
-                        wandb.config.batch_size, 
-                        wandb.config.buffer_capacity, 
-                        wandb.config.lr_a, 
-                        wandb.config.lr_c, 
-                        wandb.config.gamma, 
-                        wandb.config.tau, 
-                        wandb.config.alpha, 
-                        wandb.config.use_attention)
 
+    # Run / Train
     run(env, agent)

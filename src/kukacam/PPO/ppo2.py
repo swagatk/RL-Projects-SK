@@ -99,6 +99,27 @@ class PPOActor:
         std = tf.squeeze(tf.exp(self.model.logstd))
         return mean, std
 
+    def policy(self, state):
+        # input: tensor
+        # output: tensor
+        mean = tf.squeeze(self.model(state))
+        std = tf.squeeze(tf.exp(self.model.logstd))
+
+        pi = tfp.distributions.Normal(mean, std)
+        action_ = pi.sample()
+        log_pi_ = pi.log_prob(tf.squeeze(action_))
+
+        action = tf.clip_by_value(action_, -self.upper_bound, self.upper_bound)
+
+        if tf.rank(action) < 1:     # scalar
+            log_pi_a = log_pi_ - tf.math.log(1 - action ** 2 + 1e-16)
+        elif 1 <= tf.rank(action) < 2:  # vector
+            log_pi_a = tf.reduce_sum((log_pi_ - tf.math.log(1 - action ** 2 + 1e-16)), axis=0, keepdims=True)
+        else:   # matrix
+            log_pi_a = tf.reduce_sum((log_pi_ - tf.math.log(1 - action ** 2 + 1e-16)), axis=1, keepdims=True)
+
+        return action, log_pi_a 
+
     def save_weights(self, filename):
         self.model.save_weights(filename)
 
@@ -152,7 +173,6 @@ class PPOCritic:
         self.model = self._build_net(trainable=True)
 
     def _build_net(self, trainable=True):
-        # state input is a stack of 1-D YUV images
         state_input = tf.keras.layers.Input(shape=self.state_size)
 
         if self.feature_model is None:
@@ -197,21 +217,17 @@ class PPOCritic:
 # PPO AGENT
 #########################
 class PPOAgent:
-    def __init__(self, env, SEASONS, success_value, lr_a, lr_c,
-                 epochs, training_batch, batch_size,
-                 epsilon, gamma, lmbda,
-                 use_attention=False, use_mujoco=False,
-                 beta=0.5, c_loss_coeff=0.0,
-                 entropy_coeff=0.0, kl_target=0.01, method='clip',
-                 filename=None, tb_log=False, val_freq=None, path='./'):
+    def __init__(self, env, SEASONS, success_value, 
+                    epochs, training_batch, batch_size,
+                    lr_a, lr_c, gamma, epsilon, lmbda,
+                    use_attention=False,
+                    beta=0.5, c_loss_coeff=0.0,
+                    entropy_coeff=0.0, kl_target=0.01, 
+                    method='clip', validation=True,
+                    filename=None, wb_log=False, 
+                    chkpt=False, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
-
-        self.use_mujoco = use_mujoco
-        if self.use_mujoco:
-            self.state_size = self.env.observation_space["observation"].shape
-        else:
-            self.state_size = self.env.observation_space.shape
 
         self.upper_bound = self.env.action_space.high
         self.SEASONS = SEASONS
@@ -514,4 +530,158 @@ class PPOAgent:
         end = datetime.datetime.now()
         print('Time to completion: {}'.format(end-start))
 
+
+
+class PPOAgent2:
+    def __init__(self, state_size, action_size, action_upper_bound, 
+                 epochs, training_batch, batch_size,
+                 lr_a, lr_c, epsilon, gamma, lmbda,
+                 beta=0.5, c_loss_coeff=0.0,
+                 entropy_coeff=0.0, kl_target=0.01, method='clip',
+                 use_attention=False):
+        self.state_size = state_size
+        self.action_size = action_size
+        self.upper_bound = action_upper_bound
+
+        self.lr_a = lr_a    # actor learning rate
+        self.lr_c = lr_c    # critic learning rate
+        self.epochs = epochs
+        self.training_batch = training_batch    # no. of steps in each season
+        self.batch_size = batch_size
+        self.gamma = gamma  # discount factor
+        self.lmbda = lmbda  # required for Generalized Advantage Estimator (GAE)
+        self.beta = beta    # required for KL-Penalty method
+        self.c1 = c_loss_coeff      # c_loss coefficient
+        self.c2 = entropy_coeff     # entropy coefficient
+        self.epsilon = epsilon  # clip_factor
+        self.kl_target = kl_target      # target value of KL divergence
+        self.use_attention = use_attention
+        self.method = method    # chose 'clip' or 'penalty'
+
+        if len(self.state_size) == 3:
+            self.image_input = True     # image input
+        elif len(self.state_size) == 1:
+            self.image_input = False        # vector input
+        else:
+            raise ValueError("Input can be a vector or an image")
+
+        # extract features from input images
+        if self.use_attention and self.image_input:   # attention + image input
+            print('Currently Attention handles only image input')
+            self.feature = AttentionFeatureNetwork(self.state_size, lr_a)
+        elif self.use_attention is False and self.image_input is True:  # image input
+            print('You have selected an image input')
+            self.feature = FeatureNetwork(self.state_size, lr_a)
+        else:       # non-image input
+            print('You have selected a non-image input.')
+            self.feature = None
+
+        # create actor/critic models
+        self.actor = PPOActor(self.state_size, self.action_size, self.lr_a,
+                              self.epsilon, self.beta, self.c1, self.c2, self.kl_target,
+                              self.upper_bound, self.feature, self.method)
+        self.critic = PPOCritic(self.state_size, self.action_size,
+                                self.lr_c, self.feature)       # estimates state value
+
+    def policy(self, state):
+
+        if state.ndim < len(self.state_size) + 1:      # single sample
+            tf_state = tf.expand_dims(tf.convert_to_tensor(state, dtype=tf.float32), 0)
+        else:       # for a batch of samples
+            tf_state = tf.convert_to_tensor(state, dtype=tf.float32)
+
+        action, log_pi = self.actor.policy(tf_state) # returns tensors
+
+        return action.numpy(), log_pi.numpy()
+
+    def get_value(self, state):
+        tf_state = tf.expand_dims(tf.convert_to_tensor(state), 0)
+        value = self.critic(tf_state)
+        return value.numpy()
+
+    def train(self, states, actions, rewards, next_states, dones):
+
+        states = tf.convert_to_tensor(states, dtype=tf.float32)
+        next_states = tf.convert_to_tensor(next_states, dtype=tf.float32)
+        actions = tf.convert_to_tensor(actions, dtype=tf.float32)
+        rewards = tf.convert_to_tensor(rewards, dtype=tf.float32)
+        dones = tf.convert_to_tensor(dones, dtype=tf.float32)
+
+        # compute advantages and discounted cumulative rewards
+        advantages, target_values = self.compute_advantage(rewards, states, next_states, dones)
+
+        target_values = tf.convert_to_tensor(target_values, dtype=tf.float32)
+        advantages = tf.convert_to_tensor(advantages, dtype=tf.float32)
+
+        # current action probability distribution
+        mean, std = self.actor(states)
+        pi = tfp.distributions.Normal(mean, std)
+
+        n_split = len(rewards) // self.batch_size
+        assert n_split > 0, 'there should be at least one split'
+
+        indexes = np.arange(n_split, dtype=int)
+
+        # training
+        a_loss_list = []
+        c_loss_list = []
+        kl_list = []
+        np.random.shuffle(indexes)
+        for _ in range(self.epochs):
+            for i in indexes:
+                old_pi = pi[i * self.batch_size: (i + 1) * self.batch_size]
+                s_split = tf.gather(states, indices=np.arange(i * self.batch_size, (i+1) * self.batch_size), axis=0)
+                a_split = tf.gather(actions, indices=np.arange(i * self.batch_size, (i+1) * self.batch_size), axis=0)
+                tv_split = tf.gather(target_values, indices=np.arange(i * self.batch_size, (i+1) * self.batch_size), axis=0)
+                adv_split = tf.gather(advantages, indices=np.arange(i * self.batch_size, (i+1) * self.batch_size), axis=0)
+
+                # update critic
+                cl = self.critic.train(s_split, tv_split)
+                c_loss_list.append(cl)
+
+                # update actor
+                a_loss_list.append(self.actor.train(s_split, a_split,
+                                                    adv_split, old_pi, cl))
+                kl_list.append(self.actor.kl_value)
+
+            # update lambda once in each epoch
+            if self.method == 'penalty':
+                self.actor.update_beta()
+
+        actor_loss = np.mean(a_loss_list)
+        critic_loss = np.mean(c_loss_list)
+        kld_mean = np.mean(kl_list)
+
+        return actor_loss, critic_loss, kld_mean
+
+    # Generalized Advantage Estimator (GAE)
+    def compute_advantage(self, r_batch, s_batch, ns_batch, d_batch):
+        # input: tensors
+        gamma = self.gamma
+        lmbda = self.lmbda
+        s_values = tf.squeeze(self.critic(s_batch)) # input: tensor
+        ns_values = tf.squeeze(self.critic(ns_batch))
+        returns = []
+        gae = 0     # generalized advantage estimate
+        for i in reversed(range(len(r_batch))):
+            delta = r_batch[i] + gamma * ns_values[i] * (1 - d_batch[i]) - s_values[i]
+            gae = delta + gamma * lmbda * (1 - d_batch[i]) * gae
+            returns. insert(0, gae + s_values[i])
+
+        returns = np.array(returns)
+        adv = returns - s_values.numpy()
+        adv = (adv - np.mean(adv)) / (np.std(adv) + 1e-10) # output: numpy array
+        return adv, returns
+
+    def save_model(self, actor_filename, critic_filename):
+        actor_file = self.path + actor_filename
+        critic_file = self.path + critic_filename
+        self.actor.save_weights(actor_file)
+        self.critic.save_weights(critic_file)
+
+    def load_model(self, actor_filename, critic_filename):
+        actor_file = self.path + actor_filename
+        critic_file = self.path + critic_filename
+        self.actor.model.load_weights(actor_file)
+        self.critic.model.load_weights(critic_file)
 

@@ -555,8 +555,9 @@ class IPGAgent:
 
 class IPGAgent2:
     def __init__(self, state_size, action_size, action_upper_bound, 
-                    lr_a, lr_c, epochs, batch_size, buffer_capacity, epsilon,
-                 gamma, lmbda, use_attention=False):
+                    epochs, batch_size, buffer_capacity, 
+                    lr_a, lr_c, epsilon,
+                    gamma, lmbda, use_attention=False):
         self.state_size = state_size
         self.action_size = action_size
         self.upper_bound = action_upper_bound
