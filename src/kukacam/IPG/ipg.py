@@ -10,15 +10,19 @@ from tensorflow.keras import layers
 import os
 import datetime
 import random
+import sys 
 from collections import deque
+
+# Add the current folder to python's import path
+current_dir = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(current_dir)
+sys.path.append(os.path.dirname(current_dir))
 
 # Local imports
 from common.FeatureNet import FeatureNetwork, AttentionFeatureNetwork
 from common.buffer import Buffer
 from common.utils import uniquify
 
-# wandb config
-# wandb.config.update({"algorithm":'IPG'})
 ###############
 # ACTOR NETWORK
 ###############
@@ -201,24 +205,18 @@ class Baseline:
 
 
 class IPGAgent:
-    def __init__(self, env, SEASONS, success_value, lr_a, lr_c,
-                 epochs, training_batch, batch_size, buffer_capacity, epsilon,
-                 gamma, lmbda,
-                 use_attention=False, use_mujoco=False,
-                 filename=None, tb_log=False, val_freq=50, path='./'):
+    def __init__(self, env, SEASONS, success_value, 
+                 epochs, training_batch, batch_size, buffer_capacity, 
+                 lr_a, lr_c, gamma, epsilon, lmbda,
+                 use_attention=False, validation=True, 
+                 filename=None, wb_log=False, chkpt=False, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
-
-        self.use_mujoco = use_mujoco
-        if self.use_mujoco:
-            self.state_size = self.env.observation_space["observation"].shape
-        else:
-            self.state_size = self.env.observation_space.shape
-
+        self.state_size = self.env.observation_space.shape
         self.upper_bound = self.env.action_space.high
         self.SEASONS = SEASONS
-        self.episode = 0 # not required
-        self.replay_count = 0   # not required
+        self.episodes = 0           # global episode count 
+        self.time_steps = 0         # global step count
         self.success_value = success_value
         self.lr_a = lr_a
         self.lr_c = lr_c
@@ -231,9 +229,10 @@ class IPGAgent:
         self.lmbda = lmbda
         self.use_attention = use_attention
         self.filename = filename
-        self.TB_LOG = tb_log
-        self.val_freq = val_freq
+        self.WB_LOG = wb_log
+        self.validation = validation
         self.path = path
+        self.chkpt = chkpt
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -246,9 +245,7 @@ class IPGAgent:
         self.buffer = Buffer(self.buffer_capacity, self.batch_size)
 
         # Select a suitable feature extractor
-        if self.use_mujoco:
-            self.feature = None     # assuming non-image mujoco environment
-        elif self.use_attention and self.image_input:   # attention + image input
+        if self.use_attention and self.image_input:   # attention + image input
             print('Currently Attention handles only image input')
             self.feature = AttentionFeatureNetwork(self.state_size, lr_a)
         elif self.use_attention is False and self.image_input is True:  # image input
@@ -310,7 +307,7 @@ class IPGAgent:
         return adv_bar
 
     # implements on-policy & off-policy training
-    def replay(self, states, actions, rewards, next_states, dones):
+    def train(self, states, actions, rewards, next_states, dones):
         n_split = len(rewards) // self.batch_size
 
         # convert to tensors
@@ -357,6 +354,10 @@ class IPGAgent:
         c_loss_list = []
         np.random.shuffle(indexes)
         for _ in range(self.epochs):
+            # increment global step counter
+            self.time_steps += 1
+
+            # sample a minibatch from replay buffer
             s_batch, a_batch, r_batch, ns_batch, d_batch = self.buffer.sample()
 
             # convert to tensors
@@ -393,23 +394,15 @@ class IPGAgent:
     def validate(self, env, max_eps=50):
         ep_reward_list = []
         for ep in range(max_eps):
-            if self.use_mujoco:
-                state = env.reset()["observation"]
-            else:
-                state = env.reset()
-                state = np.asarray(state, dtype=np.float32) / 255.0
+            state = env.reset()
+            state = np.asarray(state, dtype=np.float32) / 255.0
 
             t = 0
             ep_reward = 0
             while True:
                 action = self.policy(state, deterministic=False)
                 next_obsv, reward, done, _ = env.step(action)
-
-                if self.use_mujoco:
-                    reward = 1 if reward == 0 else 0
-                    next_state = next_obsv["observation"]
-                else:
-                    next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
+                next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
 
                 state = next_state
                 ep_reward += reward
@@ -422,48 +415,36 @@ class IPGAgent:
         return mean_ep_reward
 
     def run(self):
-        #######################
-        # TENSORBOARD SETTINGS
-        if self.TB_LOG:
-            current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-            train_log_dir = self.path + 'logs/train/' + current_time
-            train_summary_writer = tf.summary.create_file_writer(train_log_dir)
-        ########################################
 
-        if self.filename is None:
-            self.filename = 'ipg_output.txt'
-        self.filename = uniquify(self.path + self.filename)
+        if self.filename is not None:
+            self.filename = uniquify(self.path + self.filename)
 
-        if self.val_freq is not None:
+        if self.validation:
             val_scores = deque(maxlen=50)
             val_score = 0
 
         # initial state
-        if self.use_mujoco:
-            state = self.env.reset()["observation"]
-        else:
-            state = self.env.reset()
-            state = np.asarray(state, dtype=np.float32) / 255.0
+        state = self.env.reset()
+        state = np.asarray(state, dtype=np.float32) / 255.0
 
         start = datetime.datetime.now()
         best_score = -np.inf
         s_scores = []       # All season scores
-        s_ep_lens = []    # average episodic length for each season
+        ep_lens = []        # episode lengths 
+        ep_scores = []      # episodic rewards
+        self.episodes = 0   # global episode count
         for s in range(self.SEASONS):
             # discard trajectories from previous season
             states, next_states, actions, rewards, dones = [], [], [], [], []
             s_score = 0
-            done, score = False, 0
-            self.episode = 0    # initialize episode count for each season
+            ep_cnt = 0      # episodes in each season
+            ep_len = 0      # length of each episode
+            ep_score = 0    # score of each episode
+            done = False
             for _ in range(self.training_batch):    # time steps
                 action = self.policy(state)
                 next_state, reward, done, _ = self.env.step(action)
-
-                if self.use_mujoco:
-                    reward = 1 if reward == 0 else 0
-                    next_state = next_state["observation"]
-                else:
-                    next_state = np.asarray(next_state, dtype=np.float32) / 255.0
+                next_state = np.asarray(next_state, dtype=np.float32) / 255.0
 
                 # this is used for on-policy training
                 states.append(state)
@@ -476,83 +457,105 @@ class IPGAgent:
                 self.buffer.record((state, action, reward, next_state, done))
 
                 state = next_state
-                score += reward
+                ep_score += reward
+                ep_len += 1
 
                 if done:
-                    self.episode += 1   # count total no of episodes
-                    s_score += score        # season score
+                    self.episodes += 1   # count total no of episodes
+                    s_score += ep_score        # season score
+                    ep_cnt += 1         # episode count in a season
+                    ep_scores.append(ep_score)
+                    ep_lens.append(ep_len)
 
-                    if self.use_mujoco:
-                        state = self.env.reset()["observation"]
-                    else:
-                        state = self.env.reset()
-                        state = np.asarray(state, dtype=np.float32) / 255.0
-                    done, score = False, 0
+                    if self.WB_LOG:
+                        wandb.log({'time_steps' : self.time_steps,
+                            'Episodes' : self.episodes, 
+                            'mean_ep_score': np.mean(ep_scores),
+                            'mean_ep_len' : np.mean(ep_lens)})
 
+                    # prepare for next episode
+                    state = self.env.reset()
+                    state = np.asarray(state, dtype=np.float32)
+                    ep_len, ep_score = 0, 0
+                    done= False
+                # end of done block
             # end of season
-            # on-policy & off-policy training
-            a_loss, c_loss = self.replay(states, actions, rewards, next_states, dones)
 
-            avg_episodic_score = s_score / sum(dones)
-            s_scores.append(avg_episodic_score)
+            # on-policy & off-policy training
+            actor_loss, critic_loss = self.train(states, actions, rewards, next_states, dones)
+
+            s_score = np.mean(ep_scores[-ep_cnt : ])
+            s_scores.append(s_score)
             mean_s_score = np.mean(s_scores)
-            s_ep_lens.append(self.training_batch / sum(dones))
-            mean_ep_len = np.mean(s_ep_lens)
+            mean_ep_len = np.mean(ep_lens)
+            mean_ep_score = np.mean(ep_scores)
+
             if mean_s_score > best_score:
-                self.save_model('actor_wts.h5', 'critic_wts.h5', 'baseline_wts.h5')
+                best_model_path = self.path + 'best_model/'
+                os.makedirs(best_model_path, exist_ok=True)
+                self.save_model(best_model_path)
                 print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_s_score))
                 best_score = mean_s_score
 
-            if self.val_freq is not None:
-                if s % self.val_freq == 0:
-                    print('Season: {}, Score: {}, Mean score: {}'.format(s, s_score, mean_s_score))
-                    val_score = self.validate(self.env)
-                    val_scores.append(val_score)
-                    mean_val_score = np.mean(val_scores)
-                    print('Season: {}, Validation Score: {}, Mean Validation Score: {}'\
-                          .format(s, val_score, mean_val_score))
+            if self.validation:
+                val_score = self.validate(self.env)
+                val_scores.append(val_score)
+                mean_val_score = np.mean(val_scores)
+                print('Season: {}, Validation Score: {}, Mean Validation Score: {}'\
+                        .format(s, val_score, mean_val_score))
 
-            if self.TB_LOG:
-                with train_summary_writer.as_default():
-                    tf.summary.scalar('1. Season Score', s_score, step=s)
-                    tf.summary.scalar('2. Mean Season Score', mean_s_score, step=s)
-                    tf.summary.scalar('3. Success rate', avg_episodic_score, step=s)
-                    if self.val_freq is not None:
-                        tf.summary.scalar('4. Validation Score', val_score, step=s)
-                    tf.summary.scalar('5. Actor Loss', a_loss, step=s)
-                    tf.summary.scalar('6. Critic Loss', c_loss, step=s)
-                    tf.summary.scalar('7. Mean Episode Length', mean_ep_len, step=s)
+                if self.WB_LOG:
+                    wandb.log({'val_score': val_score, 
+                                'mean_val_score': val_score})
 
-            with open(self.filename, 'a') as file:
-                file.write('{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
-                           .format(s, self.episode, mean_ep_len,
-                                   s_score, mean_s_score, a_loss, c_loss))
+            if self.WB_LOG:
+                wandb.log({'Season Score' : s_score, 
+                            'Mean Season Score' : mean_s_score,
+                            'Actor Loss' : actor_loss,
+                            'Critic Loss' :critic_loss,
+                            'Mean episode length' : mean_ep_len,
+                            'Season' : s})
+                
+            if self.chkpt:
+                chkpt_path = self.path + 'chkpt/'
+                os.makedirs(chkpt_path, exist_ok=True)
+                self.save_model(chkpt_path)
+
+            if self.filename is not None:
+                with open(self.filename, 'a') as file:
+                    file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
+                            .format(s, self.episodes, self.time_steps, mean_ep_len,
+                                    s_score, mean_s_score, actor_loss, critic_loss))
 
             if self.success_value is not None:
                 if best_score > self.success_value:
-                    print('Problem is solved in {} episodes with score {}'.format(self.episode, best_score))
+                    print('Problem is solved in {} episodes with score {}'.format(self.episodes, best_score))
                     break
+
         # end of season-loop
         end = datetime.datetime.now()
         print('Time to Completion: {}'.format(end - start))
+        print('Mean episodic score over {} episodes: {:.2f}'.format(self.episodes, np.mean(ep_scores)))
         self.env.close()
 
-    def save_model(self, actor_filename, critic_filename, baseline_filename):
-        actor_file = self.path + actor_filename
-        critic_file = self.path + critic_filename
-        baseline_file = self.path + baseline_filename
+    def save_model(self, save_path):
+        actor_file = save_path + 'ipg_actor_wts.h5'
+        critic_file = save_path + 'ipg_critic_wts.h5'
+        baseline_file = save_path + 'ipg_bl_wts.h5'
         self.actor.save_weights(actor_file)
         self.critic.save_weights(critic_file)
         self.baseline.save_weights(baseline_file)
 
-    def load_model(self, actor_filename, critic_filename, baseline_filename):
-        actor_file = self.path + actor_filename
-        critic_file = self.path + critic_filename
-        baseline_file = self.path + baseline_filename
+    def load_model(self, load_path): 
+        actor_file = load_path + 'ipg_actor_wts.h5'
+        critic_file = load_path + 'ipg_critic_wts.h5'
+        baseline_file = load_path + 'ipg_bl_wts.h5'
         self.actor.load_weights(actor_file)
         self.critic.load_weights(critic_file)
         self.baseline.load_weights(baseline_file)
 
+
+###############################3
 class IPGAgent2:
     def __init__(self, state_size, action_size, action_upper_bound, 
                     epochs, batch_size, buffer_capacity, 

@@ -344,6 +344,7 @@ class SACAgent:
     def train(self, CRIT_T2=True):
         critic_losses, c2_losses, actor_losses, alpha_losses = [], [], []
         for epoch in range(self.epochs):
+            # increment global step counter
             self.time_steps += 1
             # sample a minibatch from the replay buffer
             states, actions, rewards, next_states, dones = self.buffer.sample()
@@ -430,7 +431,7 @@ class SACAgent:
         s_scores = []       # season scores
         ep_actor_losses = []   # actor losses 
         ep_critic_losses = []  # critic losses 
-
+        self.episodes = 0       # global episode count
         for s in range(self.seasons):
             s_score = 0         # season score
             ep_cnt = 0          # episodes in each season
@@ -439,8 +440,7 @@ class SACAgent:
             done = False    
             for t in range(self.training_batch):
                 action, _ = self.policy(state)
-                action2 = np.reshape(action, self.action_size)
-                next_obs, reward, done, _ = self.env.step(action2)
+                next_obs, reward, done, _ = self.env.step(action)
                 next_state = np.asarray(next_obs, dtype=np.float32) / 255.0
 
                 # store in replay buffer for off-policy training
@@ -488,7 +488,9 @@ class SACAgent:
             mean_critic_loss = np.mean(ep_critic_losses[-ep_cnt:])
 
             if mean_s_score > best_score:
-                self.save_model()
+                best_model_path = self.path + 'best_model/'
+                os.makedirs(best_model_path, exist_ok=True)
+                self.save_model(best_model_path)
                 print('Episode: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_s_score))
                 best_score = mean_s_score
 
@@ -519,7 +521,7 @@ class SACAgent:
                 with open(self.filename, 'a') as file:
                     file.write('{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
                             .format(s, self.episodes, self.time_steps, mean_ep_len,
-                                    ep_score, mean_ep_score, mean_actor_loss, mean_critic_loss, alpha_loss))
+                                    s_score, mean_s_score, mean_actor_loss, mean_critic_loss, alpha_loss))
 
             if self.success_value is not None:
                 if best_score > self.success_value:

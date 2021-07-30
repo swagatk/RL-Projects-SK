@@ -154,7 +154,6 @@ def run(env, agent):
         agent.load_model(load_path)
         print('---Model parameters are loaded---')
 
-
     # create folder for storing result files
     if LOG_FILE:
         os.makedirs(save_path, exist_ok=True)
@@ -256,7 +255,6 @@ def run(env, agent):
 
             # done block ends here
         # end of one season
-
 
         s_score = np.mean(ep_scores[-ep_cnt:])  # mean of last ep_cnt episodes
         s_scores.append(s_score)

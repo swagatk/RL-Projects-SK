@@ -19,17 +19,17 @@ from tensorflow.keras import layers
 import os
 import datetime
 import random
+import sys
 from collections import deque
+import wandb
 
-# Absolute path of modules
-sys.path.append("/home/swagat/GIT/RL-Projects-SK/src/kukacam/common")
-sys.path.append("/home/swagat/GIT/RL-Projects-SK/src/kukacam")
-sys.path.append("/home/swagat/GIT/RL-Projects-SK/src/kukacam/IPG")
-print(sys.path)
+# Add the current folder to python's import path
+current_dir = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(current_dir)
+sys.path.append(os.path.dirname(current_dir))
 
 # Local imports
 from common.FeatureNet import FeatureNetwork, AttentionFeatureNetwork
-# from common.AttnFeatureNet import AttentionFeatureNetwork
 from common.buffer import HERBuffer
 from common.utils import uniquify
 
@@ -215,25 +215,19 @@ class Baseline:
         self.model.load_weights(filename)
 
 class IPGHERAgent:
-    def __init__(self, env, SEASONS, success_value, lr_a, lr_c,
-                 epochs, training_batch, batch_size, buffer_capacity, epsilon,
-                 gamma, lmbda, use_attention=False, use_mujoco=False,
-                 filename=None, tb_log=False, val_freq=50, path='./'):
+    def __init__(self, env, SEASONS, success_value, 
+                 epochs, training_batch, batch_size, buffer_capacity, 
+                 lr_a, lr_c, gamma, epsilon, lmbda, 
+                 use_attention=False, validation=True, 
+                 filename=None, wb_log=False, chkpt=False, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
-
-        self.use_mujoco = use_mujoco
-        if self.use_mujoco:
-            self.state_size = self.env.observation_space["observation"].shape
-            self.goal_size = self.env.observation_space["desired_goal"].shape
-        else:
-            self.state_size = self.env.observation_space.shape
-            self.goal_size = self.state_size
-
+        self.state_size = self.env.observation_space.shape
+        self.goal_size = self.state_size
         self.upper_bound = self.env.action_space.high
         self.SEASONS = SEASONS
-        self.episode = 0
-        self.replay_count = 0
+        self.episodes = 0       # global episode count
+        self.time_steps = 0     # global step count
         self.success_value = success_value
         self.lr_a = lr_a
         self.lr_c = lr_c
@@ -245,11 +239,11 @@ class IPGHERAgent:
         self.gamma = gamma
         self.lmbda = lmbda
         self.use_attention = use_attention
-        self.thr = 0.3          # threshold similarity between state & goal
         self.filename = filename
-        self.TB_LOG = tb_log
-        self.val_freq = val_freq
+        self.WB_LOG = wb_log
+        self.validation = validation
         self.path = path            # location to store results
+        self.chkpt = chkpt          # save checkpoints
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -262,9 +256,7 @@ class IPGHERAgent:
         self.buffer = HERBuffer(self.buffer_capacity, self.batch_size)
 
         # extract features from input images
-        if self.use_mujoco:
-            self.feature = None     # assuming non-image mujoco environment
-        elif self.use_attention and self.image_input:   # attention + image input
+        if self.use_attention and self.image_input:   # attention + image input
             print('Currently Attention handles only image input')
             self.feature = AttentionFeatureNetwork(self.state_size, lr_a)
         elif self.use_attention is False and self.image_input is True:  # image input
@@ -330,13 +322,13 @@ class IPGHERAgent:
         adv_bar = y * x         # check this
         return adv_bar
 
-    def reward_func(self, state, goal):
-        good_done = np.linalg.norm(state - goal) <= self.thr
+    def reward_func(self, state, goal, thr=0.3):
+        good_done = np.linalg.norm(state - goal) <= thr
         reward = 1 if good_done else 0
         return good_done, reward
 
     # implements on-policy & off-policy training
-    def replay(self, states, actions, rewards, next_states, dones, goals):
+    def train(self, states, actions, rewards, next_states, dones, goals):
         n_split = len(rewards) // self.batch_size
 
         # use this if you are using tf.split
@@ -394,6 +386,10 @@ class IPGHERAgent:
         c_loss_list = []
         np.random.shuffle(indexes)
         for _ in range(self.epochs):
+            # increment global counter
+            self.time_steps += 1
+
+            # sample a minibatch from replay buffer
             s_batch, a_batch, r_batch, ns_batch, d_batch, g_batch = self.buffer.sample()
 
             # convert to tensors
@@ -437,27 +433,17 @@ class IPGHERAgent:
         ep_reward_list = []
         for ep in range(max_eps):
 
-            if self.use_mujoco:
-                env_init = self.env.reset()
-                goal = env_init["desired_goal"]
-                state = env_init["observation"]
-            else:
-                state = self.env.reset()
-                state = np.asarray(state, dtype=np.float32) / 255.0  # convert into float array
-                goal = self.env.reset()  # take random state as goal
-                goal = np.asarray(goal, dtype=np.float32) / 255.0
+            state = self.env.reset()
+            state = np.asarray(state, dtype=np.float32) / 255.0  # convert into float array
+            goal = self.env.reset()  # take random state as goal
+            goal = np.asarray(goal, dtype=np.float32) / 255.0
 
             t = 0
             ep_reward = 0
             while True:
                 action = self.policy(state, goal, deterministic=True)
                 next_obsv, reward, done, _ = env.step(action)
-
-                if self.use_mujoco:
-                    reward = 1 if reward == 0 else 0
-                    next_state = next_obsv["observation"]
-                else:
-                    next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
+                next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
 
                 state = next_state
                 ep_reward += reward
@@ -505,55 +491,39 @@ class IPGHERAgent:
             self.buffer.record(state_, action_, reward_, next_state_, done_, goal_)
 
     def run(self):
-        if self.path is None:
-            self.path = './'
-        #######################
-        # TENSORBOARD SETTINGS
-        if self.TB_LOG:
-            current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-            train_log_dir = self.path + 'tb_logs/train/' + current_time
-            train_summary_writer = tf.summary.create_file_writer(train_log_dir)
-        ########################################
-        if self.filename is None:
-            self.filename = 'ipg_her_output.txt'
-        self.filename = uniquify(self.path + self.filename)
 
-        if self.val_freq is not None:
+        if self.filename is not None:
+            self.filename = uniquify(self.path + self.filename)
+
+        if self.validation:
             val_scores = deque(maxlen=50)
             val_score = 0
 
         # initial state and goal
-        if self.use_mujoco:
-            env_init = self.env.reset()
-            goal = env_init["desired_goal"]
-            state = env_init["observation"]
-        else:
-            state = self.env.reset()
-            state = np.asarray(state, dtype=np.float32) / 255.0  # convert into float array
-            goal = self.env.reset()  # take random state as goal
-            goal = np.asarray(goal, dtype=np.float32) / 255.0
+        state = self.env.reset()
+        state = np.asarray(state, dtype=np.float32) / 255.0  # convert into float array
+        goal = self.env.reset()  # take random state as goal
+        goal = np.asarray(goal, dtype=np.float32) / 255.0
 
         start = datetime.datetime.now()
         best_score = -np.inf
-        s_scores = []             # all season scores
-        s_ep_lens = []            # average episode length for each season
+        s_scores = []               # all season scores
+        ep_lens = []                # episode lengths 
+        ep_scores = []              # episodic rewards
+        self.episodes = 0           # global episode count
         for s in range(self.SEASONS):
             # discard trajectories from previous season
             states, next_states, actions, rewards, dones, goals = [], [], [], [], [], []
             ep_experience = []     # episodic experience buffer
-            s_score = 0
-            done, score = False, 0
-            self.episode = 0  # initialize the episode_count for each season
+            s_score = 0         # season score
+            ep_score = 0        # episodic reward
+            ep_cnt = 0          # episodes in each season
+            ep_len = 0          # length of each episode
+            done = False
             for _ in range(self.training_batch):    # time steps
                 action = self.policy(state, goal)
                 next_state, reward, done, _ = self.env.step(action)
-
-                if self.use_mujoco:
-                    reward = 1 if reward == 0 else 0
-                    achieved_goal = next_state["achieved_goal"]
-                    next_state = next_state["observation"]
-                else:
-                    next_state = np.asarray(next_state, dtype=np.float32) / 255.0
+                next_state = np.asarray(next_state, dtype=np.float32) / 255.0
 
                 # this is used for on-policy training
                 states.append(state)
@@ -564,18 +534,17 @@ class IPGHERAgent:
                 goals.append(goal)
 
                 # store in replay buffer for off-policy training
-                self.buffer.record(state, action, reward, next_state, done, goal)
+                self.buffer.record([state, action, reward, next_state, done, goal])
                 # Also store in a separate buffer
                 ep_experience.append([state, action, reward, next_state, done, goal])
 
                 state = next_state
-                score += reward
+                ep_score += reward
+                ep_len += 1
 
                 if done:
-                    if self.use_mujoco:
-                        hind_goal = achieved_goal
-                    else:
-                        hind_goal = ep_experience[-1][3]  # Final state strategy
+                    # HER: Final state strategy
+                    hind_goal = ep_experience[-1][3]  
 
                     # Add hindsight experience to the buffer
                     # in this case, use last state as the goal_state
@@ -586,20 +555,25 @@ class IPGHERAgent:
                     ep_experience = []
 
                     self.episode += 1
-                    s_score += score        # season score
+                    s_score += ep_score        # season score
+                    ep_cnt += 1             # episode count in a season
+                    ep_scores.append(ep_score)
+                    ep_lens.append(ep_len)
 
-                    if self.use_mujoco:
-                        env_init = self.env.reset()
-                        goal = env_init["desired_goal"]
-                        state = env_init["observation"]
-                        done, score = False, 0
-                    else:
-                        state = self.env.reset()
-                        state = np.asarray(state, dtype=np.float32) / 255.0
-                        goal = self.env.reset()
-                        goal = np.asarray(goal, dtype=np.float32) / 255.0
-                        done, score = False, 0
+                    if self.WB_LOG:
+                        wandb.log({'time_steps' : self.time_steps,
+                            'Episodes' : self.episodes, 
+                            'mean_ep_score': np.mean(ep_scores),
+                            'mean_ep_len' : np.mean(ep_lens)})
 
+                    # prepare for next episode
+                    state = self.env.reset()
+                    state = np.asarray(state, dtype=np.float32) / 255.0
+                    goal = self.env.reset()
+                    goal = np.asarray(goal, dtype=np.float32) / 255.0
+                    ep_len, ep_score = 0, 0
+                    done = False
+                # end of done block
             # end of for training_batch loop
 
             # Add hindsight experience to the buffer
@@ -609,70 +583,80 @@ class IPGHERAgent:
             # ep_experience = []          # not required as we are clearing it for every season.
 
             # on-policy & off-policy training
-            a_loss, c_loss = self.replay(states, actions, rewards, next_states, dones, goals)
+            actor_loss, critic_loss = self.train(states, actions, rewards, next_states, dones, goals)
 
-            avg_episodic_score = s_score / sum(dones)
-            s_scores.append(avg_episodic_score)
+            s_score = np.mean(ep_scores[-ep_cnt : ])
+            s_scores.append(s_score)
             mean_s_score = np.mean(s_scores)
-            s_ep_lens.append(self.training_batch / sum(dones))
-            mean_ep_len = np.mean(s_ep_lens)
+            mean_ep_len = np.mean(ep_lens)
+            mean_ep_score = np.mean(ep_scores)
 
             if mean_s_score > best_score:
-                self.save_model('actor_wts.h5', 'critic_wts.h5', 'baseline_wts.h5')
+                best_model_path = self.path + 'best_model/'
+                os.makedirs(best_model_path, exist_ok=True)
+                self.save_model(best_model_path)
                 print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_s_score))
                 best_score = mean_s_score
 
-            if self.val_freq is not None and s % self.val_freq == 0:
-                print('Season: {}, Score: {}, Mean score: {}'.format(s, s_score, mean_s_score))
+            if self.validation:
                 val_score = self.validate(self.env)
                 val_scores.append(val_score)
                 mean_val_score = np.mean(val_scores)
-                print('Season: {}, Validation Score: {}, Mean Validation Score: {}' \
-                      .format(s, val_score, mean_val_score))
+                print('Season: {}, Validation Score: {}, Mean Validation Score: {}'\
+                        .format(s, val_score, mean_val_score))
 
-            if self.TB_LOG:
-                with train_summary_writer.as_default():
-                    tf.summary.scalar('1. Season Score', s_score, step=s)
-                    tf.summary.scalar('2. Mean Season Score', mean_s_score, step=s)
-                    tf.summary.scalar('3. Success rate', avg_episodic_score, step=s)
-                    tf.summary.scalar('4. Validation Score', val_score, step=s)
-                    tf.summary.scalar('5. Actor Loss', a_loss, step=s)
-                    tf.summary.scalar('6. Critic Loss', c_loss, step=s)
-                    tf.summary.scalar('7. Mean Episode Length', mean_ep_len, step=s)
+                if self.WB_LOG:
+                    wandb.log({'val_score': val_score, 
+                                'mean_val_score': val_score})
 
-            with open(self.filename, 'a') as file:
-                file.write('{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
-                           .format(s, self.episode, mean_ep_len,
-                                   avg_episodic_score, mean_s_score, a_loss, c_loss))
+            if self.WB_LOG:
+                wandb.log({'Season Score' : s_score, 
+                            'Mean Season Score' : mean_s_score,
+                            'Actor Loss' : actor_loss,
+                            'Critic Loss' :critic_loss,
+                            'Mean episode length' : mean_ep_len,
+                            'Season' : s})
+
+            if self.chkpt:
+                chkpt_path = self.path + 'chkpt/'
+                os.makedirs(chkpt_path, exist_ok=True)
+                self.save_model(chkpt_path)
+
+            if self.filename is not None:
+                with open(self.filename, 'a') as file:
+                    file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
+                            .format(s, self.episodes, self.time_steps, mean_ep_len,
+                                    s_score, mean_s_score, actor_loss, critic_loss))
 
             if self.success_value is not None:
                 if best_score > self.success_value:
-                    print('Problem is solved in {} episodes with score {}'.format(self.episode, best_score))
+                    print('Problem is solved in {} episodes with score {}'.format(self.episodes, best_score))
                     break
 
         # end of season loop
         end = datetime.datetime.now()
         print('Time to completion: {}'.format(end-start))
+        print('Mean episodic score over {} episodes: {:.2f}'.format(self.episodes, np.mean(ep_scores)))
         self.env.close()
 
-    def save_model(self, actor_filename, critic_filename, baseline_filename):
-        actor_file = self.path + actor_filename
-        critic_file = self.path + critic_filename
-        baseline_file = self.path + baseline_filename
+    def save_model(self, save_path): 
+        actor_file = save_path + 'ipg_her_actor_wts.h5'
+        critic_file = save_path + 'ipg_her_critic_wts.h5'
+        baseline_file = save_path + 'ipg_her_bl_wts.h5'
         self.actor.save_weights(actor_file)
         self.critic.save_weights(critic_file)
         self.baseline.save_weights(baseline_file)
 
-    def load_model(self, actor_filename, critic_filename, baseline_filename):
-        actor_file = self.path + actor_filename
-        critic_file = self.path + critic_filename
-        baseline_file = self.path + baseline_filename
+    def load_model(self, load_path): 
+        actor_file = load_path + 'ipg_her_actor_wts.h5'
+        critic_file = load_path + 'ipg_her_critic_wts.h5'
+        baseline_file = load_path + 'ipg_her_bl_wts.h5'
         self.actor.load_weights(actor_file)
         self.critic.load_weights(critic_file)
         self.baseline.load_weights(baseline_file)
 
 
-
+###############################################3
 class IPGHERAgent2:
     def __init__(self, state_size, action_size, action_upper_bound, 
                  epochs, batch_size, buffer_capacity, 

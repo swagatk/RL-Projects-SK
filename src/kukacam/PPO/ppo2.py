@@ -14,8 +14,16 @@ import tensorflow as tf
 import numpy as np
 import tensorflow_probability as tfp
 import datetime
+import pickle
 import os
+import sys
 from collections import deque
+import wandb 
+
+# Add the current folder to python's import path
+current_dir = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(current_dir)
+sys.path.append(os.path.dirname(current_dir))
 
 # local imports
 from common.FeatureNet import FeatureNetwork, AttentionFeatureNetwork
@@ -235,7 +243,8 @@ class PPOAgent:
         self.lr_a = lr_a    # actor learning rate
         self.lr_c = lr_c    # critic learning rate
         self.epochs = epochs
-        self.episode = 0
+        self.episodes = 0    # global episode count
+        self.time_steps = 0     # global step counter
         self.training_batch = training_batch    # no. of steps in each season
         self.batch_size = batch_size
         self.gamma = gamma  # discount factor
@@ -247,10 +256,11 @@ class PPOAgent:
         self.kl_target = kl_target      # target value of KL divergence
         self.use_attention = use_attention
         self.method = method    # chose 'clip' or 'penalty'
-        self.TB_LOG = tb_log
-        self.val_freq = val_freq
+        self.WB_LOG = wb_log
+        self.validation = validation 
         self.filename = filename
         self.path = path
+        self.chkpt = chkpt          # save checkpoints
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -260,9 +270,7 @@ class PPOAgent:
             raise ValueError("Input can be a vector or an image")
 
         # extract features from input images
-        if self.use_mujoco:
-            self.feature = None     # assuming non-image mujoco environment
-        elif self.use_attention and self.image_input:   # attention + image input
+        if self.use_attention and self.image_input:   # attention + image input
             print('Currently Attention handles only image input')
             self.feature = AttentionFeatureNetwork(self.state_size, lr_a)
         elif self.use_attention is False and self.image_input is True:  # image input
@@ -325,6 +333,9 @@ class PPOAgent:
         kl_list = []
         np.random.shuffle(indexes)
         for _ in range(self.epochs):
+            # increment global step counter
+            self.time_steps += 1
+
             for i in indexes:
                 old_pi = pi[i * self.batch_size: (i + 1) * self.batch_size]
                 s_split = tf.gather(states, indices=np.arange(i * self.batch_size, (i+1) * self.batch_size), axis=0)
@@ -370,15 +381,15 @@ class PPOAgent:
         adv = (adv - np.mean(adv)) / (np.std(adv) + 1e-10) # output: numpy array
         return adv, returns
 
-    def save_model(self, actor_filename, critic_filename):
-        actor_file = self.path + actor_filename
-        critic_file = self.path + critic_filename
+    def save_model(self, save_path):
+        actor_file = save_path + 'ppo_actor_wts.h5' 
+        critic_file = save_path + 'ppo_critic_wts.h5'
         self.actor.save_weights(actor_file)
         self.critic.save_weights(critic_file)
 
-    def load_model(self, actor_filename, critic_filename):
-        actor_file = self.path + actor_filename
-        critic_file = self.path + critic_filename
+    def load_model(self, load_path):
+        actor_file = load_path + 'ppo_actor_wts.h5'
+        critic_file = load_path + 'ppo_critic_wts.h5'
         self.actor.model.load_weights(actor_file)
         self.critic.model.load_weights(critic_file)
 
@@ -386,23 +397,15 @@ class PPOAgent:
     def validate(self, env, max_eps=50):
         ep_reward_list = []
         for ep in range(max_eps):
-            if self.use_mujoco:
-                state = env.reset()["observation"]
-            else:
-                state = env.reset()
-                state = np.asarray(state, dtype=np.float32) / 255.0
+            state = env.reset()
+            state = np.asarray(state, dtype=np.float32) / 255.0
 
             t = 0
             ep_reward = 0
             while True:
-                action = self.policy(state, deterministic=True)
+                action, _ = self.policy(state, deterministic=True)
                 next_obsv, reward, done, _ = env.step(action)
-
-                if self.use_mujoco:
-                    reward = 1 if reward == 0 else 0
-                    next_state = next_obsv["observation"]
-                else:
-                    next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
+                next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
 
                 state = next_state
                 ep_reward += reward
@@ -416,48 +419,36 @@ class PPOAgent:
 
     # agent training routine
     def run(self):
-        ##################################
-        # TENSORBOARD SETTINGS
-        if self.TB_LOG:
-            current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-            train_log_dir = self.path + 'logs/train/' + current_time
-            train_summary_writer = tf.summary.create_file_writer(train_log_dir)
-        ########################################
 
-        if self.filename is None:
-            self.filename = 'ppo_output.txt'
-        self.filename = uniquify(self.path + self.filename)
+        if self.filename is not None:
+            self.filename = uniquify(self.path + self.filename)
 
-        if self.val_freq is not None:
+        if self.validation:
             val_scores = deque(maxlen=50)
             val_score = 0
 
         # initial state
-        if self.use_mujoco:
-            state = self.env.reset()["observation"]
-        else:
-            state = self.env.reset()
-            state = np.asarray(state, dtype=np.float32) / 255.0
+        state = self.env.reset()
+        state = np.asarray(state, dtype=np.float32) / 255.0
 
         start = datetime.datetime.now()
         best_score = -np.inf
+        ep_lens = []        # episode length
+        ep_scores = []      # episodic rewards
         s_scores = []       # All season scores
-        s_ep_lens = []      # avg episodic length in each season
-        self.episode = 0    # global episode count
+        self.episodes = 0    # global episode count
         for s in range(self.SEASONS):
             # discard trajectories from previous season
             states, next_states, actions, rewards, dones = [], [], [], [], []
-            s_score = 0
-            done, score = False, 0
+            s_score = 0     # mean score of a season
+            ep_cnt = 0      # episodes in each season
+            ep_len = 0      # length of each episode
+            ep_score = 0    # score of each episode
+            done = False
             for t in range(self.training_batch):
                 action = self.policy(state)
                 next_state, reward, done, _ = self.env.step(action)
-
-                if self.use_mujoco:
-                    reward = 1 if reward == 0 else 0
-                    next_state = next_state["observation"]
-                else:
-                    next_state = np.asarray(next_state, dtype=np.float32) / 255.0
+                next_state = np.asarray(next_state, dtype=np.float32) / 255.0
 
                 states.append(state)
                 next_states.append(next_state)
@@ -466,72 +457,92 @@ class PPOAgent:
                 dones.append(done)
 
                 state = next_state
-                score += reward
+                ep_score += reward
+                ep_len += 1
 
                 if done:
-                    self.episode += 1   # get total count
-                    s_score += score    # season score
+                    self.episodes += 1   # get total count
+                    s_score += ep_score    # season score
+                    ep_cnt += 1     # episode count in a season
+                    ep_scores.append(ep_score)
+                    ep_lens.append(ep_len)
 
-                    if self.use_mujoco:
-                        state = self.env.reset()["observation"]
-                    else:
-                        state = self.env.reset()
-                        state = np.asarray(state, dtype=np.float32)
-
-                    done, score = False, 0
-
+                    if self.WB_LOG:
+                        wandb.log({'time_steps' : self.time_steps,
+                            'Episodes' : self.episodes, 
+                            'mean_ep_score': np.mean(ep_scores),
+                            'mean_ep_len' : np.mean(ep_lens)})
+                    
+                    # prepare for next episode
+                    state = self.env.reset()
+                    state = np.asarray(state, dtype=np.float32)
+                    ep_len, ep_score = 0, 0
+                    done= False
+                # end of done block
             # end of season
+
             # train the agent
-            a_loss, c_loss, kld = self.train(states, actions, rewards,
+            actor_loss, critic_loss, kld = self.train(states, actions, rewards,
                                              next_states, dones)
 
-            avg_episodic_score = s_score / sum(dones)
-            s_scores.append(avg_episodic_score)
+            s_score = np.mean(ep_scores[-ep_cnt :])
+            s_scores.append(s_score)
             mean_s_score = np.mean(s_scores)
-            s_ep_lens.append(self.training_batch / sum(dones))
-            mean_ep_len = np.mean(s_ep_lens)
+            mean_ep_len = np.mean(ep_lens)
+            mean_ep_score = np.mean(ep_scores)
+
             if mean_s_score > best_score:
-                self.save_model('actor_wts.h5', 'critic_wts.h5')
+                best_model_path = self.path + 'best_model/'
+                os.makedirs(best_model_path, exist_ok=True)
+                self.save_model(best_model_path)
                 print('Season: {}, Update best score: {} --> {}, Model Saved!'\
                       .format(s, best_score, mean_s_score))
                 best_score = mean_s_score
 
-            if self.val_freq is not None:
-                if s % self.val_freq == 0:
-                    val_score = self.validate(self.env)
-                    val_scores.append(val_score)
-                    mean_val_score = np.mean(val_scores)
-                    print('Season: {}, Validation Score: {}, Mean Validation Score: {}'\
-                          .format(s, val_score, mean_val_score))
+            if self.validation:
+                val_score = self.validate(self.env)
+                val_scores.append(val_score)
+                mean_val_score = np.mean(val_scores)
+                print('Season: {}, Validation Score: {}, Mean Validation Score: {}'\
+                        .format(s, val_score, mean_val_score))
 
-            if self.TB_LOG:
-                with train_summary_writer.as_default():
-                    tf.summary.scalar('1. Season Score', s_score, step=s)
-                    tf.summary.scalar('2. Mean Season Score', mean_s_score, step=s)
-                    tf.summary.scalar('3. Success rate', avg_episodic_score, step=s)
-                    if self.val_freq is not None:
-                        tf.summary.scalar('4. Validation Score', val_score, step=s)
-                    tf.summary.scalar('5. Actor Loss', a_loss, step=s)
-                    tf.summary.scalar('6. Critic Loss', c_loss, step=s)
-                    tf.summary.scalar('7. Mean Episode Length', mean_ep_len)
+                if self.WB_LOG:
+                    wandb.log({'val_score': val_score, 
+                                'mean_val_score': val_score})
 
-            with open(self.filename, 'a') as file:
-                file.write('{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
-                           .format(s, self.episode, mean_ep_len, s_score,
-                                   mean_s_score, a_loss, c_loss))
+            if self.WB_LOG:
+                wandb.log({'Season Score' : s_score, 
+                            'Mean Season Score' : mean_s_score,
+                            'Actor Loss' : actor_loss,
+                            'Critic Loss' :critic_loss,
+                            'Mean episode length' : mean_ep_len,
+                            'KL Divergence' : kld,
+                            'Season' : s})
+
+            if self.chkpt:
+                chkpt_path = self.path + 'chkpt/'
+                os.makedirs(chkpt_path, exist_ok=True)
+                self.save_model(chkpt_path)
+
+            if self.filename is not None:
+                with open(self.filename, 'a') as file:
+                    file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
+                            .format(s, self.episodes, self.time_steps, mean_ep_len, s_score,
+                                    mean_s_score, actor_loss, critic_loss, kld))
 
             if self.success_value is not None:
                 if best_score > self.success_value:
-                    print('Problem is solved in {} episodes with score {}'.format(self.episode, best_score))
+                    print('Problem is solved in {} episodes with score {}'.format(self.episodes, best_score))
                     break
 
         # season-loop ends here
         self.env.close()
         end = datetime.datetime.now()
         print('Time to completion: {}'.format(end-start))
+        print('Mean episodic score over {} episodes: {:.2f}'.format(self.episodes, np.mean(ep_scores)))
 
 
-
+###########################
 class PPOAgent2:
     def __init__(self, state_size, action_size, action_upper_bound, 
                  epochs, training_batch, batch_size,

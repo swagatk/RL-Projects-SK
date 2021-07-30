@@ -12,6 +12,7 @@ import random
 from collections import deque
 import wandb
 import sys
+
 # add current directory to python module path
 current_directory = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(current_directory)

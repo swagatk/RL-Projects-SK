@@ -80,15 +80,16 @@ env_name = 'kuka'
 val_freq = None
 WB_LOG = False
 success_value = None 
-LOG_FILE = False
 ############################
 # Google Colab Settings
 if COLAB:
     import pybullet as p
     p.connect(p.DIRECT)
     save_path = '/content/gdrive/MyDrive/Colab/kuka/sac/'
+    CHKPT = True
 else:
     save_path = './log/'
+    CHKPT = False
 ##############################################3
 #current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 current_time = datetime.datetime.now().strftime("%Y%m%d")
@@ -113,9 +114,21 @@ if __name__ == "__main__":
 
     # Select RL Agent
     if config_dict['algo'] == 'ppo':
-        agent = PPOAgent(env, SEASONS, success_value, lr_a, lr_c, epochs, training_batch, batch_size, epsilon, gamma,
-                         lmbda, use_attention, use_mujoco,
-                         filename='rc_ppo_zed.txt', val_freq=None)
+        agent = PPOAgent(env, seasons, success_value, 
+                            config_dict['epochs'],
+                            config_dict['training_batch'],
+                            config_dict['batch_size'],
+                            config_dict['lr_a'],
+                            config_dict['lr_c'],
+                            config_dict['gamma'],
+                            config_dict['epsilon'],
+                            config_dict['lmbda'],
+                            config_dict['use_attention'],
+                            validation=True,
+                            filename=logfile, 
+                            wb_log=False,  
+                            chkpt=CHKPT,
+                            path=save_path)
     elif config_dict['algo'] == 'ipg':
         agent = IPGAgent(env, seasons, success_value, 
                             config_dict['epochs'],
@@ -131,7 +144,7 @@ if __name__ == "__main__":
                             validation=True,
                             filename=logfile, 
                             wb_log=False,  
-                            chkpt=False,
+                            chkpt=CHKPT,
                             path=save_path)
     elif config_dict['algo'] == 'ipg_her':
         agent = IPGHERAgent(env, seasons, success_value, 
@@ -148,7 +161,7 @@ if __name__ == "__main__":
                             validation=True,
                             filename=logfile, 
                             wb_log=False,  
-                            chkpt=False,
+                            chkpt=CHKPT,
                             path=save_path)
     elif config_dict['algo'] == 'sac':
         # SAC Agent
@@ -166,7 +179,7 @@ if __name__ == "__main__":
                             validation=True,
                             filename=logfile, 
                             wb_log=False,  
-                            chkpt=False,
+                            chkpt=CHKPT,
                             path=save_path)
 
     elif config_dict['algo'] == 'sac_her':
@@ -184,7 +197,7 @@ if __name__ == "__main__":
                             validation=True,
                             filename=logfile, 
                             wb_log=False,  
-                            chkpt=False,
+                            chkpt=CHKPT,
                             path=save_path)
     else:
         raise ValueError('Invalid Choice of Algorithm. Exiting ...')
