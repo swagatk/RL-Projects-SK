@@ -128,7 +128,7 @@ if __name__ == "__main__":
                             config_dict['use_attention'],
                             validation=True,
                             filename=logfile, 
-                            wb_log=False,  
+                            wb_log=WB_LOG,  
                             chkpt=CHKPT,
                             path=save_path)
     elif config_dict['algo'] == 'ipg':
@@ -145,7 +145,7 @@ if __name__ == "__main__":
                             config_dict['use_attention'],
                             validation=True,
                             filename=logfile, 
-                            wb_log=False,  
+                            wb_log=WB_LOG,  
                             chkpt=CHKPT,
                             path=save_path)
     elif config_dict['algo'] == 'ipg_her':
@@ -162,7 +162,7 @@ if __name__ == "__main__":
                             config_dict['use_attention'],
                             validation=True,
                             filename=logfile, 
-                            wb_log=False,  
+                            wb_log=WB_LOG,  
                             chkpt=CHKPT,
                             path=save_path)
     elif config_dict['algo'] == 'sac':
@@ -179,7 +179,7 @@ if __name__ == "__main__":
                             config_dict['use_attention'],
                             validation=True,
                             filename=logfile, 
-                            wb_log=False,  
+                            wb_log=WB_LOG,  
                             chkpt=CHKPT,
                             path=save_path)
     elif config_dict['algo'] == 'sac_her':
@@ -196,7 +196,7 @@ if __name__ == "__main__":
                             config_dict['use_attention'],
                             validation=True,
                             filename=logfile, 
-                            wb_log=False,  
+                            wb_log=WB_LOG,  
                             chkpt=CHKPT,
                             path=save_path)
     else:

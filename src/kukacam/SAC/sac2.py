@@ -739,5 +739,3 @@ class SACAgent2:
         self.target_critic1.load_weights(target_c1_file)
         self.target_critic2.load_weights(target_c2_file)
 
-
-
