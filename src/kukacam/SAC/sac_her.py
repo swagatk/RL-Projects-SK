@@ -516,7 +516,7 @@ class SACHERAgent:
                 best_model_path = self.path + 'best_model/'
                 os.makedirs(best_model_path, exist_ok=True)
                 self.save_model(best_model_path)
-                print('Episode: {}, Update best score: {}-->{}, Model saved!'.format(ep, best_score, mean_ep_score))
+                print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_ep_score))
                 best_score = mean_s_score
 
             if self.validation:
@@ -527,7 +527,7 @@ class SACHERAgent:
                         .format(s, val_score, mean_val_score))
                 if self.WB_LOG:
                     wandb.log({'val_score': val_score, 
-                                'mean_val_score': val_score})
+                                'mean_val_score': mean_val_score})
 
             if self.WB_LOG:
                 wandb.log({'Season Score' : s_score, 

@@ -508,7 +508,7 @@ class PPOAgent:
 
                 if self.WB_LOG:
                     wandb.log({'val_score': val_score, 
-                                'mean_val_score': val_score})
+                                'mean_val_score': mean_val_score})
 
             if self.WB_LOG:
                 wandb.log({'Season Score' : s_score, 
