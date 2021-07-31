@@ -253,9 +253,7 @@ class SACAgent:
             raise ValueError("Input can be a vector or an image")
 
         # Select a suitable feature extractor
-        if self.use_mujoco:
-            self.feature = None     # assuming non-image mujoco environment
-        elif self.use_attention and self.image_input:   # attention + image input
+        if self.use_attention and self.image_input:   # attention + image input
             print('Currently Attention handles only image input')
             self.feature = AttentionFeatureNetwork(self.state_size, lr_a)
         elif self.use_attention is False and self.image_input is True:  # image input
@@ -342,7 +340,7 @@ class SACAgent:
         return mean_c_loss 
 
     def train(self, CRIT_T2=True):
-        critic_losses, c2_losses, actor_losses, alpha_losses = [], [], []
+        critic_losses, actor_losses, alpha_losses = [], [], []
         for epoch in range(self.epochs):
             # increment global step counter
             self.time_steps += 1

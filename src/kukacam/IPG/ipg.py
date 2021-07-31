@@ -454,7 +454,7 @@ class IPGAgent:
                 dones.append(done)
 
                 # store in replay buffer for off-policy training
-                self.buffer.record((state, action, reward, next_state, done))
+                self.buffer.record([state, action, reward, next_state, done])
 
                 state = next_state
                 ep_score += reward
@@ -479,7 +479,7 @@ class IPGAgent:
                     ep_len, ep_score = 0, 0
                     done= False
                 # end of done block
-            # end of season
+            # end of one season
 
             # on-policy & off-policy training
             actor_loss, critic_loss = self.train(states, actions, rewards, next_states, dones)

@@ -60,15 +60,15 @@ config_dict = dict(
     lr_c = 0.0002, 
     epochs = 20, 
     training_batch = 1024,    # 5120(racecar)  # 1024 (kuka), 512
-    buffer_capacity = 100000,    # 50k (racecar)  # 20K (kuka)
-    batch_size = 256,  # 512 (racecar) #   128 (kuka)
+    buffer_capacity = 50000,    # 50k (racecar)  # 20K (kuka)
+    batch_size = 128,  # 512 (racecar) #   128 (kuka)
     epsilon = 0.2,  # 0.07      # Clip factor required in PPO
     gamma = 0.993,  # 0.99      # discounted factor
     lmbda = 0.7,  # 0.9         # required for GAE in PPO
     tau = 0.995,                # polyak averaging factor
     alpha = 0.2,                # Entropy Coefficient   required in SAC
     use_attention = False,      # enable/disable attention model
-    algo = 'sac_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
+    algo = 'sac',               # choices: ppo, sac, ipg, sac_her, ipg_her
 )
 
 ####################################3
@@ -78,7 +78,7 @@ seasons = 35
 COLAB = False
 env_name = 'kuka'
 val_freq = None
-WB_LOG = False
+WB_LOG = True
 success_value = None 
 ############################
 # Google Colab Settings
@@ -87,9 +87,11 @@ if COLAB:
     p.connect(p.DIRECT)
     save_path = '/content/gdrive/MyDrive/Colab/kuka/sac/'
     CHKPT = True
+    load_path = None
 else:
     save_path = './log/'
     CHKPT = False
+    load_path = None
 ##############################################3
 #current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 current_time = datetime.datetime.now().strftime("%Y%m%d")
@@ -164,7 +166,6 @@ if __name__ == "__main__":
                             chkpt=CHKPT,
                             path=save_path)
     elif config_dict['algo'] == 'sac':
-        # SAC Agent
         agent = SACAgent(env, seasons, success_value,
                             config_dict['epochs'],
                             config_dict['training_batch'],
@@ -181,7 +182,6 @@ if __name__ == "__main__":
                             wb_log=False,  
                             chkpt=CHKPT,
                             path=save_path)
-
     elif config_dict['algo'] == 'sac_her':
         agent = SACHERAgent(env, seasons, success_value,
                             config_dict['epochs'],
