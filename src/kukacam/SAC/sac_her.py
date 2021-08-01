@@ -223,15 +223,16 @@ class SACHERCritic:
 
 
 class SACHERAgent:
-    def __init__(self, env, success_value, epochs,
+    def __init__(self, env, seasons, success_value, epochs,
                  training_batch, batch_size, buffer_capacity, lr_a=0.0003, lr_c=0.0003,
                  gamma=0.99, tau=0.995, alpha=0.2, use_attention=False, 
-                 filename=None, wb_log=False, chkpt=False, save_path='./'):
+                 filename=None, wb_log=False, chkpt=False, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
         self.state_size = self.env.observation_space.shape
         self.upper_bound = np.squeeze(self.env.action_space.high)
 
+        self.seasons = seasons
         self.episodes = 0               # total episode count
         self.time_steps = 0             # total time steps
         self.success_value = success_value
@@ -247,7 +248,7 @@ class SACHERAgent:
         self.use_attention = use_attention
         self.filename = filename
         self.WB_LOG = wb_log
-        self.path = save_path
+        self.path = path
         self.chkpt = chkpt                  # store checkpoints
 
         if len(self.state_size) == 3:
@@ -510,19 +511,19 @@ class SACHERAgent:
             mean_actor_loss = np.mean(ep_actor_losses[-ep_cnt:])
             mean_critic_loss = np.mean(ep_critic_losses[-ep_cnt:])
 
+            # run validation once for each season
+            val_score = self.validate(self.env)
+            val_scores.append(val_score)
+            mean_val_score = np.mean(val_scores)
+
             if mean_s_score > best_score:
                 best_model_path = self.path + 'best_model/'
                 os.makedirs(best_model_path, exist_ok=True)
                 self.save_model(best_model_path)
-                print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_ep_score))
                 best_score = mean_s_score
-
-            val_score = self.validate(self.env)
-            val_scores.append(val_score)
-            mean_val_score = np.mean(val_scores)
-            print('Season: {}, Validation Score: {}, Mean Validation Score: {}' \
-                    .format(s, val_score, mean_val_score))
-
+                print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_ep_score))
+                print('Season: {}, Validation Score: {}, Mean Validation Score: {}' \
+                .format(s, val_score, mean_val_score))
 
             if self.WB_LOG:
                 wandb.log({'Season Score' : s_score, 
