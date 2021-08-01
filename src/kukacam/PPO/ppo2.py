@@ -231,7 +231,7 @@ class PPOAgent:
                     use_attention=False,
                     beta=0.5, c_loss_coeff=0.0,
                     entropy_coeff=0.0, kl_target=0.01, 
-                    method='clip', validation=True,
+                    method='clip', 
                     filename=None, wb_log=False, 
                     chkpt=False, path='./'):
         self.env = env
@@ -257,7 +257,6 @@ class PPOAgent:
         self.use_attention = use_attention
         self.method = method    # chose 'clip' or 'penalty'
         self.WB_LOG = wb_log
-        self.validation = validation 
         self.filename = filename
         self.path = path
         self.chkpt = chkpt          # save checkpoints
@@ -423,20 +422,18 @@ class PPOAgent:
         if self.filename is not None:
             self.filename = uniquify(self.path + self.filename)
 
-        if self.validation:
-            val_scores = deque(maxlen=50)
-            val_score = 0
 
         # initial state
         state = self.env.reset()
         state = np.asarray(state, dtype=np.float32) / 255.0
 
         start = datetime.datetime.now()
+        val_scores = []                 # validation scores 
         best_score = -np.inf
-        ep_lens = []        # episode length
-        ep_scores = []      # episodic rewards
-        s_scores = []       # All season scores
-        self.episodes = 0    # global episode count
+        ep_lens = []                    # episode length
+        ep_scores = []                  # episodic rewards
+        s_scores = []                   # season scores
+        self.episodes = 0               # global episode count
         for s in range(self.SEASONS):
             # discard trajectories from previous season
             states, next_states, actions, rewards, dones = [], [], [], [], []
@@ -499,16 +496,12 @@ class PPOAgent:
                       .format(s, best_score, mean_s_score))
                 best_score = mean_s_score
 
-            if self.validation:
-                val_score = self.validate(self.env)
-                val_scores.append(val_score)
-                mean_val_score = np.mean(val_scores)
-                print('Season: {}, Validation Score: {}, Mean Validation Score: {}'\
-                        .format(s, val_score, mean_val_score))
+            val_score = self.validate(self.env)
+            val_scores.append(val_score)
+            mean_val_score = np.mean(val_scores)
+            print('Season: {}, Validation Score: {}, Mean Validation Score: {}'\
+                    .format(s, val_score, mean_val_score))
 
-                if self.WB_LOG:
-                    wandb.log({'val_score': val_score, 
-                                'mean_val_score': mean_val_score})
 
             if self.WB_LOG:
                 wandb.log({'Season Score' : s_score, 
@@ -517,6 +510,8 @@ class PPOAgent:
                             'Critic Loss' :critic_loss,
                             'Mean episode length' : mean_ep_len,
                             'KL Divergence' : kld,
+                            'val_score': val_score, 
+                            'mean_val_score': mean_val_score,
                             'Season' : s})
 
             if self.chkpt:
@@ -526,9 +521,10 @@ class PPOAgent:
 
             if self.filename is not None:
                 with open(self.filename, 'a') as file:
-                    file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
+                    file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
                             .format(s, self.episodes, self.time_steps, mean_ep_len, s_score,
-                                    mean_s_score, actor_loss, critic_loss, kld))
+                                    mean_s_score, actor_loss, critic_loss, kld,
+                                    val_score, mean_val_score))
 
             if self.success_value is not None:
                 if best_score > self.success_value:
