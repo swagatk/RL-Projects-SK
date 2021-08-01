@@ -218,7 +218,7 @@ class SACCritic:
 class SACAgent:
     def __init__(self, env, SEASONS, success_value, epochs,
                  training_batch, batch_size, buffer_capacity, lr_a=0.0003, lr_c=0.0003, 
-                 gamma=0.99, tau=0.995, alpha=0.2, use_attention=False, validation=False, 
+                 gamma=0.99, tau=0.995, alpha=0.2, use_attention=False, 
                  filename=None, wb_log=False, chkpt=False, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
@@ -239,7 +239,6 @@ class SACAgent:
         self.use_attention = use_attention
         self.filename = filename
         self.WB_LOG = wb_log
-        self.validation = validation 
         self.path = path
         self.time_steps = 0                 # total number of training steps
         self.episodes = 0                   # total number of episodes
@@ -414,21 +413,19 @@ class SACAgent:
         if self.filename is not None:
             self.filename = uniquify(self.path + self.filename)
 
-        if self.validation:
-            val_scores = deque(maxlen=50)
-            val_score = 0
 
         # initial state
         state = self.env.reset()
         state = np.asarray(state, dtype=np.float32) / 255.0
 
         start = datetime.datetime.now()
+        val_scores = []         # validation scores
         best_score = -np.inf
-        ep_lens = []        # episodic length
-        ep_scores = []      # All episodic scores
-        s_scores = []       # season scores
-        ep_actor_losses = []   # actor losses 
-        ep_critic_losses = []  # critic losses 
+        ep_lens = []            # episodic length
+        ep_scores = []          # episodic scores
+        s_scores = []           # season scores
+        ep_actor_losses = []    # actor losses 
+        ep_critic_losses = []   # critic losses 
         self.episodes = 0       # global episode count
         for s in range(self.seasons):
             s_score = 0         # season score
@@ -489,18 +486,15 @@ class SACAgent:
                 best_model_path = self.path + 'best_model/'
                 os.makedirs(best_model_path, exist_ok=True)
                 self.save_model(best_model_path)
-                print('Episode: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_s_score))
+                print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_s_score))
                 best_score = mean_s_score
-
-            if self.validation:   # run validation once after each season
-                val_score = self.validate(self.env)
-                val_scores.append(val_score)
-                mean_val_score = np.mean(val_scores)
-                print('season: {}, Validation Score: {}, Mean Validation Score: {}' \
-                        .format(s, val_score, mean_val_score))
-                if self.WB_LOG:
-                    wandb.log({'val_score': val_score, 
-                                'mean_val_score': val_score})
+            
+            # run validation once after each season
+            val_score = self.validate(self.env)
+            val_scores.append(val_score)
+            mean_val_score = np.mean(val_scores)
+            print('season: {}, Validation Score: {}, Mean Validation Score: {}' \
+                    .format(s, val_score, mean_val_score))
 
             if self.WB_LOG:
                 wandb.log({'Season Score' : s_score, 
@@ -508,6 +502,8 @@ class SACAgent:
                             'Actor Loss' : mean_actor_loss,
                             'Critic Loss' : mean_critic_loss,
                             'Mean episode length' : mean_ep_len,
+                            'val_score' : val_score,
+                            'mean_val_score' : mean_val_score,
                             'Season' : s})
 
             if self.chkpt:
@@ -517,9 +513,10 @@ class SACAgent:
 
             if self.filename is not None:
                 with open(self.filename, 'a') as file:
-                    file.write('{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
+                    file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
                             .format(s, self.episodes, self.time_steps, mean_ep_len,
-                                    s_score, mean_s_score, mean_actor_loss, mean_critic_loss, alpha_loss))
+                                    s_score, mean_s_score, mean_actor_loss, mean_critic_loss, alpha_loss,
+                                    val_score, mean_val_score))
 
             if self.success_value is not None:
                 if best_score > self.success_value:

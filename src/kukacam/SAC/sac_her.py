@@ -226,7 +226,7 @@ class SACHERAgent:
     def __init__(self, env, success_value, epochs,
                  training_batch, batch_size, buffer_capacity, lr_a=0.0003, lr_c=0.0003,
                  gamma=0.99, tau=0.995, alpha=0.2, use_attention=False, 
-                 filename=None, wb_log=False, validation=True, chkpt=False, save_path='./'):
+                 filename=None, wb_log=False, chkpt=False, save_path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
         self.state_size = self.env.observation_space.shape
@@ -247,7 +247,6 @@ class SACHERAgent:
         self.use_attention = use_attention
         self.filename = filename
         self.WB_LOG = wb_log
-        self.validation = validation 
         self.path = save_path
         self.chkpt = chkpt                  # store checkpoints
 
@@ -430,15 +429,14 @@ class SACHERAgent:
         if self.filename is not None: 
             self.filename = uniquify(self.path + self.filename)
 
-        if self.validation:
-            val_scores = deque(maxlen=50)
-            val_score = 0
 
         # initial state
         state = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
         goal = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
 
         start = datetime.datetime.now()
+        val_scores = deque(maxlen=50)
+        val_score = 0
         best_score = -np.inf
         ep_lens = []        # episodic length
         ep_scores = []      # All episodic scores
@@ -516,18 +514,15 @@ class SACHERAgent:
                 best_model_path = self.path + 'best_model/'
                 os.makedirs(best_model_path, exist_ok=True)
                 self.save_model(best_model_path)
-                print('Season: {}, Update best score: {}-->{}, Model saved!'.format(ep, best_score, mean_ep_score))
+                print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_ep_score))
                 best_score = mean_s_score
 
-            if self.validation:
-                val_score = self.validate(self.env)
-                val_scores.append(val_score)
-                mean_val_score = np.mean(val_scores)
-                print('Season: {}, Validation Score: {}, Mean Validation Score: {}' \
-                        .format(s, val_score, mean_val_score))
-                if self.WB_LOG:
-                    wandb.log({'val_score': val_score, 
-                                'mean_val_score': val_score})
+            val_score = self.validate(self.env)
+            val_scores.append(val_score)
+            mean_val_score = np.mean(val_scores)
+            print('Season: {}, Validation Score: {}, Mean Validation Score: {}' \
+                    .format(s, val_score, mean_val_score))
+
 
             if self.WB_LOG:
                 wandb.log({'Season Score' : s_score, 
@@ -535,6 +530,8 @@ class SACHERAgent:
                             'Actor Loss' : mean_actor_loss,
                             'Critic Loss' : mean_critic_loss,
                             'Mean episode length' : mean_ep_len,
+                            'val_score': val_score, 
+                            'mean_val_score': mean_val_score,
                             'Season' : s})
 
             if self.chkpt:
@@ -544,9 +541,10 @@ class SACHERAgent:
 
             if self.filename is not None:
                 with open(self.filename, 'a') as file:
-                    file.write('{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
+                    file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
                             .format(s, self.time_steps, self.episodes, mean_ep_len,
-                                    s_score, mean_s_score, mean_actor_loss, mean_critic_loss, alpha_loss))
+                                    s_score, mean_s_score, mean_actor_loss, mean_critic_loss, alpha_loss,
+                                    val_score, mean_val_score))
 
             if self.success_value is not None:
                 if best_score > self.success_value:
