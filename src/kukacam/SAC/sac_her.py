@@ -442,7 +442,7 @@ class SACHERAgent:
         goal = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
 
         # Store the successful states
-        # desired_goals = deque(maxlen=1000)
+        desired_goals = deque(maxlen=1000)
 
         start = datetime.datetime.now()
         val_scores = []                 # validation scores 
@@ -467,7 +467,7 @@ class SACHERAgent:
                 next_state = np.asarray(next_state, dtype=np.float32) / 255.0
 
                 if reward == 1:     # store successful states
-                    desired_goals.append(next_state)            
+                    desired_goals.append([state, action, reward, next_state, done, goal])            
 
                 # store in replay buffer for off-policy training
                 self.buffer.record([state, action, reward, next_state, done, goal])
@@ -487,9 +487,10 @@ class SACHERAgent:
                     ep_lens.append(ep_len) 
 
                     # HER: Final state strategy
-                    hind_goal = temp_experience[-1][3]
+                    # hind_goal = temp_experience[-1][3]
                     # HER: Last successful state
-                    # hind_goal = desired_goals[-1]
+                    index = np.random.choice(len(desired_goals))
+                    hind_goal = desired_goals[index][0]
 
                     self.add_her_experience(temp_experience, hind_goal)
                     temp_experience = [] # clear temporary buffer
@@ -580,7 +581,7 @@ class SACHERAgent:
         state_feature = tf.squeeze(self.feature(tf_state))
         goal_feature = tf.squeeze(self.feature(tf_goal))
 
-        good_done = np.linalg.norm(state_feature - goal_feature) <= thr
+        good_done = tf.linalg.norm(state_feature - goal_feature) <= thr
         #good_done = np.linalg.norm(state - goal) <= thr
         reward = 1 if good_done else 0
         return good_done, reward
