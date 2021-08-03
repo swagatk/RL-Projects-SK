@@ -413,11 +413,12 @@ class SACHERAgent:
         for ep in range(max_eps):
             state = env.reset()
             state = np.asarray(state, dtype=np.float32) / 255.0
+            state = np.asarray(env.reset(), dtype=np.float32) / 255.0
 
             t = 0
             ep_reward = 0
             while True:
-                action, _ = self.policy(state)
+                action, _ = self.policy(state, goal)
                 next_obsv, reward, done, _ = env.step(action)
                 next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
 
@@ -489,8 +490,12 @@ class SACHERAgent:
                     # HER: Final state strategy
                     # hind_goal = temp_experience[-1][3]
                     # HER: Last successful state
-                    index = np.random.choice(len(desired_goals))
-                    hind_goal = desired_goals[index][0]
+
+                    if len(desired_goals) < 1:
+                        hind_goal = temp_experience[-1][3]
+                    else:
+                        index = np.random.choice(len(desired_goals))
+                        hind_goal = desired_goals[index][0]
 
                     self.add_her_experience(temp_experience, hind_goal)
                     temp_experience = [] # clear temporary buffer
