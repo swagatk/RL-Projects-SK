@@ -4,6 +4,7 @@ SAC + HER Algorithm.
 from inspect import currentframe
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.keras.backend import dtype
 import tensorflow_probability as tfp
 from tensorflow.keras import layers
 import os
@@ -407,11 +408,12 @@ class SACHERAgent:
         for ep in range(max_eps):
             state = env.reset()
             state = np.asarray(state, dtype=np.float32) / 255.0
+            goal = np.asarray(env.reset(), dtype=np.float32) / 255.0
 
             t = 0
             ep_reward = 0
             while True:
-                action, _ = self.policy(state)
+                action, _ = self.policy(state, goal)
                 next_obsv, reward, done, _ = env.step(action)
                 next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
 

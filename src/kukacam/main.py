@@ -60,7 +60,7 @@ config_dict = dict(
     lr_c = 0.0002, 
     epochs = 20, 
     training_batch = 1024,    # 5120(racecar)  # 1024 (kuka), 512
-    buffer_capacity = 50000,    # 50k (racecar)  # 20K (kuka)
+    buffer_capacity = 20000,    # 50k (racecar)  # 20K (kuka)
     batch_size = 128,  # 512 (racecar) #   128 (kuka)
     epsilon = 0.2,  # 0.07      # Clip factor required in PPO
     gamma = 0.993,  # 0.99      # discounted factor
@@ -68,7 +68,7 @@ config_dict = dict(
     tau = 0.995,                # polyak averaging factor
     alpha = 0.2,                # Entropy Coefficient   required in SAC
     use_attention = False,      # enable/disable attention model
-    algo = 'sac_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
+    algo = 'sac',               # choices: ppo, sac, ipg, sac_her, ipg_her
 )
 
 ####################################3
