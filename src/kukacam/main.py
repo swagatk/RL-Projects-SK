@@ -75,7 +75,7 @@ config_dict = dict(
 #  Additional parameters 
 #########################################3
 seasons = 35 
-COLAB = True
+COLAB = False
 env_name = 'kuka'
 val_freq = None
 WB_LOG = True

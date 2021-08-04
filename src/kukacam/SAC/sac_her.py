@@ -408,18 +408,18 @@ class SACHERAgent:
         mean_alpha_loss = np.mean(alpha_losses)
         return  mean_actor_loss, mean_critic_loss, mean_alpha_loss
 
-    def validate(self, env, max_eps=50):
+    def validate(self, max_eps=50):
         ep_reward_list = []
         for ep in range(max_eps):
-            state = env.reset()
+            state = self.env.reset()
             state = np.asarray(state, dtype=np.float32) / 255.0
-            state = np.asarray(env.reset(), dtype=np.float32) / 255.0
+            goal = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
 
             t = 0
             ep_reward = 0
             while True:
                 action, _ = self.policy(state, goal)
-                next_obsv, reward, done, _ = env.step(action)
+                next_obsv, reward, done, _ = self.env.step(action)
                 next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
 
                 state = next_state
@@ -495,7 +495,7 @@ class SACHERAgent:
                         hind_goal = temp_experience[-1][3]
                     else:
                         index = np.random.choice(len(desired_goals))
-                        hind_goal = desired_goals[index][0]
+                        hind_goal = desired_goals[index][3]     # next_state
 
                     self.add_her_experience(temp_experience, hind_goal)
                     temp_experience = [] # clear temporary buffer
@@ -532,7 +532,7 @@ class SACHERAgent:
             mean_critic_loss = np.mean(ep_critic_losses[-ep_cnt:])
 
             # run validation once in each iteration
-            val_score = self.validate(self.env)
+            val_score = self.validate()
             val_scores.append(val_score)
             mean_val_score = np.mean(val_scores)
 
@@ -581,13 +581,12 @@ class SACHERAgent:
 
     def her_reward_func(self, state, goal, thr=0.3):
         tf_state = tf.expand_dims(tf.convert_to_tensor(state, dtype=tf.float32), axis=0)
-        tf_goal = tf.expand_dims(tf.convert_to_tensor(state, dtype=tf.float32), axis=0)
+        tf_goal = tf.expand_dims(tf.convert_to_tensor(goal, dtype=tf.float32), axis=0)
         
         state_feature = tf.squeeze(self.feature(tf_state))
         goal_feature = tf.squeeze(self.feature(tf_goal))
 
         good_done = tf.linalg.norm(state_feature - goal_feature) <= thr
-        #good_done = np.linalg.norm(state - goal) <= thr
         reward = 1 if good_done else 0
         return good_done, reward
 
@@ -601,7 +600,6 @@ class SACHERAgent:
             state_ = ep_experience[i][0]
             action_ = ep_experience[i][1]
             next_state_ = ep_experience[i][3]
-            current_goal = ep_experience[i][5]
             done_, reward_ = self.her_reward_func(next_state_, goal_)
             # add new experience to the main buffer
             self.buffer.record([state_, action_, reward_, next_state_, done_, goal_])
