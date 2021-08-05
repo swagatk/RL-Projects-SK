@@ -68,16 +68,15 @@ config_dict = dict(
     tau = 0.995,                # polyak averaging factor
     alpha = 0.2,                # Entropy Coefficient   required in SAC
     use_attention = False,      # enable/disable attention model
-    algo = 'sac',               # choices: ppo, sac, ipg, sac_her, ipg_her
+    algo = 'ppo',               # choices: ppo, sac, ipg, sac_her, ipg_her
 )
 
 ####################################3
 #  Additional parameters 
 #########################################3
 seasons = 35 
-COLAB = False
+COLAB = True
 env_name = 'kuka'
-val_freq = None
 WB_LOG = True
 success_value = None 
 ############################
@@ -85,7 +84,7 @@ success_value = None
 if COLAB:
     import pybullet as p
     p.connect(p.DIRECT)
-    save_path = '/content/gdrive/MyDrive/Colab/kuka/sac/'
+    save_path = '/content/gdrive/MyDrive/Colab/kuka/' + config_dict['algo'] + '/'
     CHKPT = True
     load_path = None
 else:

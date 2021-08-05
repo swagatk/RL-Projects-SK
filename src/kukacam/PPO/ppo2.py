@@ -235,8 +235,8 @@ class PPOAgent:
                     filename=None, wb_log=False, 
                     chkpt=False, path='./'):
         self.env = env
+        self.state_size = self.env.observation_space.shape
         self.action_size = self.env.action_space.shape
-
         self.upper_bound = self.env.action_space.high
         self.SEASONS = SEASONS
         self.success_value = success_value
@@ -393,17 +393,17 @@ class PPOAgent:
         self.critic.model.load_weights(critic_file)
 
     # Validation routine
-    def validate(self, env, max_eps=50):
+    def validate(self, max_eps=50):
         ep_reward_list = []
         for ep in range(max_eps):
-            state = env.reset()
+            state = self.env.reset()
             state = np.asarray(state, dtype=np.float32) / 255.0
 
             t = 0
             ep_reward = 0
             while True:
-                action, _ = self.policy(state, deterministic=True)
-                next_obsv, reward, done, _ = env.step(action)
+                action = self.policy(state, deterministic=True)
+                next_obsv, reward, done, _ = self.env.step(action)
                 next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
 
                 state = next_state
@@ -488,20 +488,21 @@ class PPOAgent:
             mean_ep_len = np.mean(ep_lens)
             mean_ep_score = np.mean(ep_scores)
 
+
+            # validation
+            val_score = self.validate()
+            val_scores.append(val_score)
+            mean_val_score = np.mean(val_scores)
+
             if mean_s_score > best_score:
                 best_model_path = self.path + 'best_model/'
                 os.makedirs(best_model_path, exist_ok=True)
                 self.save_model(best_model_path)
+                best_score = mean_s_score
                 print('Season: {}, Update best score: {} --> {}, Model Saved!'\
                       .format(s, best_score, mean_s_score))
-                best_score = mean_s_score
-
-            val_score = self.validate(self.env)
-            val_scores.append(val_score)
-            mean_val_score = np.mean(val_scores)
-            print('Season: {}, Validation Score: {}, Mean Validation Score: {}'\
+                print('Season: {}, Validation Score: {}, Mean Validation Score: {}'\
                     .format(s, val_score, mean_val_score))
-
 
             if self.WB_LOG:
                 wandb.log({'Season Score' : s_score, 
