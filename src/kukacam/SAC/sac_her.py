@@ -442,7 +442,7 @@ class SACHERAgent:
         state = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
         goal = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
 
-        # Store the successful states
+        # Store the successful states   # required for HER
         desired_goals = deque(maxlen=1000)
 
         start = datetime.datetime.now()
@@ -492,10 +492,10 @@ class SACHERAgent:
                     # HER: Last successful state
 
                     if len(desired_goals) < 1:
-                        hind_goal = temp_experience[-1][3]
+                        hind_goal = temp_experience[-1][3]      # terminal state
                     else:
                         index = np.random.choice(len(desired_goals))
-                        hind_goal = desired_goals[index][3]     # next_state
+                        hind_goal = desired_goals[index][3]     # sampled successful state
 
                     self.add_her_experience(temp_experience, hind_goal)
                     temp_experience = [] # clear temporary buffer

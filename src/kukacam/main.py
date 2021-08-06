@@ -20,7 +20,7 @@ sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 from PPO.ppo2 import PPOAgent
 from IPG.ipg import IPGAgent
 from IPG.ipg_her import IPGHERAgent
-from SAC.sac2 import SACAgent
+from SAC.sac import SACAgent
 from SAC.sac_her import SACHERAgent
 from common.TimeLimitWrapper import TimeLimitWrapper
 from common.CustomGymWrapper import ObsvnResizeTimeLimitWrapper

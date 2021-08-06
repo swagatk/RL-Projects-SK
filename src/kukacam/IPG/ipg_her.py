@@ -14,6 +14,7 @@ URL: https://github.com/hayden750/DeepHEC
 import sys
 import numpy as np
 import tensorflow as tf
+from tensorflow.python.keras.backend import dtype
 import tensorflow_probability as tfp
 from tensorflow.keras import layers
 import os
@@ -321,10 +322,14 @@ class IPGHERAgent:
         adv_bar = y * x         # check this
         return adv_bar
 
-    def reward_func(self, state, goal, thr=0.3):
-        good_done = np.linalg.norm(state - goal) <= thr
+    def her_reward_func(self, state, goal, thr=0.3):
+        # input: numpy array, output: numpy value
+        tf_state = tf.convert_to_tensor(state, dtype=tf.float32)
+        tf_goal = tf.convert_to_tensor(goal, dtype=tf.float32)
+
+        good_done = tf.linalg.norm(tf_state - tf_goal) <= thr
         reward = 1 if good_done else 0
-        return good_done, reward
+        return good_done.numpy(), reward
 
     # implements on-policy & off-policy training
     def train(self, states, actions, rewards, next_states, dones, goals):
@@ -428,7 +433,7 @@ class IPGHERAgent:
         return np.mean(a_loss_list), np.mean(c_loss_list)
 
     # Validation routine
-    def validate(self, env, max_eps=50):
+    def validate(self, max_eps=50):
         ep_reward_list = []
         for ep in range(max_eps):
 
@@ -441,7 +446,7 @@ class IPGHERAgent:
             ep_reward = 0
             while True:
                 action = self.policy(state, goal, deterministic=True)
-                next_obsv, reward, done, _ = env.step(action)
+                next_obsv, reward, done, _ = self.env.step(action)
                 next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
 
                 state = next_state
@@ -474,18 +479,13 @@ class IPGHERAgent:
         for i in range(len(ep_experience)):
             if hind_goal is None:
                 future = np.random.randint(i, len(ep_experience))
-                goal_ = ep_experience[future][3]
+                goal_ = ep_experience[future][3]        # use random states as goal
             else:
                 goal_ = hind_goal
             state_ = ep_experience[i][0]
             action_ = ep_experience[i][1]
             next_state_ = ep_experience[i][3]
-            current_goal = ep_experience[i][5]
-            if self.use_mujoco:
-                done_ = np.array_equal(current_goal, goal_)
-                reward_ = 1 if done_ else 0
-            else:
-                done_, reward_ = self.reward_func(next_state_, goal_)
+            done_, reward_ = self.reward_func(next_state_, goal_)
             # add new experience to the main buffer
             self.buffer.record(state_, action_, reward_, next_state_, done_, goal_)
 
@@ -494,12 +494,14 @@ class IPGHERAgent:
         if self.filename is not None:
             self.filename = uniquify(self.path + self.filename)
 
-
         # initial state and goal
         state = self.env.reset()
         state = np.asarray(state, dtype=np.float32) / 255.0  # convert into float array
         goal = self.env.reset()  # take random state as goal
         goal = np.asarray(goal, dtype=np.float32) / 255.0
+
+        # store successful states
+        desired_goals = deque(maxlen=1000)
 
         start = datetime.datetime.now()
         val_scores = []       # validation scores
@@ -522,6 +524,9 @@ class IPGHERAgent:
                 next_state, reward, done, _ = self.env.step(action)
                 next_state = np.asarray(next_state, dtype=np.float32) / 255.0
 
+                if reward == 1:
+                    desired_goals.append([state, action, reward, next_state, done, goal])
+
                 # this is used for on-policy training
                 states.append(state)
                 next_states.append(next_state)
@@ -541,7 +546,11 @@ class IPGHERAgent:
 
                 if done:
                     # HER: Final state strategy
-                    hind_goal = ep_experience[-1][3]  
+                    if len(desired_goals) < 1:
+                        hind_goal = ep_experience[-1][3]  
+                    else:
+                        index = np.random.choice(desired_goals))
+                        hind_goal = desired_goals[index][3]
 
                     # Add hindsight experience to the buffer
                     # in this case, use last state as the goal_state
