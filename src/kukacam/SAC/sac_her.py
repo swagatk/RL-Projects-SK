@@ -1,5 +1,11 @@
 """
 SAC + HER Algorithm.
+
+We implement two strategies for selecting hind_goal
+
+- Last state as hind goal
+- Last successful state
+
 """
 from inspect import currentframe
 import numpy as np
@@ -236,6 +242,7 @@ class SACHERAgent:
         self.seasons = seasons
         self.episodes = 0               # total episode count
         self.time_steps = 0             # total time steps
+        self.seasons = seasons
         self.success_value = success_value
         self.lr_a = lr_a
         self.lr_c = lr_c
@@ -403,18 +410,26 @@ class SACHERAgent:
         mean_alpha_loss = np.mean(alpha_losses)
         return  mean_actor_loss, mean_critic_loss, mean_alpha_loss
 
-    def validate(self, env, max_eps=50):
+    def validate(self, max_eps=50):
         ep_reward_list = []
         for ep in range(max_eps):
-            state = env.reset()
+            state = self.env.reset()
             state = np.asarray(state, dtype=np.float32) / 255.0
+<<<<<<< HEAD
             goal = np.asarray(env.reset(), dtype=np.float32) / 255.0
+=======
+            goal = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
+>>>>>>> her_expt
 
             t = 0
             ep_reward = 0
             while True:
                 action, _ = self.policy(state, goal)
+<<<<<<< HEAD
                 next_obsv, reward, done, _ = env.step(action)
+=======
+                next_obsv, reward, done, _ = self.env.step(action)
+>>>>>>> her_expt
                 next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
 
                 state = next_state
@@ -437,9 +452,11 @@ class SACHERAgent:
         state = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
         goal = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
 
+        # Store the successful states   # required for HER
+        desired_goals = deque(maxlen=1000)
+
         start = datetime.datetime.now()
-        val_scores = deque(maxlen=50)
-        val_score = 0
+        val_scores = []                 # validation scores 
         best_score = -np.inf
         ep_lens = []        # episodic length
         ep_scores = []      # All episodic scores
@@ -460,6 +477,9 @@ class SACHERAgent:
                 next_state, reward, done, _ = self.env.step(action)
                 next_state = np.asarray(next_state, dtype=np.float32) / 255.0
 
+                if reward == 1:     # store successful states
+                    desired_goals.append([state, action, reward, next_state, done, goal])            
+
                 # store in replay buffer for off-policy training
                 self.buffer.record([state, action, reward, next_state, done, goal])
 
@@ -478,7 +498,15 @@ class SACHERAgent:
                     ep_lens.append(ep_len) 
 
                     # HER: Final state strategy
-                    hind_goal = temp_experience[-1][3]
+                    # hind_goal = temp_experience[-1][3]
+                    # HER: Last successful state
+
+                    if len(desired_goals) < 1:
+                        hind_goal = temp_experience[-1][3]      # terminal state
+                    else:
+                        index = np.random.choice(len(desired_goals))
+                        hind_goal = desired_goals[index][3]     # sampled successful state
+
                     self.add_her_experience(temp_experience, hind_goal)
                     temp_experience = [] # clear temporary buffer
 
@@ -513,8 +541,13 @@ class SACHERAgent:
             mean_actor_loss = np.mean(ep_actor_losses[-ep_cnt:])
             mean_critic_loss = np.mean(ep_critic_losses[-ep_cnt:])
 
+<<<<<<< HEAD
             # run validation once for each season
             val_score = self.validate(self.env)
+=======
+            # run validation once in each iteration
+            val_score = self.validate()
+>>>>>>> her_expt
             val_scores.append(val_score)
             mean_val_score = np.mean(val_scores)
 
@@ -525,7 +558,11 @@ class SACHERAgent:
                 best_score = mean_s_score
                 print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_ep_score))
                 print('Season: {}, Validation Score: {}, Mean Validation Score: {}' \
+<<<<<<< HEAD
                 .format(s, val_score, mean_val_score))
+=======
+                        .format(s, val_score, mean_val_score))
+>>>>>>> her_expt
 
             if self.WB_LOG:
                 wandb.log({'Season Score' : s_score, 
@@ -562,7 +599,13 @@ class SACHERAgent:
         print('Mean episodic score over {} episodes: {:.2f}'.format(self.episodes, np.mean(ep_scores)))
 
     def her_reward_func(self, state, goal, thr=0.3):
-        good_done = np.linalg.norm(state - goal) <= thr
+        tf_state = tf.expand_dims(tf.convert_to_tensor(state, dtype=tf.float32), axis=0)
+        tf_goal = tf.expand_dims(tf.convert_to_tensor(goal, dtype=tf.float32), axis=0)
+        
+        state_feature = tf.squeeze(self.feature(tf_state))
+        goal_feature = tf.squeeze(self.feature(tf_goal))
+
+        good_done = tf.linalg.norm(state_feature - goal_feature) <= thr
         reward = 1 if good_done else 0
         return good_done, reward
 
@@ -576,7 +619,6 @@ class SACHERAgent:
             state_ = ep_experience[i][0]
             action_ = ep_experience[i][1]
             next_state_ = ep_experience[i][3]
-            current_goal = ep_experience[i][5]
             done_, reward_ = self.her_reward_func(next_state_, goal_)
             # add new experience to the main buffer
             self.buffer.record([state_, action_, reward_, next_state_, done_, goal_])
