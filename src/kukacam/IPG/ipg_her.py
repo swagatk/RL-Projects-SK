@@ -327,14 +327,10 @@ class IPGHERAgent:
         tf_state = tf.convert_to_tensor(state, dtype=tf.float32)
         tf_goal = tf.convert_to_tensor(goal, dtype=tf.float32)
 
-<<<<<<< HEAD
         state_feature = self.feature(tf_state)
         goal_feature = self.feature(tf_goal)
 
         good_done = tf.linalg.norm(state_feature - goal_feature) <= thr
-=======
-        good_done = tf.linalg.norm(tf_state - tf_goal) <= thr
->>>>>>> her_expt
         reward = 1 if good_done else 0
         return good_done.numpy(), reward
 
