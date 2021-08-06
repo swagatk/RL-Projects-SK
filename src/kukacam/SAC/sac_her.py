@@ -415,21 +415,13 @@ class SACHERAgent:
         for ep in range(max_eps):
             state = self.env.reset()
             state = np.asarray(state, dtype=np.float32) / 255.0
-<<<<<<< HEAD
-            goal = np.asarray(env.reset(), dtype=np.float32) / 255.0
-=======
             goal = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
->>>>>>> her_expt
 
             t = 0
             ep_reward = 0
             while True:
                 action, _ = self.policy(state, goal)
-<<<<<<< HEAD
-                next_obsv, reward, done, _ = env.step(action)
-=======
                 next_obsv, reward, done, _ = self.env.step(action)
->>>>>>> her_expt
                 next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
 
                 state = next_state
@@ -541,13 +533,8 @@ class SACHERAgent:
             mean_actor_loss = np.mean(ep_actor_losses[-ep_cnt:])
             mean_critic_loss = np.mean(ep_critic_losses[-ep_cnt:])
 
-<<<<<<< HEAD
-            # run validation once for each season
-            val_score = self.validate(self.env)
-=======
             # run validation once in each iteration
             val_score = self.validate()
->>>>>>> her_expt
             val_scores.append(val_score)
             mean_val_score = np.mean(val_scores)
 
@@ -558,11 +545,7 @@ class SACHERAgent:
                 best_score = mean_s_score
                 print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_ep_score))
                 print('Season: {}, Validation Score: {}, Mean Validation Score: {}' \
-<<<<<<< HEAD
                 .format(s, val_score, mean_val_score))
-=======
-                        .format(s, val_score, mean_val_score))
->>>>>>> her_expt
 
             if self.WB_LOG:
                 wandb.log({'Season Score' : s_score, 
