@@ -68,12 +68,8 @@ config_dict = dict(
     tau = 0.995,                # polyak averaging factor
     alpha = 0.2,                # Entropy Coefficient   required in SAC
     use_attention = False,      # enable/disable attention model
-<<<<<<< HEAD
     algo = 'ppo',               # choices: ppo, sac, ipg, sac_her, ipg_her
     env_name = 'kuka',          # environment name
-=======
-    algo = 'sac_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
->>>>>>> her_expt
 )
 
 ####################################3
@@ -100,11 +96,7 @@ save_path = save_path + config_dict['env_name'] + '/' + config_dict['algo'] + '/
 #current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 current_time = datetime.datetime.now().strftime("%Y%m%d")
 save_path = save_path + current_time + '/'
-<<<<<<< HEAD
 logfile = config_dict['env_name'] + '_' + config_dict['algo'] + '.txt'
-=======
-logfile = env_name + '_' + config_dict['algo'] + '.txt'
->>>>>>> her_expt
 ###########################################
 # wandb related configuration
 import wandb

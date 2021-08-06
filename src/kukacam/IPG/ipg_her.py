@@ -552,7 +552,7 @@ class IPGHERAgent:
                     if len(desired_goals) < 1:
                         hind_goal = ep_experience[-1][3]  
                     else:
-                        index = np.random.choice(desired_goals))
+                        index = np.random.choice(len(desired_goals))
                         hind_goal = desired_goals[index][3]
 
                     # Add hindsight experience to the buffer
