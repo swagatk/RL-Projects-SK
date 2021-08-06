@@ -69,14 +69,14 @@ config_dict = dict(
     alpha = 0.2,                # Entropy Coefficient   required in SAC
     use_attention = False,      # enable/disable attention model
     algo = 'ppo',               # choices: ppo, sac, ipg, sac_her, ipg_her
+    env_name = 'kuka',          # environment name
 )
 
 ####################################3
 #  Additional parameters 
 #########################################3
 seasons = 35 
-COLAB = True
-env_name = 'kuka'
+COLAB = False
 WB_LOG = True
 success_value = None 
 ############################
@@ -84,7 +84,7 @@ success_value = None
 if COLAB:
     import pybullet as p
     p.connect(p.DIRECT)
-    save_path = '/content/gdrive/MyDrive/Colab/kuka/' + config_dict['algo'] + '/'
+    save_path = '/content/gdrive/MyDrive/Colab/' 
     CHKPT = True
     load_path = None
 else:
@@ -92,10 +92,11 @@ else:
     CHKPT = False
     load_path = None
 ##############################################3
+save_path = save_path + config_dict['env_name'] + '/' + config_dict['algo'] + '/'
 #current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 current_time = datetime.datetime.now().strftime("%Y%m%d")
 save_path = save_path + current_time + '/'
-logfile = env_name + '_' + config_dict['algo'] + '.txt'
+logfile = config_dict['env_name'] + '_' + config_dict['algo'] + '.txt'
 ###########################################
 # wandb related configuration
 import wandb
@@ -107,11 +108,12 @@ if WB_LOG:
 #################################3
 if __name__ == "__main__":
 
-    # Instantiate Gym Environment
-    env = KukaDiverseObjectEnv(renders=False,
-                               isDiscrete=False,
-                               maxSteps=20,
-                               removeHeightHack=False)
+    if config_dict['env_name'] == 'kuka':
+        # Instantiate Gym Environment
+        env = KukaDiverseObjectEnv(renders=False,
+                                isDiscrete=False,
+                                maxSteps=20,
+                                removeHeightHack=False)
 
     # Select RL Agent
     if config_dict['algo'] == 'ppo':
