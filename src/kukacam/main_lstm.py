@@ -17,7 +17,8 @@ import sys
 sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 
 # Local imports
-from PPO.ppo2 import PPOAgent
+from PPO.ppo_lstm import PPOAgent
+# from PPO.ppo2 import PPOAgent
 from IPG.ipg import IPGAgent
 from IPG.ipg_her import IPGHERAgent
 from SAC.sac import SACAgent
@@ -68,7 +69,7 @@ config_dict = dict(
     tau = 0.995,                # polyak averaging factor
     alpha = 0.2,                # Entropy Coefficient   required in SAC
     use_attention = False,      # enable/disable attention model
-    algo = 'ipg',               # choices: ppo, sac, ipg, sac_her, ipg_her
+    algo = 'ppo',               # choices: ppo, sac, ipg, sac_her, ipg_her
     env_name = 'kuka',          # environment name
 )
 
@@ -77,7 +78,7 @@ config_dict = dict(
 #########################################3
 seasons = 35 
 COLAB = False
-WB_LOG = True
+WB_LOG = False
 success_value = None 
 ############################
 # Google Colab Settings
@@ -105,6 +106,20 @@ if WB_LOG:
     wandb.login()
     wandb.init(project='kukacam', config=config_dict)
 #######################################################33
+
+def prepare_stack_input(self, state, frame_counter, stack_size):
+
+    for _ in range(frame_counter, stack_size):
+        self.img_buffer.append(state)
+
+    stacked_img = tf.stack(self.img_buffer, axis=1)
+
+    self.step_counter += 1
+    if self.step_counter >= self.time_steps:
+        self.step_counter = 0   
+        self.img_buffer = [] 
+    
+    return stacked_img
 #################################3
 if __name__ == "__main__":
 

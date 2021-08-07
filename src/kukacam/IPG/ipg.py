@@ -386,21 +386,20 @@ class IPGAgent:
             c_loss = self.critic.train(s_batch, a_batch, y)
             c_loss_list.append(c_loss)
 
-        self.replay_count += 1      # Why do you need this?
         return np.mean(a_loss_list), np.mean(c_loss_list)
 
     # Validation routine
-    def validate(self, env, max_eps=50):
+    def validate(self, max_eps=50):
         ep_reward_list = []
         for ep in range(max_eps):
-            state = env.reset()
+            state = self.env.reset()
             state = np.asarray(state, dtype=np.float32) / 255.0
 
             t = 0
             ep_reward = 0
             while True:
                 action = self.policy(state, deterministic=False)
-                next_obsv, reward, done, _ = env.step(action)
+                next_obsv, reward, done, _ = self.env.step(action)
                 next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
 
                 state = next_state
@@ -488,19 +487,21 @@ class IPGAgent:
             mean_ep_len = np.mean(ep_lens)
             mean_ep_score = np.mean(ep_scores)
 
+
+            # validation
+            val_score = self.validate()
+            val_scores.append(val_score)
+            mean_val_score = np.mean(val_scores)
+
+
             if mean_s_score > best_score:
                 best_model_path = self.path + 'best_model/'
                 os.makedirs(best_model_path, exist_ok=True)
                 self.save_model(best_model_path)
-                print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_s_score))
                 best_score = mean_s_score
-
-            val_score = self.validate(self.env)
-            val_scores.append(val_score)
-            mean_val_score = np.mean(val_scores)
-            print('Season: {}, Validation Score: {}, Mean Validation Score: {}'\
-                    .format(s, val_score, mean_val_score))
-
+                print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_s_score))
+                print('Season: {}, Validation Score: {}, Mean Validation Score: {}'\
+                        .format(s, val_score, mean_val_score))
 
             if self.WB_LOG:
                 wandb.log({'Season Score' : s_score, 
@@ -719,7 +720,6 @@ class IPGAgent2:
             c_loss = self.critic.train(s_batch, a_batch, y)
             c_loss_list.append(c_loss)
 
-        self.replay_count += 1      # Why do you need this?
         return np.mean(a_loss_list), np.mean(c_loss_list)
 
     def save_model(self, save_path):

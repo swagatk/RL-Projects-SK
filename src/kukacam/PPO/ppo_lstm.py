@@ -1,4 +1,5 @@
 
+from numpy.core.shape_base import stack
 import tensorflow as tf
 import numpy as np
 import tensorflow_probability as tfp
@@ -184,7 +185,7 @@ class PPOCritic:
         net_out = tf.keras.layers.Dense(1, trainable=trainable)(out)
 
         # Outputs single value for a given state = V(s)
-        model = tf.keras.Model(inputs=state_input, outputs=net_out, name='critic')
+        model = tf.keras.Model(state_input, net_out, name='critic')
         model.summary()
         tf.keras.utils.plot_model(model, to_file='critic_net.png',
                                   show_shapes=True, show_layer_names=True)
@@ -226,7 +227,6 @@ class PPOAgent:
                     chkpt=False, path='./',
                     stack_size=7):
         self.env = env
-        self.stack_size = stack_size
         self.state_size = self.env.observation_space.shape
         self.action_size = self.env.action_space.shape
         self.upper_bound = self.env.action_space.high
@@ -252,6 +252,7 @@ class PPOAgent:
         self.filename = filename
         self.path = path
         self.chkpt = chkpt          # save checkpoints
+        self.stack_size = stack_size
 
 
         if len(self.state_size) == 3:
@@ -438,6 +439,8 @@ class PPOAgent:
             ep_score = 0    # score of each episode
             done = False
             for t in range(self.training_batch):
+                if self.stack_size is not None:
+                    self.feature.img_buffer.append(state)
                 action = self.policy(state)
                 next_state, reward, done, _ = self.env.step(action)
                 next_state = np.asarray(next_state, dtype=np.float32) / 255.0
@@ -458,6 +461,8 @@ class PPOAgent:
                     ep_cnt += 1     # episode count in a season
                     ep_scores.append(ep_score)
                     ep_lens.append(ep_len)
+                    if self.stack_size is not None:
+                        self.feature.img_buffer.clear() 
 
                     if self.WB_LOG:
                         wandb.log({'time_steps' : self.time_steps,
@@ -481,7 +486,6 @@ class PPOAgent:
             s_scores.append(s_score)
             mean_s_score = np.mean(s_scores)
             mean_ep_len = np.mean(ep_lens)
-            mean_ep_score = np.mean(ep_scores)
 
 
             # validation
@@ -508,6 +512,7 @@ class PPOAgent:
                             'KL Divergence' : kld,
                             'val_score': val_score, 
                             'mean_val_score': mean_val_score,
+                            'ep_per_season' : ep_cnt,
                             'Season' : s})
 
             if self.chkpt:
