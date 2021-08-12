@@ -219,7 +219,7 @@ class IPGHERAgent:
     def __init__(self, env, SEASONS, success_value, 
                  epochs, training_batch, batch_size, buffer_capacity, 
                  lr_a, lr_c, gamma, epsilon, lmbda, 
-                 her_strategy='final',
+                 her_strategy='future',
                  use_attention=False, 
                  filename=None, wb_log=False, chkpt_freq=None, path='./'):
         self.env = env

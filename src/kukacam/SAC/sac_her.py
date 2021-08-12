@@ -232,7 +232,7 @@ class SACHERCritic:
 class SACHERAgent:
     def __init__(self, env, seasons, success_value, epochs,
                  training_batch, batch_size, buffer_capacity, lr_a=0.0003, lr_c=0.0003,
-                 gamma=0.99, tau=0.995, alpha=0.2, use_attention=False, 
+                 gamma=0.99, tau=0.995, alpha=0.2, her_strategy='future', use_attention=False, 
                  filename=None, wb_log=False, chkpt_freq=None, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
@@ -258,6 +258,7 @@ class SACHERAgent:
         self.WB_LOG = wb_log
         self.path = path
         self.chkpt_freq = chkpt_freq                  # store checkpoints
+        self.her_strategy = her_strategy    # HER strategy: final, future, success
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -434,7 +435,7 @@ class SACHERAgent:
         mean_ep_reward = np.mean(ep_reward_list)
         return mean_ep_reward
 
-    def run(self):
+    def run(self, train_freq=20):
 
         if self.filename is not None: 
             self.filename = uniquify(self.path + self.filename)
@@ -444,8 +445,8 @@ class SACHERAgent:
         state = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
         goal = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
 
-        # Store the successful states   # required for HER
-        desired_goals = deque(maxlen=1000)
+        if self.her_strategy == 'success': # Store the successful states   
+            desired_goals = deque(maxlen=1000)
 
         start = datetime.datetime.now()
         val_scores = []                 # validation scores 
@@ -458,7 +459,7 @@ class SACHERAgent:
         ep_critic_losses = []   # critic losses
 
         for s in range(self.seasons):
-            temp_experience = []    # required for HER
+            ep_experience = []    # required for HER
             s_score = 0         # season score 
             ep_len = 0          # episode length
             ep_score = 0        # score for each episode
@@ -469,14 +470,15 @@ class SACHERAgent:
                 next_state, reward, done, _ = self.env.step(action)
                 next_state = np.asarray(next_state, dtype=np.float32) / 255.0
 
-                if reward == 1:     # store successful states
-                    desired_goals.append([state, action, reward, next_state, done, goal])            
+                if self.her_strategy == 'success':
+                    if reward == 1:     # store successful states
+                        desired_goals.append([state, action, reward, next_state, done, goal])            
 
                 # store in replay buffer for off-policy training
                 self.buffer.record([state, action, reward, next_state, done, goal])
 
                 # also store experience in temporary buffer
-                temp_experience.append([state, action, reward, next_state, done, goal])
+                ep_experience.append([state, action, reward, next_state, done, goal])
 
                 state = next_state
                 ep_score += reward
@@ -489,21 +491,26 @@ class SACHERAgent:
                     ep_scores.append(ep_score)
                     ep_lens.append(ep_len) 
 
-                    # HER: Final state strategy
-                    # hind_goal = temp_experience[-1][3]
-                    # HER: Last successful state
-
-                    if len(desired_goals) < 1:
-                        hind_goal = temp_experience[-1][3]      # terminal state
+                    # HER strategies
+                    if self.her_strategy == 'final':    # final state strategy
+                        hind_goal = ep_experience[-1][3]      
+                    elif self.her_strategy == 'success':    # successful states
+                        if len(desired_goals) < 1:
+                            hind_goal = ep_experience[-1][3]      
+                        else:
+                            index = np.random.choice(len(desired_goals))
+                            hind_goal = desired_goals[index][3]    
+                    elif self.her_strategy == 'future': # future state strategy
+                        hind_goal = None
                     else:
-                        index = np.random.choice(len(desired_goals))
-                        hind_goal = desired_goals[index][3]     # sampled successful state
+                        raise ValueError('Invalid choice for HER strategy. Exiting ..')
 
-                    self.add_her_experience(temp_experience, hind_goal)
-                    temp_experience = [] # clear temporary buffer
+                    self.add_her_experience(ep_experience, hind_goal, extract_feature=True)
+                    ep_experience = [] # clear temporary buffer
 
                     # off-policy training after each episode
-                    a_loss, c_loss, alpha_loss = self.train()
+                    if self.time_steps % train_freq:
+                        a_loss, c_loss, alpha_loss = self.train()
 
                     ep_actor_losses.append(a_loss)
                     ep_critic_losses.append(c_loss)
@@ -555,6 +562,7 @@ class SACHERAgent:
                             'Mean episode length' : mean_ep_len,
                             'val_score': val_score, 
                             'mean_val_score': mean_val_score,
+                            'ep_per_season' : ep_cnt,
                             'Season' : s})
 
             if self.chkpt_freq is not None and s % self.chkpt_freq == 0:
@@ -581,7 +589,7 @@ class SACHERAgent:
         self.env.close()
         print('Mean episodic score over {} episodes: {:.2f}'.format(self.episodes, np.mean(ep_scores)))
 
-    def her_reward_func(self, state, goal, thr=0.3):
+    def her_reward_func_1(self, state, goal, thr=0.3):
         tf_state = tf.expand_dims(tf.convert_to_tensor(state, dtype=tf.float32), axis=0)
         tf_goal = tf.expand_dims(tf.convert_to_tensor(goal, dtype=tf.float32), axis=0)
         
@@ -592,17 +600,29 @@ class SACHERAgent:
         reward = 1 if good_done else 0
         return good_done, reward
 
-    def add_her_experience(self, ep_experience, hind_goal):
+    def her_reward_func_2(self, state, goal, thr=0.3):
+        # input: numpy array, output: numpy value
+        good_done = np.linalg.norm(state - goal) <= thr 
+        reward = 1 if good_done else 0
+        return good_done, reward
+
+    def add_her_experience(self, ep_experience, hind_goal, extract_feature=True):
         for i in range(len(ep_experience)):
-            if hind_goal is None:
+            if hind_goal is None:   # future state strategy
                 future = np.random.randint(i, len(ep_experience))
                 goal_ = ep_experience[future][3]
             else:
                 goal_ = hind_goal
+
             state_ = ep_experience[i][0]
             action_ = ep_experience[i][1]
             next_state_ = ep_experience[i][3]
-            done_, reward_ = self.her_reward_func(next_state_, goal_)
+
+            if extract_feature:     
+                done_, reward_ = self.her_reward_func_1(next_state_, goal_)
+            else:
+                done_, reward_ = self.her_reward_func_2(next_state_, goal_)
+
             # add new experience to the main buffer
             self.buffer.record([state_, action_, reward_, next_state_, done_, goal_])
 
