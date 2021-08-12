@@ -219,8 +219,9 @@ class IPGHERAgent:
     def __init__(self, env, SEASONS, success_value, 
                  epochs, training_batch, batch_size, buffer_capacity, 
                  lr_a, lr_c, gamma, epsilon, lmbda, 
+                 her_strategy='final',
                  use_attention=False, 
-                 filename=None, wb_log=False, chkpt=False, path='./'):
+                 filename=None, wb_log=False, chkpt_freq=None, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
         self.state_size = self.env.observation_space.shape
@@ -243,7 +244,8 @@ class IPGHERAgent:
         self.filename = filename
         self.WB_LOG = wb_log
         self.path = path            # location to store results
-        self.chkpt = chkpt          # save checkpoints
+        self.chkpt_freq = chkpt_freq          # save checkpoints
+        self.her_strategy = her_strategy        # HER strategy: final, future, sss, ssf
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -322,10 +324,10 @@ class IPGHERAgent:
         adv_bar = y * x         # check this
         return adv_bar
 
-    def her_reward_func(self, state, goal, thr=0.3):
+    def her_reward_func_1(self, state, goal, thr=0.3):
         # input: numpy array, output: numpy value
-        tf_state = tf.convert_to_tensor(state, dtype=tf.float32)
-        tf_goal = tf.convert_to_tensor(goal, dtype=tf.float32)
+        tf_state = tf.expand_dims(tf.convert_to_tensor(state, dtype=tf.float32), axis=0)
+        tf_goal = tf.expand_dims(tf.convert_to_tensor(goal, dtype=tf.float32), axis=0)
 
         state_feature = self.feature(tf_state)
         goal_feature = self.feature(tf_goal)
@@ -333,6 +335,12 @@ class IPGHERAgent:
         good_done = tf.linalg.norm(state_feature - goal_feature) <= thr
         reward = 1 if good_done else 0
         return good_done.numpy(), reward
+
+    def her_reward_func_2(self, state, goal, thr=0.3):
+        # input: numpy array, output: numpy value
+        good_done = np.linalg.norm(state - goal) <= thr 
+        reward = 1 if good_done else 0
+        return good_done, reward
 
     # implements on-policy & off-policy training
     def train(self, states, actions, rewards, next_states, dones, goals):
@@ -432,7 +440,6 @@ class IPGHERAgent:
             c_loss = self.critic.train(s_batch, a_batch, y)
             c_loss_list.append(c_loss)
 
-        self.replay_count += 1      # Why do you need this?
         return np.mean(a_loss_list), np.mean(c_loss_list)
 
     # Validation routine
@@ -478,19 +485,25 @@ class IPGHERAgent:
                 # add new experience to HER buffer
                 self.buffer.record(state_, action_, reward_, next_state_, done_, goal_)
 
-    def add_her_experience(self, ep_experience, hind_goal):
+    def add_her_experience(self, ep_experience, hind_goal, extract_feature=True):
         for i in range(len(ep_experience)):
-            if hind_goal is None:
+            if hind_goal is None:       # future state strategy
                 future = np.random.randint(i, len(ep_experience))
                 goal_ = ep_experience[future][3]        # use random states as goal
             else:
                 goal_ = hind_goal
+
             state_ = ep_experience[i][0]
             action_ = ep_experience[i][1]
             next_state_ = ep_experience[i][3]
-            done_, reward_ = self.reward_func(next_state_, goal_)
+
+            if extract_feature: # reward is computed on extracted features
+                done_, reward_ = self.her_reward_func_1(next_state_, goal_)        # testing
+            else:               # reward is computed using image array directly
+                done_, reward_ = self.her_reward_func_2(next_state_, goal_)
+
             # add new experience to the main buffer
-            self.buffer.record(state_, action_, reward_, next_state_, done_, goal_)
+            self.buffer.record([state_, action_, reward_, next_state_, done_, goal_])
 
     def run(self):
 
@@ -504,7 +517,8 @@ class IPGHERAgent:
         goal = np.asarray(goal, dtype=np.float32) / 255.0
 
         # store successful states
-        desired_goals = deque(maxlen=1000)
+        if self.her_strategy == 'success':
+            desired_goals = deque(maxlen=1000)
 
         start = datetime.datetime.now()
         val_scores = []       # validation scores
@@ -527,8 +541,9 @@ class IPGHERAgent:
                 next_state, reward, done, _ = self.env.step(action)
                 next_state = np.asarray(next_state, dtype=np.float32) / 255.0
 
-                if reward == 1:
-                    desired_goals.append([state, action, reward, next_state, done, goal])
+                if self.her_strategy == 'success': 
+                    if reward == 1:
+                        desired_goals.append([state, action, reward, next_state, done, goal])
 
                 # this is used for on-policy training
                 states.append(state)
@@ -548,22 +563,30 @@ class IPGHERAgent:
                 ep_len += 1
 
                 if done:
+
                     # HER: Final state strategy
-                    if len(desired_goals) < 1:
-                        hind_goal = ep_experience[-1][3]  
+                    if self.her_strategy == 'final':
+                        hind_goal = ep_experience[-1][3]        # final state strategy
+                    elif self.her_strategy == 'success': 
+                        if len(desired_goals) < 1:
+                            hind_goal = ep_experience[-1][3]  
+                        else:   # random successful states as a goal
+                            index = np.random.choice(len(desired_goals))
+                            hind_goal = desired_goals[index][3]
+                    elif self.her_strategy == 'future':   # future state strategy
+                        hind_goal = None
                     else:
-                        index = np.random.choice(len(desired_goals))
-                        hind_goal = desired_goals[index][3]
+                        raise ValueError("Invalid choice for her strategy. Exiting ...")
 
                     # Add hindsight experience to the buffer
                     # in this case, use last state as the goal_state
                     # here ep_exp is cleared at the end of each episode.
                     # which makes sense
-                    self.add_her_experience(ep_experience, hind_goal)
+                    self.add_her_experience(ep_experience, hind_goal, extract_feature=True)
                     # clear the local experience buffer
                     ep_experience = []
 
-                    self.episode += 1
+                    self.episodes += 1
                     s_score += ep_score        # season score
                     ep_cnt += 1             # episode count in a season
                     ep_scores.append(ep_score)
@@ -598,15 +621,12 @@ class IPGHERAgent:
             s_scores.append(s_score)
             mean_s_score = np.mean(s_scores)
             mean_ep_len = np.mean(ep_lens)
-            mean_ep_score = np.mean(ep_scores)
 
 
             # validation
             val_score = self.validate()
             val_scores.append(val_score)
             mean_val_score = np.mean(val_scores)
-            print('Season: {}, Validation Score: {}, Mean Validation Score: {}'\
-                    .format(s, val_score, mean_val_score))
 
             if mean_s_score > best_score:
                 best_model_path = self.path + 'best_model/'
@@ -625,10 +645,11 @@ class IPGHERAgent:
                             'Mean episode length' : mean_ep_len,
                             'val_score': val_score, 
                             'mean_val_score': mean_val_score,
+                            'ep_per_season' : ep_cnt, 
                             'Season' : s})
 
-            if self.chkpt:
-                chkpt_path = self.path + 'chkpt/'
+            if self.chkpt_freq is not None and s % self.chkpt_freq == 0:          
+                chkpt_path = self.path + 'chkpt_{}/'.format(s)
                 os.makedirs(chkpt_path, exist_ok=True)
                 self.save_model(chkpt_path)
 

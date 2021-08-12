@@ -209,7 +209,7 @@ class IPGAgent:
                  epochs, training_batch, batch_size, buffer_capacity, 
                  lr_a, lr_c, gamma, epsilon, lmbda,
                  use_attention=False, 
-                 filename=None, wb_log=False, chkpt=False, path='./'):
+                 filename=None, wb_log=False, chkpt_freq=None, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
         self.state_size = self.env.observation_space.shape
@@ -231,7 +231,7 @@ class IPGAgent:
         self.filename = filename
         self.WB_LOG = wb_log
         self.path = path
-        self.chkpt = chkpt
+        self.chkpt_freq = chkpt_freq
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -273,6 +273,11 @@ class IPGAgent:
         #action = mean + np.random.uniform(-self.upper_bound, self.upper_bound, size=mean.shape) * std
         action = tf.clip_by_value(action, -self.upper_bound, self.upper_bound)
         return action.numpy()
+
+    def extract_feature(self, state):
+        f_state = tf.expand_dims(tf.convert_to_tensor(state), axis=0)
+        feat = self.feature(f_state)
+        return feat.numpy()
 
     def compute_advantage(self, r_batch, s_batch, ns_batch, d_batch):
         # input: tensors
@@ -513,8 +518,8 @@ class IPGAgent:
                             'mean_val_score': mean_val_score,
                             'Season' : s})
                 
-            if self.chkpt:
-                chkpt_path = self.path + 'chkpt/'
+            if self.chkpt_freq is not None and s % self.chkpt_freq == 0:
+                chkpt_path = self.path + 'chkpt_{}/'.format(s)
                 os.makedirs(chkpt_path, exist_ok=True)
                 self.save_model(chkpt_path)
 

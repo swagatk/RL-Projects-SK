@@ -107,19 +107,6 @@ if WB_LOG:
     wandb.init(project='kukacam', config=config_dict)
 #######################################################33
 
-def prepare_stack_input(self, state, frame_counter, stack_size):
-
-    for _ in range(frame_counter, stack_size):
-        self.img_buffer.append(state)
-
-    stacked_img = tf.stack(self.img_buffer, axis=1)
-
-    self.step_counter += 1
-    if self.step_counter >= self.time_steps:
-        self.step_counter = 0   
-        self.img_buffer = [] 
-    
-    return stacked_img
 #################################3
 if __name__ == "__main__":
 

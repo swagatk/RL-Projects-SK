@@ -233,7 +233,7 @@ class SACHERAgent:
     def __init__(self, env, seasons, success_value, epochs,
                  training_batch, batch_size, buffer_capacity, lr_a=0.0003, lr_c=0.0003,
                  gamma=0.99, tau=0.995, alpha=0.2, use_attention=False, 
-                 filename=None, wb_log=False, chkpt=False, path='./'):
+                 filename=None, wb_log=False, chkpt_freq=None, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
         self.state_size = self.env.observation_space.shape
@@ -257,7 +257,7 @@ class SACHERAgent:
         self.filename = filename
         self.WB_LOG = wb_log
         self.path = path
-        self.chkpt = chkpt                  # store checkpoints
+        self.chkpt_freq = chkpt_freq                  # store checkpoints
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -557,8 +557,8 @@ class SACHERAgent:
                             'mean_val_score': mean_val_score,
                             'Season' : s})
 
-            if self.chkpt:
-                chkpt_path = self.path + 'chkpt/'
+            if self.chkpt_freq is not None and s % self.chkpt_freq == 0:
+                chkpt_path = self.path + 'chkpt_{}/'.format(s)
                 os.makedirs(chkpt_path, exist_ok=True)
                 self.save_model(chkpt_path)
 

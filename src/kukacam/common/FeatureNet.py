@@ -19,55 +19,48 @@ class FeatureNetwork:
         #self.model = self._build_net2() # bigger network
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
 
-    def _build_net(self):
-        img_input = layers.Input(shape=self.state_size)
+    def _build_net(self, conv_layers=[16, 32, 32], dense_layers=[128, 128, 64]):
+        img_input = tf.keras.layers.Input(shape=self.state_size)
 
-        # shared convolutional layers
-        conv1 = layers.Conv2D(16, kernel_size=5, strides=2,
-                              padding="SAME", activation="relu")(img_input)
-        bn1 = layers.BatchNormalization()(conv1)
-        conv2 = layers.Conv2D(32, kernel_size=5, strides=2,
-                              padding="SAME", activation="relu")(bn1)
-        bn2 = layers.BatchNormalization()(conv2)
-        conv3 = layers.Conv2D(32, kernel_size=5, strides=2,
-                              padding="SAME", activation="relu")(bn2)
-        bn3 = layers.BatchNormalization()(conv3)
-        f = layers.Flatten()(bn3)
-        f = layers.Dense(128, activation="relu")(f)
-        f = layers.Dense(128, activation="relu")(f)
-        f = layers.Dense(64, activation="relu")(f)
+        loop_input = img_input
+        for i in range(len(conv_layers)):
+            conv = tf.keras.layers.Conv2D(conv_layers[i], kernel_size=5, strides=2,
+                                padding="SAME", activation="relu")(loop_input) 
+            bn = tf.keras.layers.BatchNormalization()(conv)
+            loop_input = bn
+
+        f = tf.keras.layers.Flatten()(bn)
+
+        for i in range(len(dense_layers)):
+            f = tf.keras.layers.Dense(dense_layers[i], activation="relu")(f)
+
         model = tf.keras.Model(inputs=img_input, outputs=f, name='feature_net')
         print('shared feature network')
         model.summary()
-        keras.utils.plot_model(model, to_file='feature_net.png',
+        keras.utils.plot_model(model, to_file='feature_net_1.png',
                                show_shapes=True, show_layer_names=True)
         return model
 
-    def _build_net2(self):
+    def _build_net2(self, conv_layers=[16, 32, 32], dense_layers=[128, 128, 64]):
         img_input = layers.Input(shape=self.state_size)
 
-        # shared convolutional layers
-        conv1 = layers.Conv2D(64, kernel_size=5, strides=2,
-                              padding="SAME", activation="relu")(img_input)
-        p1 = layers.MaxPooling2D(pool_size=(4, 4), strides=None, padding='SAME')(conv1)
-        conv2 = layers.Conv2D(128, kernel_size=5, strides=2,
-                              padding="SAME", activation="relu")(p1)
-        p2 = layers.MaxPooling2D(pool_size=(4, 4), strides=None, padding='SAME')(conv2)
-        conv3 = layers.Conv2D(128, kernel_size=5, strides=2,
-                              padding="SAME", activation="relu")(p2)
-        p3 = layers.MaxPooling2D(pool_size=(4, 4), strides=None, padding='SAME')(conv3)
-        conv4 = layers.Conv2D(64, kernel_size=5, strides=2,
-                              padding="SAME", activation="relu")(p3)
-        p4 = layers.MaxPooling2D(pool_size=(4, 4), strides=None, padding='SAME')(conv4)
-        f = layers.Flatten()(p4)
-        f = layers.Dense(256, activation="relu")(f)
-        f = layers.Dense(256, activation="relu")(f)
-        f = layers.Dense(128, activation="relu")(f)
-        f = layers.Dense(64, activation="relu")(f)
+        loop_input = img_input
+        for i in range(len(conv_layers)):
+            conv = tf.keras.layers.Conv2D(conv_layers[i], kernel_size=5,
+                        strides=2, padding="SAME", activation="relu")(loop_input)
+            pool = tf.keras.layers.MaxPooling2D(pool_size=(4, 4), strides=None, 
+                        padding="SAME")(conv)
+            loop_input = pool
+            
+        f = layers.Flatten()(pool)
+
+        for i in range(len(dense_layers)):
+            f = tf.keras.layers.Dense(dense_layers[i], activation="relu")(f)
+
         model = tf.keras.Model(inputs=img_input, outputs=f, name='feature_net_2')
         print('shared feature network')
         model.summary()
-        keras.utils.plot_model(model, to_file='feature_net.png',
+        keras.utils.plot_model(model, to_file='feature_net_2.png',
                                show_shapes=True, show_layer_names=True)
         return model
 
@@ -81,6 +74,10 @@ attention layer is applied in between conv layers. Typical architecture looks li
 Conv2d - Attention - Conv2d - Attention - Conv2D - Attention - Flatten - Dense Layers
 
 attn_type: 'bahdanau', 'luong'
+    - 'bahdanau': keras.layers.AdditiveAttention()
+    - 'luong': keras.layers.Attention()
+
+Architectures:
 arch = 1: attention(x) in-between conv layers
 arch = 2: x + attention(x) in-between conv layers
 arch = 3: x * attention(x) in-between conv layers
@@ -99,91 +96,43 @@ class AttentionFeatureNetwork:
         self.model = self._build_net()
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
 
-    def _build_net(self):
+    def _build_net(self, conv_layers=[16, 32, 32], dense_layers=[128, 128, 64]):
         img_input = layers.Input(shape=self.state_size)
 
-        # first convolutional layers
-        x = layers.Conv2D(16, kernel_size=5, strides=2,
-                          padding="SAME", activation="relu")(img_input)
+        loop_input = img_input
+        for i in range(len(conv_layers)):
+            # Conv Layers
+            x = tf.keras.layers.Conv2D(conv_layers[i], kernel_size=5, strides=2,
+                                padding="SAME", activation="relu")(loop_input)
+            # Attention
+            if self.attn_type == 'bahdanau':
+                attn = layers.AdditiveAttention()([x, x])      # Bahdanau-style
+            elif self.attn_type == 'luong':
+                attn = layers.Attention()([x, x])             # Luong-style
+            else:
+                raise ValueError("Choose between 'bahdanau' and 'loung' for attention type.")
 
-        if self.attn_type == 'bahdanau':
-            attn = layers.AdditiveAttention()([x, x])      # Bahdanau-style
-        elif self.attn_type == 'luong':
-            attn = layers.Attention()([x, x])             # Luong-style
-        else:
-            raise ValueError("Choose between 'bahdanau' and 'loung' for attention type.")
+            if self.arch == 1:
+                x = attn
+            elif self.arch == 2:
+                x = layers.Add()([attn, x])
+                #x = tf.keras.activations.sigmoid(x)
+            elif self.arch == 3:
+                x = layers.Multiply()([attn, x])
+                #x = tf.keras.activations.sigmoid(x)
+            else:
+                raise ValueError('Choose 1, 2 or 3 for architecture')
 
-        if self.arch == 1:
-            x = attn
-        elif self.arch == 2:
-            x = layers.Add()([attn, x])
-            #x = tf.keras.activations.sigmoid(x)
-        elif self.arch == 3:
-            x = layers.Multiply()([attn, x])
-            #x = tf.keras.activations.sigmoid(x)
-        else:
-            raise ValueError('Choose 1, 2 or 3 for architecture')
-
-        # x = layers.BatchNormalization()(x)
-        # x = layers.MaxPooling2D(pool_size=(2, 2), padding='same')(x)
-        x = layers.LayerNormalization(epsilon=1e-6)(x)
-
-        # second conv layer
-        x = layers.Conv2D(32, kernel_size=5, strides=2,
-                          padding="SAME", activation="relu")(x)
-
-        if self.attn_type == 'bahdanau':
-            attn = layers.AdditiveAttention()([x, x])  # Bahdanau-style
-        elif self.attn_type == 'luong':
-            attn = layers.Attention()([x, x])  # Luong-style
-        else:
-            raise ValueError("Choose between 'bahdanau' and 'loung' for attention type.")
-
-        if self.arch == 1:
-            x = attn
-        elif self.arch == 2:
-            x = layers.Add()([attn, x])
-            #x = tf.keras.activations.sigmoid(x)
-        elif self.arch == 3:
-            x = layers.Multiply()([attn, x])
-            #x = tf.keras.activations.sigmoid(x)
-        else:
-            raise ValueError('Choose 1, 2 or 3 for architecture')
-
-        # x = layers.BatchNormalization()(x)
-        # x = layers.MaxPooling2D(pool_size=(2, 2), padding='same')(x)
-        x = layers.LayerNormalization(epsilon=1e-6)(x)
-
-        # Third conv layer
-        x = layers.Conv2D(64, kernel_size=5, strides=2,
-                          padding="SAME", activation="relu")(x)
-
-        if self.attn_type == 'bahdanau':
-            attn = layers.AdditiveAttention()([x, x])  # Bahdanau-style
-        elif self.attn_type == 'luong':
-            attn = layers.Attention()([x, x])  # Luong-style
-        else:
-            raise ValueError("Choose between 'bahdanau' and 'loung' for attention type.")
-
-        if self.arch == 1:
-            x = attn
-        elif self.arch == 2:
-            x = layers.Add()([attn, x])
-            #x = tf.keras.activations.sigmoid(x)
-        elif self.arch == 3:
-            x = layers.Multiply()([attn, x])
-            #x = tf.keras.activations.sigmoid(x)
-        else:
-            raise ValueError('Choose 1, 2 or 3 for architecture')
-
-        x = layers.LayerNormalization(epsilon=1e-6)(x)
-        #x = layers.MaxPooling2D(pool_size=(2, 2), padding='same')(x)
+            x = layers.LayerNormalization(epsilon=1e-6)(x)
+            loop_input = x
 
         x = layers.Flatten()(x)
-        x = layers.Dense(128, activation="relu")(x)
-        x = layers.Dense(128, activation="relu")(x)
-        x = layers.Dense(64, activation="relu")(x)
-        model = tf.keras.Model(inputs=img_input, outputs=x, name='feature_net')
+
+        # Fully-Connected layers
+        for i in range(len(dense_layers)):
+            x = tf.keras.layers.Dense(dense_layers[i], activation="relu")(x)
+        
+        model = tf.keras.Model(inputs=img_input, outputs=x, name='attn_feature_net')
         print('shared feature network')
         model.summary()
         keras.utils.plot_model(model, to_file='att_feature_net.pdf',

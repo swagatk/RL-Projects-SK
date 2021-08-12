@@ -67,9 +67,10 @@ config_dict = dict(
     lmbda = 0.7,  # 0.9         # required for GAE in PPO
     tau = 0.995,                # polyak averaging factor
     alpha = 0.2,                # Entropy Coefficient   required in SAC
-    use_attention = False,      # enable/disable attention model
-    algo = 'ipg',               # choices: ppo, sac, ipg, sac_her, ipg_her
+    use_attention = True,      # enable/disable attention model
+    algo = 'ipg_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
     env_name = 'kuka',          # environment name
+    her_strategy = 'success'        # HER strategy: final, future, success 
 )
 
 ####################################3
@@ -85,11 +86,11 @@ if COLAB:
     import pybullet as p
     p.connect(p.DIRECT)
     save_path = '/content/gdrive/MyDrive/Colab/' 
-    CHKPT = True
+    chkpt_freq = 5
     load_path = None
 else:
     save_path = './log/'
-    CHKPT = False
+    chkpt_freq = None
     load_path = None
 ##############################################3
 save_path = save_path + config_dict['env_name'] + '/' + config_dict['algo'] + '/'
@@ -129,7 +130,7 @@ if __name__ == "__main__":
                             config_dict['use_attention'],
                             filename=logfile, 
                             wb_log=WB_LOG,  
-                            chkpt=CHKPT,
+                            chkpt_freq=chkpt_freq,
                             path=save_path)
     elif config_dict['algo'] == 'ipg':
         agent = IPGAgent(env, seasons, success_value, 
@@ -145,7 +146,7 @@ if __name__ == "__main__":
                             config_dict['use_attention'],
                             filename=logfile, 
                             wb_log=WB_LOG,  
-                            chkpt=CHKPT,
+                            chkpt_freq=chkpt_freq,
                             path=save_path)
     elif config_dict['algo'] == 'ipg_her':
         agent = IPGHERAgent(env, seasons, success_value, 
@@ -158,10 +159,11 @@ if __name__ == "__main__":
                             config_dict['gamma'],
                             config_dict['epsilon'],
                             config_dict['lmbda'],
+                            config_dict['her_strategy'],
                             config_dict['use_attention'],
                             filename=logfile, 
                             wb_log=WB_LOG,  
-                            chkpt=CHKPT,
+                            chkpt_freq=chkpt_freq,
                             path=save_path)
     elif config_dict['algo'] == 'sac':
         agent = SACAgent(env, seasons, success_value,
@@ -177,7 +179,7 @@ if __name__ == "__main__":
                             config_dict['use_attention'],
                             filename=logfile, 
                             wb_log=WB_LOG,  
-                            chkpt=CHKPT,
+                            chkpt_freq=chkpt_freq,
                             path=save_path)
     elif config_dict['algo'] == 'sac_her':
         agent = SACHERAgent(env, seasons, success_value,
@@ -190,10 +192,11 @@ if __name__ == "__main__":
                             config_dict['gamma'],
                             config_dict['tau'],
                             config_dict['alpha'],
+                            config_dict['her_strategy'],
                             config_dict['use_attention'],
                             filename=logfile, 
                             wb_log=WB_LOG,  
-                            chkpt=CHKPT,
+                            chkpt_freq=chkpt_freq,
                             path=save_path)
     else:
         raise ValueError('Invalid Choice of Algorithm. Exiting ...')

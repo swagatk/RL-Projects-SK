@@ -20,3 +20,5 @@ wandb/
 **/tb_log
 *.log
 **/log/
+*.png
+*.gif

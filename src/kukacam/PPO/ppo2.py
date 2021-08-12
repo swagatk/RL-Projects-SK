@@ -233,7 +233,7 @@ class PPOAgent:
                     entropy_coeff=0.0, kl_target=0.01, 
                     method='clip', 
                     filename=None, wb_log=False, 
-                    chkpt=False, path='./'):
+                    chkpt_freq=None, path='./'):
         self.env = env
         self.state_size = self.env.observation_space.shape
         self.action_size = self.env.action_space.shape
@@ -259,7 +259,7 @@ class PPOAgent:
         self.WB_LOG = wb_log
         self.filename = filename
         self.path = path
-        self.chkpt = chkpt          # save checkpoints
+        self.chkpt_freq = chkpt_freq          # save checkpoints
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input

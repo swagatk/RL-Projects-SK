@@ -45,7 +45,7 @@ class CNNLSTMFeatureNetwork:
             f = tf.keras.layers.Dense(dense_layers[i], 
                                     activation="relu")(f)
 
-        model = tf.keras.Model(inputs=org_input, outputs=f, name='feature_net')
+        model = tf.keras.Model(inputs=org_input, outputs=f, name='cnn_lstm_feature_net')
         model.summary()
         keras.utils.plot_model(model, to_file='cnn_lstm_feature_net.png',
                         show_shapes=True, show_layer_names=True)
