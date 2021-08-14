@@ -245,7 +245,7 @@ class IPGHERAgent:
         self.WB_LOG = wb_log
         self.path = path            # location to store results
         self.chkpt_freq = chkpt_freq          # save checkpoints
-        self.her_strategy = her_strategy        # HER strategy: final, future, sss, ssf
+        self.her_strategy = her_strategy        # HER strategy: final, future, success
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -481,11 +481,11 @@ class IPGHERAgent:
                 state_ = ep_experience[t][0]
                 action_ = ep_experience[t][1]
                 next_state_ = ep_experience[t][3]
-                done_, reward_ = self.reward_func(next_state_, goal_)
+                done_, reward_ = self.her_reward_func_2(next_state_, goal_)
                 # add new experience to HER buffer
-                self.buffer.record(state_, action_, reward_, next_state_, done_, goal_)
+                self.buffer.record([state_, action_, reward_, next_state_, done_, goal_])
 
-    def add_her_experience(self, ep_experience, hind_goal, extract_feature=True):
+    def add_her_experience(self, ep_experience, hind_goal, extract_feature=False):
         for i in range(len(ep_experience)):
             if hind_goal is None:       # future state strategy
                 future = np.random.randint(i, len(ep_experience))
@@ -498,7 +498,7 @@ class IPGHERAgent:
             next_state_ = ep_experience[i][3]
 
             if extract_feature: # reward is computed on extracted features
-                done_, reward_ = self.her_reward_func_1(next_state_, goal_)        # testing
+                done_, reward_ = self.her_reward_func_1(next_state_, goal_)        
             else:               # reward is computed using image array directly
                 done_, reward_ = self.her_reward_func_2(next_state_, goal_)
 
@@ -580,9 +580,8 @@ class IPGHERAgent:
 
                     # Add hindsight experience to the buffer
                     # in this case, use last state as the goal_state
-                    # here ep_exp is cleared at the end of each episode.
-                    # which makes sense
-                    self.add_her_experience(ep_experience, hind_goal, extract_feature=True)
+                    # here ep_experience buffer is cleared at the end of each episode.
+                    self.add_her_experience(ep_experience, hind_goal, extract_feature=False)
                     # clear the local experience buffer
                     ep_experience = []
 
@@ -692,8 +691,10 @@ class IPGHERAgent:
 class IPGHERAgent2:
     def __init__(self, state_size, action_size, action_upper_bound, 
                  epochs, batch_size, buffer_capacity, 
-                 lr_a, lr_c, epsilon,
-                 gamma, lmbda, use_attention=False):
+                 lr_a, lr_c, epsilon, gamma, lmbda, 
+                 her_strategy='future',
+                 use_attention=False,
+                 filename=None, wb_log=False, chkpt_freq=None, path='./'):
         self.state_size = state_size
         self.action_size = action_size 
         self.goal_size = state_size
@@ -708,6 +709,12 @@ class IPGHERAgent2:
         self.lmbda = lmbda
         self.use_attention = use_attention
         self.thr = 0.3          # threshold similarity between state & goal
+        self.her_strategy=her_strategy
+        self.WB_LOG = wb_log
+        self.path = path
+        self.chkpt_freq = chkpt_freq
+        self.episodes = 0                   # global episode count
+        self.time_steps = 0                 # global time_steps
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -786,13 +793,13 @@ class IPGHERAgent2:
         adv_bar = y * x         # check this
         return adv_bar
 
-    def reward_func(self, state, goal):
+    def her_reward_func_2(self, state, goal):
         good_done = np.linalg.norm(state - goal) <= self.thr
         reward = 1 if good_done else 0
         return good_done, reward
 
     # implements on-policy & off-policy training
-    def replay(self, states, actions, rewards, next_states, dones, goals):
+    def train(self, states, actions, rewards, next_states, dones, goals):
         n_split = len(rewards) // self.batch_size
 
         # use this if you are using tf.split
@@ -900,9 +907,9 @@ class IPGHERAgent2:
                 state_ = ep_experience[t][0]
                 action_ = ep_experience[t][1]
                 next_state_ = ep_experience[t][3]
-                done_, reward_ = self.reward_func(next_state_, goal_)
+                done_, reward_ = self.her_reward_func_2(next_state_, goal_)
                 # add new experience to HER buffer
-                self.buffer.record(state_, action_, reward_, next_state_, done_, goal_)
+                self.buffer.record([state_, action_, reward_, next_state_, done_, goal_])
 
     def add_her_experience(self, ep_experience, hind_goal):
         for i in range(len(ep_experience)):
@@ -911,17 +918,20 @@ class IPGHERAgent2:
                 goal_ = ep_experience[future][3]
             else:
                 goal_ = hind_goal
+
             state_ = ep_experience[i][0]
             action_ = ep_experience[i][1]
             next_state_ = ep_experience[i][3]
             current_goal = ep_experience[i][5]
-            if self.use_mujoco:
-                done_ = np.array_equal(current_goal, goal_)
-                reward_ = 1 if done_ else 0
-            else:
-                done_, reward_ = self.reward_func(next_state_, goal_)
+
+            # if self.use_mujoco:
+            #     done_ = np.array_equal(current_goal, goal_)
+            #     reward_ = 1 if done_ else 0
+            # else:
+            done_, reward_ = self.her_reward_func_2(next_state_, goal_)
+
             # add new experience to the main buffer
-            self.buffer.record(state_, action_, reward_, next_state_, done_, goal_)
+            self.buffer.record([state_, action_, reward_, next_state_, done_, goal_])
 
     def save_model(self, save_path):
         actor_file = save_path + 'ipg_actor_wts.h5'

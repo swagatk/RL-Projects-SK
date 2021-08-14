@@ -1,3 +1,7 @@
+"""
+Visualize Attention
+"""
+
 import tensorflow as tf
 from pybullet_envs.bullet.kuka_diverse_object_gym_env import KukaDiverseObjectEnv
 from ppo import KukaPPOAgent

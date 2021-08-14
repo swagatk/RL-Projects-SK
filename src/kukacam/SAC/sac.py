@@ -409,7 +409,7 @@ class SACAgent:
         mean_ep_reward = np.mean(ep_reward_list)
         return mean_ep_reward
 
-    def run(self):
+    def run(self, train_freq=20):
         if self.filename is not None:
             self.filename = uniquify(self.path + self.filename)
 
@@ -453,7 +453,8 @@ class SACAgent:
                     ep_lens.append(ep_len)
                     
                     # train after each episode
-                    a_loss, c_loss, alpha_loss = self.train()
+                    if self.time_steps % train_freq == 0:
+                        a_loss, c_loss, alpha_loss = self.train()
 
                     ep_actor_losses.append(a_loss)
                     ep_critic_losses.append(c_loss)

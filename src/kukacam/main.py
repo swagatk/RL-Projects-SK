@@ -68,9 +68,9 @@ config_dict = dict(
     tau = 0.995,                # polyak averaging factor
     alpha = 0.2,                # Entropy Coefficient   required in SAC
     use_attention = True,      # enable/disable attention model
-    algo = 'ipg_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
+    algo = 'ipg',               # choices: ppo, sac, ipg, sac_her, ipg_her
     env_name = 'kuka',          # environment name
-    her_strategy = 'success'        # HER strategy: final, future, success 
+    her_strategy = 'future'        # HER strategy: final, future, success 
 )
 
 ####################################3
