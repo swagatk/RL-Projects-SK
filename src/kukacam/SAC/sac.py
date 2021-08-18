@@ -218,8 +218,8 @@ class SACCritic:
 class SACAgent:
     def __init__(self, env, SEASONS, success_value, epochs,
                  training_batch, batch_size, buffer_capacity, lr_a=0.0003, lr_c=0.0003, 
-                 gamma=0.99, tau=0.995, alpha=0.2, use_attention=False, 
-                 filename=None, wb_log=False, chkpt=False, path='./'):
+                 gamma=0.99, tau=0.995, alpha=0.2, use_attention=None, 
+                 filename=None, wb_log=False, chkpt_freq=None, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
         self.state_size = self.env.observation_space.shape
@@ -240,9 +240,8 @@ class SACAgent:
         self.filename = filename
         self.WB_LOG = wb_log
         self.path = path
-        self.time_steps = 0                 # total number of training steps
         self.episodes = 0                   # total number of episodes
-        self.chkpt = chkpt                  # save chkpts
+        self.chkpt_freq = chkpt_freq                  # save chkpts
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -251,17 +250,15 @@ class SACAgent:
         else:
             raise ValueError("Input can be a vector or an image")
 
-        # Select a suitable feature extractor
-        if self.use_attention and self.image_input:   # attention + image input
+        # extract features from input images
+        if self.image_input:        # input is an image
             print('Currently Attention handles only image input')
-            self.feature = AttentionFeatureNetwork(self.state_size, lr_a)
-        elif self.use_attention is False and self.image_input is True:  # image input
-            print('You have selected an image input')
-            self.feature = FeatureNetwork(self.state_size, lr_a)
+            self.feature = FeatureNetwork(self.state_size, self.use_attention, self.lr_a)
         else:       # non-image input
             print('You have selected a non-image input.')
             self.feature = None
 
+        # Actor network
         self.actor = SACActor(self.state_size, self.action_size, self.upper_bound,
                               self.lr_a, self.feature)
 
@@ -341,8 +338,6 @@ class SACAgent:
     def train(self, CRIT_T2=True):
         critic_losses, actor_losses, alpha_losses = [], [], []
         for epoch in range(self.epochs):
-            # increment global step counter
-            self.time_steps += 1
             # sample a minibatch from the replay buffer
             states, actions, rewards, next_states, dones = self.buffer.sample()
 
@@ -453,19 +448,20 @@ class SACAgent:
                     ep_lens.append(ep_len)
                     
                     # train after each episode
-                    if self.time_steps % train_freq == 0:
+                    if self.episodes % train_freq == 0:
                         a_loss, c_loss, alpha_loss = self.train()
+                        ep_actor_losses.append(a_loss)
+                        ep_critic_losses.append(c_loss)
 
-                    ep_actor_losses.append(a_loss)
-                    ep_critic_losses.append(c_loss)
+                        if self.WB_LOG:
+                            wandb.log({'ep_actor_loss' : a_loss,
+                            'ep_critic_loss' : c_loss,
+                            'ep_alpha_loss' : alpha_loss})
 
                     if self.WB_LOG:
-                        wandb.log({'time_steps' : self.time_steps,
+                        wandb.log({
                             'Episodes' : self.episodes, 
                             'mean_ep_score': np.mean(ep_scores),
-                            'ep_actor_loss' : a_loss,
-                            'ep_critic_loss' : c_loss,
-                            'ep_alpha_loss' : alpha_loss,
                             'mean_ep_len' : np.mean(ep_lens)})
                     
                     # prepare for next episode
@@ -505,18 +501,19 @@ class SACAgent:
                             'Mean episode length' : mean_ep_len,
                             'val_score' : val_score,
                             'mean_val_score' : mean_val_score,
+                            'ep_cnt' : ep_cnt,
                             'Season' : s})
 
-            if self.chkpt:
-                chkpt_path = self.path + 'chkpt/'
+            if self.chkpt_freq is not None and s % self.chkpt_freq == 0:
+                chkpt_path = self.path + 'chkpt_{}/'.format(s)
                 os.makedirs(chkpt_path, exist_ok=True)
                 self.save_model(chkpt_path)
 
             if self.filename is not None:
                 with open(self.filename, 'a') as file:
                     file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
-                            .format(s, self.episodes, self.time_steps, mean_ep_len,
-                                    s_score, mean_s_score, mean_actor_loss, mean_critic_loss, alpha_loss,
+                            .format(s, self.episodes, mean_ep_len,
+                                    s_score, mean_s_score, ep_cnt, mean_actor_loss, mean_critic_loss, alpha_loss,
                                     val_score, mean_val_score))
 
             if self.success_value is not None:

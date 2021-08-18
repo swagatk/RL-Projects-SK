@@ -67,10 +67,11 @@ config_dict = dict(
     lmbda = 0.7,  # 0.9         # required for GAE in PPO
     tau = 0.995,                # polyak averaging factor
     alpha = 0.2,                # Entropy Coefficient   required in SAC
-    use_attention = True,      # enable/disable attention model
-    algo = 'ipg',               # choices: ppo, sac, ipg, sac_her, ipg_her
+    #use_attention = {'type': 'luong'},      # enable/disable attention model
+    use_attention = None, 
+    algo = 'sac',               # choices: ppo, sac, ipg, sac_her, ipg_her
     env_name = 'kuka',          # environment name
-    her_strategy = 'future'        # HER strategy: final, future, success 
+    her_strategy = 'success',        # HER strategy: final, future, success 
 )
 
 ####################################3
@@ -90,12 +91,12 @@ if COLAB:
     load_path = None
 else:
     save_path = './log/'
-    chkpt_freq = None
+    chkpt_freq = None # 10         # wrt seasons
     load_path = None
 ##############################################3
 save_path = save_path + config_dict['env_name'] + '/' + config_dict['algo'] + '/'
-#current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-current_time = datetime.datetime.now().strftime("%Y%m%d")
+current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+#current_time = datetime.datetime.now().strftime("%Y%m%d")
 save_path = save_path + current_time + '/'
 logfile = config_dict['env_name'] + '_' + config_dict['algo'] + '.txt'
 ###########################################

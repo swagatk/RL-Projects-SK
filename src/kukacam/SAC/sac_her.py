@@ -241,7 +241,6 @@ class SACHERAgent:
 
         self.seasons = seasons
         self.episodes = 0               # total episode count
-        self.time_steps = 0             # total time steps
         self.seasons = seasons
         self.success_value = success_value
         self.lr_a = lr_a
@@ -365,9 +364,6 @@ class SACHERAgent:
     def train(self, CRIT_T2=True):
         critic_losses, actor_losses, alpha_losses = [], [], []
         for epoch in range(self.epochs):
-
-            # increment global step counter
-            self.time_steps += 1
 
             # sample a minibatch from the replay buffer
             states, actions, rewards, next_states, dones, goals = self.buffer.sample()
@@ -509,19 +505,22 @@ class SACHERAgent:
                     ep_experience = [] # clear temporary buffer
 
                     # off-policy training after each episode
-                    if self.time_steps % train_freq:
+                    if self.episodes % train_freq:
                         a_loss, c_loss, alpha_loss = self.train()
 
-                    ep_actor_losses.append(a_loss)
-                    ep_critic_losses.append(c_loss)
+                        ep_actor_losses.append(a_loss)
+                        ep_critic_losses.append(c_loss)
+
+                        if self.WB_LOG:
+                            wandb.log({
+                            'ep_actor_loss' : a_loss,
+                            'ep_critic_loss' : c_loss,
+                            'ep_alpha_loss' : alpha_loss})
 
                     if self.WB_LOG:
                         wandb.log({'time_steps' : self.time_steps,
                             'Episodes' : self.episodes, 
                             'mean_ep_score': np.mean(ep_scores),
-                            'ep_actor_loss' : a_loss,
-                            'ep_critic_loss' : c_loss,
-                            'ep_alpha_loss' : alpha_loss,
                             'mean_ep_len' : np.mean(ep_lens)})
                     
                     # prepare for next episode
@@ -573,7 +572,7 @@ class SACHERAgent:
             if self.filename is not None:
                 with open(self.filename, 'a') as file:
                     file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
-                            .format(s, self.time_steps, self.episodes, mean_ep_len,
+                            .format(s, self.episodes, ep_cnt, mean_ep_len,
                                     s_score, mean_s_score, mean_actor_loss, mean_critic_loss, alpha_loss,
                                     val_score, mean_val_score))
 

@@ -17,10 +17,10 @@ import sys
 sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 
 # Local imports
-from PPO.ppo_lstm import PPOAgent
-# from PPO.ppo2 import PPOAgent
+from PPO.ppo2 import PPOAgent
 from IPG.ipg import IPGAgent
-from IPG.ipg_her import IPGHERAgent
+#from IPG.ipg_her import IPGHERAgent
+from IPG.ipg_her_stack import IPGHERAgent
 from SAC.sac import SACAgent
 from SAC.sac_her import SACHERAgent
 from common.TimeLimitWrapper import TimeLimitWrapper
@@ -68,9 +68,12 @@ config_dict = dict(
     lmbda = 0.7,  # 0.9         # required for GAE in PPO
     tau = 0.995,                # polyak averaging factor
     alpha = 0.2,                # Entropy Coefficient   required in SAC
-    use_attention = False,      # enable/disable attention model
-    algo = 'ppo',               # choices: ppo, sac, ipg, sac_her, ipg_her
+    #use_attention = {'type': 'luong'},      # enable/disable attention model
+    use_attention = None, 
+    algo = 'ipg_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
     env_name = 'kuka',          # environment name
+    her_strategy = 'success',        # HER strategy: final, future, success 
+    use_lstm = {'stack_size': 7}     # use CNN-LSTM arch for feature network
 )
 
 ####################################3
@@ -78,7 +81,7 @@ config_dict = dict(
 #########################################3
 seasons = 35 
 COLAB = False
-WB_LOG = False
+WB_LOG = True
 success_value = None 
 ############################
 # Google Colab Settings
@@ -86,16 +89,16 @@ if COLAB:
     import pybullet as p
     p.connect(p.DIRECT)
     save_path = '/content/gdrive/MyDrive/Colab/' 
-    CHKPT = True
+    chkpt_freq = 5
     load_path = None
 else:
     save_path = './log/'
-    CHKPT = False
+    chkpt_freq = None # 10         # wrt seasons
     load_path = None
 ##############################################3
 save_path = save_path + config_dict['env_name'] + '/' + config_dict['algo'] + '/'
-#current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-current_time = datetime.datetime.now().strftime("%Y%m%d")
+current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+#current_time = datetime.datetime.now().strftime("%Y%m%d")
 save_path = save_path + current_time + '/'
 logfile = config_dict['env_name'] + '_' + config_dict['algo'] + '.txt'
 ###########################################
@@ -106,7 +109,6 @@ if WB_LOG:
     wandb.login()
     wandb.init(project='kukacam', config=config_dict)
 #######################################################33
-
 #################################3
 if __name__ == "__main__":
 
@@ -131,7 +133,7 @@ if __name__ == "__main__":
                             config_dict['use_attention'],
                             filename=logfile, 
                             wb_log=WB_LOG,  
-                            chkpt=CHKPT,
+                            chkpt_freq=chkpt_freq,
                             path=save_path)
     elif config_dict['algo'] == 'ipg':
         agent = IPGAgent(env, seasons, success_value, 
@@ -147,7 +149,7 @@ if __name__ == "__main__":
                             config_dict['use_attention'],
                             filename=logfile, 
                             wb_log=WB_LOG,  
-                            chkpt=CHKPT,
+                            chkpt_freq=chkpt_freq,
                             path=save_path)
     elif config_dict['algo'] == 'ipg_her':
         agent = IPGHERAgent(env, seasons, success_value, 
@@ -160,10 +162,12 @@ if __name__ == "__main__":
                             config_dict['gamma'],
                             config_dict['epsilon'],
                             config_dict['lmbda'],
+                            config_dict['her_strategy'],
                             config_dict['use_attention'],
+                            config_dict['use_lstm'],
                             filename=logfile, 
                             wb_log=WB_LOG,  
-                            chkpt=CHKPT,
+                            chkpt_freq=chkpt_freq,
                             path=save_path)
     elif config_dict['algo'] == 'sac':
         agent = SACAgent(env, seasons, success_value,
@@ -179,7 +183,7 @@ if __name__ == "__main__":
                             config_dict['use_attention'],
                             filename=logfile, 
                             wb_log=WB_LOG,  
-                            chkpt=CHKPT,
+                            chkpt_freq=chkpt_freq,
                             path=save_path)
     elif config_dict['algo'] == 'sac_her':
         agent = SACHERAgent(env, seasons, success_value,
@@ -192,10 +196,11 @@ if __name__ == "__main__":
                             config_dict['gamma'],
                             config_dict['tau'],
                             config_dict['alpha'],
+                            config_dict['her_strategy'],
                             config_dict['use_attention'],
                             filename=logfile, 
                             wb_log=WB_LOG,  
-                            chkpt=CHKPT,
+                            chkpt_freq=chkpt_freq,
                             path=save_path)
     else:
         raise ValueError('Invalid Choice of Algorithm. Exiting ...')

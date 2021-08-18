@@ -5,6 +5,41 @@ import matplotlib.pyplot as plt
 import cv2
 
 
+class TimeLimitWrapper(gym.Wrapper):
+  """
+  :param env: (gym.env) gym environment that will be wrapped
+  :param max_steps: (int) max number of steps per episode
+  """
+  def __init__(self, env, max_steps=100):
+    # call the parent constructor, so we can access self.env later
+    super(TimeLimitWrapper, self).__init__(env)
+    self.max_steps = max_steps
+    # counter of steps per episode
+    self.current_step = 0
+
+  def reset(self):
+    """
+    Reset the environment
+    """
+    self.current_step = 0
+    return self.env.reset()
+
+  def step(self, action):
+    """
+    :param action: ([float] or int) Action taken by the agent
+    :return: (np.ndarray, float, bool, dict) observation, reward, done and info
+    """
+    self.current_step += 1
+    obs, reward, done, info = self.env.step(action)
+    if self.current_step >= self.max_steps:
+      done = True
+      # update info dict to signal that the limit was exceeded
+      info['time_limit_reached'] = True
+    return obs, reward, done, info
+
+
+#################################################3
+
 class ObsvnResizeTimeLimitWrapper(gym.Wrapper):
     """
     :param env: (gym.Env)   Gym environment that will be wrapped
@@ -52,11 +87,18 @@ class ObsvnResizeTimeLimitWrapper(gym.Wrapper):
         info['time_limit_reached'] = True
         return new_obs, reward, done, info
 
-
+#######################################
 if __name__ == "__main__":
+
+    TIME_LIMIT = True    
+    OBSV_RESIZE = False
+
     # Test the wrapper
     env = RacecarZEDGymEnv(isDiscrete=False, renders=False)
-    env = ObsvnResizeTimeLimitWrapper(env, shape=40, max_steps=20)
+    if OBSV_RESIZE: 
+        env = ObsvnResizeTimeLimitWrapper(env, shape=40, max_steps=20)
+    elif TIME_LIMIT:
+        env = TimeLimitWrapper(env, max_steps=20)
 
     print('observation shape:', env.observation_space.shape)
 

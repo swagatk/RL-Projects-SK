@@ -89,7 +89,6 @@ class IPGActor:
             # off-policy ppo loss
             a_batch = tf.squeeze(self.model(s_batch))       # action estimate
             q_values = critic.model([s_batch, a_batch])     # q estimates
-            # sum_q_values = K.sum(K.mean(q_values))          # check the dimensions
             sum_q_values = tf.reduce_sum(tf.reduce_mean(q_values))
             off_loss = (b / len(s_batch)) * sum_q_values
             actor_loss = -tf.reduce_sum(ppo_loss + off_loss)
@@ -516,6 +515,7 @@ class IPGAgent:
                             'Mean episode length' : mean_ep_len,
                             'val_score': val_score, 
                             'mean_val_score': mean_val_score,
+                            'ep_per_season': ep_cnt,
                             'Season' : s})
                 
             if self.chkpt_freq is not None and s % self.chkpt_freq == 0:
