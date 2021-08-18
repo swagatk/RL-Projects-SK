@@ -232,7 +232,7 @@ class SACHERCritic:
 class SACHERAgent:
     def __init__(self, env, seasons, success_value, epochs,
                  training_batch, batch_size, buffer_capacity, lr_a=0.0003, lr_c=0.0003,
-                 gamma=0.99, tau=0.995, alpha=0.2, her_strategy='future', use_attention=False, 
+                 gamma=0.99, tau=0.995, alpha=0.2, her_strategy='future', use_attention=None, 
                  filename=None, wb_log=False, chkpt_freq=None, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
@@ -266,17 +266,17 @@ class SACHERAgent:
         else:
             raise ValueError("Input can be a vector or an image")
 
-        # Select a suitable feature extractor
-        if self.use_attention and self.image_input:   # attention + image input
+        
+        # extract features from input images
+        if self.image_input:        # input is an image
             print('Currently Attention handles only image input')
-            self.feature = AttentionFeatureNetwork(self.state_size, lr_a)
-        elif self.use_attention is False and self.image_input is True:  # image input
-            print('You have selected an image input')
-            self.feature = FeatureNetwork(self.state_size, lr_a)
+            self.feature = FeatureNetwork(self.state_size, self.use_attention, self.lr_a)
         else:       # non-image input
             print('You have selected a non-image input.')
             self.feature = None
 
+
+        # Create an actor network
         self.actor = SACHERActor(self.state_size, self.action_size, self.upper_bound,
                               self.lr_a, self.feature)
 
@@ -501,7 +501,7 @@ class SACHERAgent:
                     else:
                         raise ValueError('Invalid choice for HER strategy. Exiting ..')
 
-                    self.add_her_experience(ep_experience, hind_goal, extract_feature=True)
+                    self.add_her_experience(ep_experience, hind_goal, extract_feature=False)
                     ep_experience = [] # clear temporary buffer
 
                     # off-policy training after each episode
@@ -518,7 +518,7 @@ class SACHERAgent:
                             'ep_alpha_loss' : alpha_loss})
 
                     if self.WB_LOG:
-                        wandb.log({'time_steps' : self.time_steps,
+                        wandb.log({
                             'Episodes' : self.episodes, 
                             'mean_ep_score': np.mean(ep_scores),
                             'mean_ep_len' : np.mean(ep_lens)})
@@ -605,7 +605,7 @@ class SACHERAgent:
         reward = 1 if good_done else 0
         return good_done, reward
 
-    def add_her_experience(self, ep_experience, hind_goal, extract_feature=True):
+    def add_her_experience(self, ep_experience, hind_goal, extract_feature=False):
         for i in range(len(ep_experience)):
             if hind_goal is None:   # future state strategy
                 future = np.random.randint(i, len(ep_experience))

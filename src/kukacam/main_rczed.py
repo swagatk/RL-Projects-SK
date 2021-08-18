@@ -1,12 +1,4 @@
-""" 
-Main python file for implementing following algorithms:
-- SAC
-- SAC + HER
-- PPO
-- IPG
-- IPG + HER
-
-Environment: KUKADiverseObjectEnv
+""" main for running ppo and ipg agents 
 
 Updates:
 18/08/2021: This is main file for kuka environment.
@@ -83,9 +75,9 @@ config_dict = dict(
     alpha = 0.2,                # Entropy Coefficient   required in SAC
     #use_attention = {'type': 'luong'},      # enable/disable attention model
     use_attention = None, 
-    algo = 'sac_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
+    algo = 'sac',               # choices: ppo, sac, ipg, sac_her, ipg_her
     env_name = 'kuka',          # environment name
-    her_strategy = 'future',        # HER strategy: final, future, success 
+    her_strategy = 'success',        # HER strategy: final, future, success 
 )
 
 ####################################3
