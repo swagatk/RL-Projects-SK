@@ -302,11 +302,6 @@ class IPGHERAgent:
     def prepare_input(self, img_buffer):
         # input : tensor of size (-1, h, w, c)
 
-        if self.cnn_lstm is not None:
-            assert len(img_buffer) <= self.cnn_lstm['stack_size'], "length of image buffer must be less than the stack_size"
-        else:
-            raise ValueError('This routine is applicable only for CNN-LSTM feature network')
-        
         temp_list = []
         for i in range(self.cnn_lstm['stack_size']):
             if i < len(img_buffer):

@@ -505,7 +505,7 @@ class SACHERAgent:
                     ep_experience = [] # clear temporary buffer
 
                     # off-policy training after each episode
-                    if self.episodes % train_freq:
+                    if self.episodes % train_freq == 0:
                         a_loss, c_loss, alpha_loss = self.train()
 
                         ep_actor_losses.append(a_loss)

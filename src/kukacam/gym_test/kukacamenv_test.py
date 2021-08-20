@@ -26,11 +26,11 @@ for episode in range(2):
         next_obs, reward, done, info = env.step(action)
         ep_reward += reward
         t += 1
+        obs = next_obs
         if done:
             step_cnt.append(t)
             print('Episode: {}, Steps: {}, Score: {}'.format(episode, t, reward))
             break
-        obs = next_obs
 
 env.close()
 plt.plot(step_cnt)

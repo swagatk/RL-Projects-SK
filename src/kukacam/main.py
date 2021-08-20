@@ -81,9 +81,10 @@ config_dict = dict(
     lmbda = 0.7,  # 0.9         # required for GAE in PPO
     tau = 0.995,                # polyak averaging factor
     alpha = 0.2,                # Entropy Coefficient   required in SAC
-    #use_attention = {'type': 'luong'},      # enable/disable attention model
-    use_attention = None, 
-    algo = 'sac_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
+    use_attention = {'type': 'luong',   # type: luong, bahdanau
+                     'arch': 0},        # arch: 0, 1, 2, 3
+    #use_attention = None, 
+    algo = 'ipg_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
     env_name = 'kuka',          # environment name
     her_strategy = 'future',        # HER strategy: final, future, success 
 )
@@ -105,7 +106,7 @@ if COLAB:
     load_path = None
 else:
     save_path = './log/'
-    chkpt_freq = None # 10         # wrt seasons
+    chkpt_freq = 10         # wrt seasons
     load_path = None
 ##############################################3
 save_path = save_path + config_dict['env_name'] + '/' + config_dict['algo'] + '/'

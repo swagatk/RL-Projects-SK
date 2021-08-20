@@ -229,7 +229,6 @@ class IPGHERAgent:
         self.upper_bound = self.env.action_space.high
         self.SEASONS = SEASONS
         self.episodes = 0       # global episode count
-        self.time_steps = 0     # global step count
         self.success_value = success_value
         self.lr_a = lr_a
         self.lr_c = lr_c
@@ -398,8 +397,6 @@ class IPGHERAgent:
         c_loss_list = []
         np.random.shuffle(indexes)
         for _ in range(self.epochs):
-            # increment global counter
-            self.time_steps += 1
 
             # sample a minibatch from replay buffer
             s_batch, a_batch, r_batch, ns_batch, d_batch, g_batch = self.buffer.sample()
@@ -532,7 +529,6 @@ class IPGHERAgent:
             ep_len = 0          # length of each episode
             done = False
             for _ in range(self.training_batch):    # time steps
-                self.feature.img_buffer.append(state)
                 action = self.policy(state, goal)
                 next_state, reward, done, _ = self.env.step(action)
                 next_state = np.asarray(next_state, dtype=np.float32) / 255.0
@@ -588,7 +584,7 @@ class IPGHERAgent:
                     ep_lens.append(ep_len)
 
                     if self.WB_LOG:
-                        wandb.log({'time_steps' : self.time_steps,
+                        wandb.log({
                             'Episodes' : self.episodes, 
                             'mean_ep_score': np.mean(ep_scores),
                             'mean_ep_len' : np.mean(ep_lens)})
@@ -710,7 +706,6 @@ class IPGHERAgent2:
         self.path = path
         self.chkpt_freq = chkpt_freq
         self.episodes = 0                   # global episode count
-        self.time_steps = 0                 # global time_steps
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input

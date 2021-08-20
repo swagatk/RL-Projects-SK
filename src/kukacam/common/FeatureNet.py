@@ -34,17 +34,34 @@ class FeatureNetwork:
                                 padding="SAME", activation="relu")(x) 
 
             if self.attn is not None: 
+                # Attention types
                 if self.attn['type'] == 'luong':
-                    x = tf.keras.layers.Attention()([x, x])
+                    attn = tf.keras.layers.Attention()([x, x])
                 elif self.attn['type'] == 'bahdanau':
-                    x = tf.keras.layers.AdditiveAttention()([x, x])
+                    attn = tf.keras.layers.AdditiveAttention()([x, x])
                 else:
                     raise ValueError('Wrong type of attention. Exiting ...')
 
+                # Attention architectures 
+                if self.attn['arch'] == 0: 
+                    x = attn
+                elif self.attn['arch'] == 1: 
+                    x = tf.keras.layers.Add()([attn, x])
+                elif self.attn['arch'] == 2:
+                    x = tf.keras.layers.Multiply()([attn, x])
+                elif self.attn['arch'] == 3:
+                    x = tf.keras.layers.Multiply()([attn, x])
+                    x = tf.keras.activations.sigmoid(x)
+                else:
+                    raise ValueError('Wrong choice for attention architecture. Exiting ..')
+
+            # Apply Batch normalization
             x = tf.keras.layers.BatchNormalization()(x)
 
+        # Flatten the output
         x = tf.keras.layers.Flatten()(x)
 
+        # Apply Dense layers
         for i in range(len(dense_layers)):
             x = tf.keras.layers.Dense(dense_layers[i], activation="relu")(x)
 
@@ -65,11 +82,24 @@ class FeatureNetwork:
 
             if self.attn is not None: 
                 if self.attn['type'] == 'luong':
-                    x = tf.keras.layers.Attention()([x, x])
+                    attn = tf.keras.layers.Attention()([x, x])
                 elif self.attn['type'] == 'bahdanau':
-                    x = tf.keras.layers.AdditiveAttention()([x, x])
+                    attn = tf.keras.layers.AdditiveAttention()([x, x])
                 else:
                     raise ValueError('Wrong type of attention. Exiting ...')
+
+                # Attention architectures 
+                if self.attn['arch'] == 0: 
+                    x = attn
+                elif self.attn['arch'] == 1: 
+                    x = tf.keras.layers.Add()([attn, x])
+                elif self.attn['arch'] == 2:
+                    x = tf.keras.layers.Multiply()([attn, x])
+                elif self.attn['arch'] == 3:
+                    x = tf.keras.layers.Multiply()([attn, x])
+                    x = tf.keras.activations.sigmoid(x)
+                else:
+                    raise ValueError('Wrong choice for attention architecture. Exiting ..')
 
             x = tf.keras.layers.MaxPooling2D(pool_size=(2, 2), strides=None, 
                         padding="SAME")(x)
@@ -101,11 +131,15 @@ attn_type: 'bahdanau', 'luong'
     - 'luong': keras.layers.Attention()
 
 Architectures:
-arch = 1: attention(x) in-between conv layers
-arch = 2: x + attention(x) in-between conv layers
-arch = 3: x * attention(x) in-between conv layers
+arch = 0: attention(x) in-between conv layers
+arch = 1: x + attention(x) in-between conv layers
+arch = 2: x * attention(x) in-between conv layers
+arch = 3: sigmoid ( x * attention (x)) between conv layers
 
 x is the output from previous conv layer
+
+This class is now merged with the FeatureNetwork class and may be removed.
+
 '''
 
 

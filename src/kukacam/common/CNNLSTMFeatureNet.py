@@ -11,11 +11,11 @@ from tensorflow.keras import activations, layers
 
 class CNNLSTMFeatureNetwork:
     def __init__(self, state_size: tuple,  attn: dict, learning_rate=1e-3) -> None:
-        self.state_size = state_size    # shape: 5 dim: -1, stack_size, h, w, c
+        self.state_size = state_size    # shape: 4 dim: stack_size, h, w, c
         self.lr = learning_rate
         self.step_counter = 0
         self.attn = attn
-        self.stack_size = self.state_size[1]  
+        self.stack_size = self.state_size[0]    # verify this ... 
 
         # create model
         self.model = self._build_net()
