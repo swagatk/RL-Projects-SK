@@ -7,7 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 # define the problem here
-PROB = 'racecar'
+PROB = 'attn'
 
 if PROB == 'fetch':
     # Performance Comparison:
@@ -52,12 +52,14 @@ elif PROB == 'attn':    # Attention Ablation
     df5["method"] = 'Bahdanau Arch 3'
     df6 = pd.read_csv(file7, sep='\t', names=['season', 'score', 'mean_score', 'a_loss', 'c_loss'])
     df6["method"] = 'Luong Arch 3'
-    df7 = pd.read_csv(file5, sep='\t', names=['season', 'score', 'mean_score', 'a_loss', 'c_loss'])
-    df7["method"] = 'Bahdanau Arch 4'
+    # df7 = pd.read_csv(file5, sep='\t', names=['season', 'score', 'mean_score', 'a_loss', 'c_loss'])
+    # df7["method"] = 'Bahdanau Arch 4'
     df8 = pd.read_csv(file6, sep='\t', names=['season', 'score', 'mean_score', 'a_loss', 'c_loss'])
-    df8["method"] = 'Luong Arch 3_2'
+    #df8["method"] = 'Luong Arch 3_2'
+    df8["method"] = 'Luong Arch 4'
 
-    df = pd.concat([df1, df2, df3, df4, df5, df6, df7, df8]).reset_index(drop=True)
+    #df = pd.concat([df1, df2, df3, df4, df5, df6, df7, df8]).reset_index(drop=True)
+    df = pd.concat([df1, df2, df3, df4, df5, df6, df8]).reset_index(drop=True)
 
     plot_title = 'KukaDiverseObject'
 
@@ -111,7 +113,7 @@ sb.set_theme()
 #sb.set_style('whitegrid')
 sb.set_style('darkgrid')
 g1 = sb.relplot(x='season', y='mean_score', hue='method', kind='line', data=df)
-# g1._legend.set_bbox_to_anchor([0.9, 0.3])
+g1._legend.set_bbox_to_anchor([0.9, 0.33])
 g1.set(title=plot_title)
 trunc_df_melted = trunc_df.melt(id_vars=['season', 'method'], value_vars=['a_loss', 'c_loss'],\
                                 var_name='loss_type', value_name='loss_value')

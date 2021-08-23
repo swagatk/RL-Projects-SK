@@ -1,4 +1,12 @@
-""" main for running ppo and ipg agents 
+"""
+Main python file for implementing following algorithms:
+- SAC
+- SAC + HER
+- PPO
+- IPG
+- IPG + HER
+
+Environment: RaceCarZEDGymEnv
 
 Updates:
 18/08/2021: This is main file for kuka environment.

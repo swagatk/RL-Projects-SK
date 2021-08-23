@@ -1,4 +1,18 @@
-""" main for running ppo and ipg agents """
+""" 
+Main python file for implementing following algorithms:
+- SAC
+- SAC + HER
+- PPO
+- IPG
+- IPG + HER
+
+Environment: KUKADiverseObjectEnv
+
+Updates:
+18/08/2021: This is main file for kuka environment.
+"""
+
+
 
 # Imports
 from numpy.lib.npyio import save
@@ -19,7 +33,6 @@ sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 # Local imports
 from PPO.ppo2 import PPOAgent
 from IPG.ipg import IPGAgent
-#from IPG.ipg_her import IPGHERAgent
 from IPG.ipg_her_stack import IPGHERAgent
 from SAC.sac import SACAgent
 from SAC.sac_her import SACHERAgent
@@ -68,13 +81,14 @@ config_dict = dict(
     lmbda = 0.7,  # 0.9         # required for GAE in PPO
     tau = 0.995,                # polyak averaging factor
     alpha = 0.2,                # Entropy Coefficient   required in SAC
-    #use_attention = {'type': 'luong',
-    #                  'arch':0},      # enable/disable attention model
+    # use_attention = {'type': 'luong',   # type: luong, bahdanau
+    #                  'arch': 0},        # arch: 0, 1, 2, 3
     use_attention = None, 
     algo = 'ipg_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
     env_name = 'kuka',          # environment name
     her_strategy = 'future',        # HER strategy: final, future, success 
-    use_lstm = {'stack_size': 5}     # use CNN-LSTM arch for feature network
+    stack_size = 7,             # input stack size
+    use_lstm = False             # enable /disable LSTM
 )
 
 ####################################3
@@ -94,7 +108,7 @@ if COLAB:
     load_path = None
 else:
     save_path = './log/'
-    chkpt_freq = None # 10         # wrt seasons
+    chkpt_freq = 10         # wrt seasons
     load_path = None
 ##############################################3
 save_path = save_path + config_dict['env_name'] + '/' + config_dict['algo'] + '/'
@@ -148,7 +162,6 @@ if __name__ == "__main__":
                             config_dict['epsilon'],
                             config_dict['lmbda'],
                             config_dict['use_attention'],
-                            config_dict['use_lstm'],
                             filename=logfile, 
                             wb_log=WB_LOG,  
                             chkpt_freq=chkpt_freq,
@@ -164,6 +177,7 @@ if __name__ == "__main__":
                             config_dict['gamma'],
                             config_dict['epsilon'],
                             config_dict['lmbda'],
+                            config_dict['stack_size'],
                             config_dict['her_strategy'],
                             config_dict['use_attention'],
                             config_dict['use_lstm'],

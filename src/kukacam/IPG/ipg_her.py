@@ -613,7 +613,6 @@ class IPGHERAgent:
             mean_s_score = np.mean(s_scores)
             mean_ep_len = np.mean(ep_lens)
 
-
             # validation
             val_score = self.validate()
             val_scores.append(val_score)
@@ -647,7 +646,7 @@ class IPGHERAgent:
             if self.filename is not None:
                 with open(self.filename, 'a') as file:
                     file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
-                            .format(s, self.episodes, self.time_steps, mean_ep_len,
+                            .format(s, self.episodes, ep_cnt, mean_ep_len,
                                     s_score, mean_s_score, actor_loss, critic_loss,
                                     val_score, mean_val_score))
 

@@ -3,7 +3,12 @@ IPG + HER
 Originally contributed by Mr. Hayden Sampson
 URL: https://github.com/hayden750/DeepHEC
 
-Input frames can be stacked together.
+- I use a slightly different reward function
+- function1: add_her_experience(): adds HER experience to the buffer once at the end of each season with K=1.
+- function2: add_her_experience_with_terminal_goal() adds HER experience to the buffer after the end of each episode
+        with terminal state as the goal.
+- both of these functions have same performance. function2 is relatively better with lower variance.
+
 '''
 
 import sys
@@ -25,7 +30,8 @@ sys.path.append(current_dir)
 sys.path.append(os.path.dirname(current_dir))
 
 # Local imports
-from common.FeatureNet import CNNLSTMFeatureNetwork, FeatureNetwork, AttentionFeatureNetwork
+from common.FeatureNet import FeatureNetwork, AttentionFeatureNetwork 
+from common.CNNLSTMFeatureNet import CNNLSTMFeatureNetwork
 from common.buffer import HERBuffer
 from common.utils import uniquify
 
@@ -214,10 +220,9 @@ class IPGHERAgent:
     def __init__(self, env, SEASONS, success_value, 
                  epochs, training_batch, batch_size, buffer_capacity, 
                  lr_a, lr_c, gamma, epsilon, lmbda, 
-                 stack_size=7,
                  her_strategy='future',
                  attention=None, 
-                 use_lstm = False,
+                 use_lstm=None,
                  filename=None, wb_log=False, chkpt_freq=None, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
@@ -242,8 +247,7 @@ class IPGHERAgent:
         self.path = path            # location to store results
         self.chkpt_freq = chkpt_freq          # save checkpoints
         self.her_strategy = her_strategy        # HER strategy: final, future, success
-        self.stack_size = stack_size
-        self.use_lstm = use_lstm        # enable / disable lstm
+        self.cnn_lstm = use_lstm
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -257,14 +261,14 @@ class IPGHERAgent:
 
         # extract features from input images
         if self.image_input:        # input is an image
-            if self.stack_size > 0:
-                self.state_size = (self.stack_size, ) + self.state_size
-                self.goal_size = self.state_size
-            
-            if self.use_lstm:
-                assert self.stack_size > 0, "stack_size must be greater than 0 for lstm"
+            print('You have selected image input')
+            if self.cnn_lstm is not None:
+                print('CNN-LSTM featue Network')
+                self.state_size = (self.cnn_lstm['stack_size'], ) + self.state_size 
+                self.goal_size = self.state_size        # goal and state have same size
                 self.feature = CNNLSTMFeatureNetwork(self.state_size, self.attention, self.lr_a)
-            else:
+            else: 
+                print('Currently Attention handles only image input')
                 self.feature = FeatureNetwork(self.state_size, self.attention, self.lr_a)
         else:       # non-image input
             print('You have selected a non-image input.')
@@ -298,7 +302,7 @@ class IPGHERAgent:
     def prepare_input(self, img_buffer):
         # input : list of images of shape: (h, w, c)
         temp_list = []
-        for i in range(self.stack_size):
+        for i in range(self.cnn_lstm['stack_size']):
             if i < len(img_buffer):
                 temp_list.append(img_buffer[i])      # fill from beginning
             else:
@@ -456,33 +460,33 @@ class IPGHERAgent:
 
     # Validation routine
     def validate(self, max_eps=50):
+
         ep_reward_list = []
         for ep in range(max_eps):
 
-            if self.stack_size > 0:
+            if self.cnn_lstm is not None:
                 state_buffer = []
                 goal_buffer = []
 
-            state_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0  # convert into float array
-            goal_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
+            state = np.asarray(self.env.reset(), dtype=np.float32) / 255.0  # convert into float array
+            goal = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
 
             t = 0
             ep_reward = 0
             while True:
-                if self.stack_size > 0:
-                    state_buffer.append(state_obs)
-                    goal_buffer.append(goal_obs)
-                    state = self.prepare_input(state_buffer)
-                    goal = self.prepare_input(goal_buffer)
+                if self.cnn_lstm is not None:
+                    state_buffer.append(state)
+                    goal_buffer.append(goal)
+                    state_stack = self.prepare_input(state_buffer)
+                    goal_stack = self.prepare_input(goal_buffer)
+                    action = self.policy(state_stack, goal_stack, deterministic=True)
                 else:
-                    state = state_obs
-                    goal = goal_obs
+                    action = self.policy(state, goal, deterministic=True)
 
-                action = self.policy(state, goal, deterministic=True)
-                next_state_obs, reward, done, _ = self.env.step(action)
-                next_state_obs = np.asarray(next_state_obs, dtype=np.float32) / 255.0
+                next_obsv, reward, done, _ = self.env.step(action)
+                next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
 
-                state_obs = next_state_obs
+                state = next_state
                 ep_reward += reward
                 t += 1
                 if done:
@@ -534,19 +538,18 @@ class IPGHERAgent:
             self.filename = uniquify(self.path + self.filename)
 
         # initial state and goal
-        state_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0  # convert into float array
-        goal_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
+        state = np.asarray(self.env.reset(), dtype=np.float32) / 255.0  # convert into float array
+        goal = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
 
-        
         # store successful states
         if self.her_strategy == 'success':
             desired_goals = deque(maxlen=1000)
 
-        if self.stack_size > 0:
+        # create buffer lstm network
+        if self.cnn_lstm is not None:
             state_buffer = []
             goal_buffer = []
             next_state_buffer = []
-
 
         start = datetime.datetime.now()
         val_scores = []       # validation scores
@@ -566,46 +569,59 @@ class IPGHERAgent:
             done = False
             for _ in range(self.training_batch):    # time steps
 
-                if self.stack_size > 0:
-                    state_buffer.append(state_obs)
-                    goal_buffer.append(goal_obs)
-                    state = self.prepare_input(state_buffer)
-                    goal = self.prepare_input(goal_buffer)
-                else:
-                    state = state_obs
-                    goal = goal_obs
+                if self.cnn_lstm is not None:
+                    state_buffer.append(state)
+                    goal_buffer.append(goal)
+                    state_stack = self.prepare_input(state_buffer)  # size: (-1, stack_size, h, w, c)
+                    goal_stack = self.prepare_input(goal_buffer)
 
-                # Take an action according to its current policy
-                action = self.policy(state, goal)
+                # take action according to current policy
+                if self.cnn_lstm is not None:
+                    action = self.policy(state_stack, goal_stack)
+                else:
+                    action = self.policy(state, goal)
 
                 # obtain reward from the environment
-                next_state_obs, reward, done, _ = self.env.step(action)
-                next_state_obs = np.asarray(next_state_obs, dtype=np.float32) / 255.0
+                next_state, reward, done, _ = self.env.step(action)
+                next_state = np.asarray(next_state, dtype=np.float32) / 255.0
 
-                if self.stack_size > 0:
-                    next_state_buffer.append(next_state_obs)
-                    next_state = self.prepare_input(next_state_buffer)
-                else:
-                    next_state = next_state_obs 
-                
+                if self.cnn_lstm is not None:
+                    next_state_buffer.append(next_state)
+                    next_state_stack = self.prepare_input(next_state_buffer)
+
                 if self.her_strategy == 'success': 
                     if reward == 1:
-                        desired_goals.append([state, action, reward, next_state, done, goal])
+                        if self.cnn_lstm is not None:
+                            desired_goals.append([state_stack, action, reward, next_state_stack, done, goal_stack])
+                        else:
+                            desired_goals.append([state, action, reward, next_state, done, goal])
 
                 # this is used for on-policy training
-                states.append(state)
-                next_states.append(next_state)
+                if self.cnn_lstm is not None:
+                    states.append(state_stack)
+                    next_states.append(next_state_stack)
+                    goals.append(goal_stack)
+                else:
+                    states.append(state)
+                    next_states.append(next_state)
+                    goals.append(goal)
+
                 actions.append(action)
                 rewards.append(reward)
                 dones.append(done)
-                goals.append(goal)
 
-                # store in replay buffer for off-policy training
-                self.buffer.record([state, action, reward, next_state, done, goal])
-                # Also store in a separate buffer
-                ep_experience.append([state, action, reward, next_state, done, goal])
+                if self.cnn_lstm is not None:
+                    # store in replay buffer for off-policy training
+                    self.buffer.record([state_stack, action, reward, next_state_stack, done, goal_stack])
+                    # Also store in a separate buffer
+                    ep_experience.append([state_stack, action, reward, next_state_stack, done, goal_stack])
+                else:
+                    # store in replay buffer for off-policy training
+                    self.buffer.record([state, action, reward, next_state, done, goal])
+                    # Also store in a separate buffer
+                    ep_experience.append([state, action, reward, next_state, done, goal])
 
-                state_obs = next_state_obs
+                state = next_state      
                 ep_score += reward
                 ep_len += 1
 
@@ -645,16 +661,14 @@ class IPGHERAgent:
                             'mean_ep_len' : np.mean(ep_lens)})
 
                     # prepare for next episode
-                    state_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
-                    goal_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
+                    state = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
+                    goal = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
                     ep_len, ep_score = 0, 0
                     done = False
-
-                    if self.stack_size > 0:
-                        state_buffer = []
+                    if self.cnn_lstm is not None:       # empty the buffers
+                        state_buffer = []               
                         next_state_buffer = []
                         goal_buffer = []
-
                 # end of done block
             # end of for training_batch loop
 
@@ -671,6 +685,7 @@ class IPGHERAgent:
             s_scores.append(s_score)
             mean_s_score = np.mean(s_scores)
             mean_ep_len = np.mean(ep_lens)
+
 
             # validation
             val_score = self.validate()

@@ -18,7 +18,11 @@ class CNNLSTMFeatureNetwork:
         self.stack_size = self.state_size[0]    # verify this ... 
 
         # create model
-        self.model = self._build_net()
+        if self.attn is not None and self.attn['return_scores'] is True:
+            self.model = self._build_net2()
+        else:
+            self.model = self._build_net()
+
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
 
     def _build_net(self, conv_layers=[16, 32, 32], 
@@ -34,13 +38,27 @@ class CNNLSTMFeatureNetwork:
 
             if self.attn is not None: 
                 if self.attn['type'] == 'luong':
-                    x = tf.keras.layers.TimeDistributed(
+                    attn = tf.keras.layers.TimeDistributed(
                         tf.keras.layers.Attention())([x, x])
                 elif self.attn['type'] == 'bahdanau':
-                    x = tf.keras.layers.TimeDistributed(
+                    attn = tf.keras.layers.TimeDistributed(
                          tf.keras.layers.AdditiveAttention())([x, x])
                 else:
                     raise ValueError('Wrong type of attention. Exiting ...')
+
+            
+                # Attention architectures 
+                if self.attn['arch'] == 0: 
+                    x = attn
+                elif self.attn['arch'] == 1: 
+                    x = tf.keras.layers.Add()([attn, x])
+                elif self.attn['arch'] == 2:
+                    x = tf.keras.layers.Multiply()([attn, x])
+                elif self.attn['arch'] == 3:
+                    x = tf.keras.layers.Multiply()([attn, x])
+                    x = tf.keras.activations.sigmoid(x)
+                else:
+                    raise ValueError('Wrong choice for attention architecture. Exiting ..')
 
             x = tf.keras.layers.TimeDistributed(
                 tf.keras.layers.MaxPooling2D(pool_size=(2, 2), 
@@ -61,8 +79,73 @@ class CNNLSTMFeatureNetwork:
                         show_shapes=True, show_layer_names=True)
         return model 
 
+    
+    def _build_net2(self, conv_layers=[16, 32, 32], 
+                            dense_layers=[128, 128, 64]):
+        # return attention scores
+        if self.attn is not None:
+            attn_scores = []
+
+        org_input = tf.keras.layers.Input(shape=self.state_size)
+        x = org_input 
+        for i in range(len(conv_layers)):
+            x = tf.keras.layers.TimeDistributed(
+                    tf.keras.layers.Conv2D(conv_layers[i], 
+                            kernel_size=5, strides=2,
+                            padding="SAME", activation="relu"))(x)
+
+            if self.attn is not None: 
+                if self.attn['type'] == 'luong':
+                    attn, scores = tf.keras.layers.TimeDistributed(
+                        tf.keras.layers.Attention(return_attention_scores=True))([x, x])
+                elif self.attn['type'] == 'bahdanau':
+                    attn, scores = tf.keras.layers.TimeDistributed(
+                         tf.keras.layers.AdditiveAttention(return_attention_scores=True))([x, x])
+                else:
+                    raise ValueError('Wrong type of attention. Exiting ...')
+                
+                # store attention scores for each layer
+                attn_scores.append(scores)
+            
+                # Attention architectures 
+                if self.attn['arch'] == 0: 
+                    x = attn
+                elif self.attn['arch'] == 1: 
+                    x = tf.keras.layers.Add()([attn, x])
+                elif self.attn['arch'] == 2:
+                    x = tf.keras.layers.Multiply()([attn, x])
+                elif self.attn['arch'] == 3:
+                    x = tf.keras.layers.Multiply()([attn, x])
+                    x = tf.keras.activations.sigmoid(x)
+                else:
+                    raise ValueError('Wrong choice for attention architecture. Exiting ..')
+
+            x = tf.keras.layers.TimeDistributed(
+                tf.keras.layers.MaxPooling2D(pool_size=(2, 2), 
+                strides=None, padding="SAME"))(x)
+
+        x = tf.keras.layers.TimeDistributed(
+                tf.keras.layers.Flatten())(x)
+        x = tf.keras.layers.LSTM(self.stack_size, activation="relu", 
+                            return_sequences=False)(x)
+
+        for i in range(len(dense_layers)):
+            x = tf.keras.layers.Dense(dense_layers[i], 
+                                    activation="relu")(x)
+
+        model = tf.keras.Model(inputs=org_input, outputs=[x, attn_scores], name='cnn_lstm_feature_net')
+        model.summary()
+        keras.utils.plot_model(model, to_file='cnn_lstm_feature_net.png',
+                        show_shapes=True, show_layer_names=True)
+        return model 
+
+
     def __call__(self, state):
         # input is a tensor of shape (-1, h, w, c)
-        feature = self.model(state)
-        return feature 
+        if self.attn is not None and self.attn['return_scores'] is True:
+            feature, attn_scores = self.model(state)
+            return feature, attn_scores
+        else:
+            feature = self.model(state)
+            return feature 
 
