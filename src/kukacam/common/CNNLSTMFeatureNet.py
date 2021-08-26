@@ -19,7 +19,7 @@ class CNNLSTMFeatureNetwork:
 
         # create model
         if self.attn is not None and self.attn['return_scores'] is True:
-            self.model = self._build_net2()
+            self.model = self._build_net_rs()
         else:
             self.model = self._build_net()
 
@@ -80,11 +80,10 @@ class CNNLSTMFeatureNetwork:
         return model 
 
     
-    def _build_net2(self, conv_layers=[16, 32, 32], 
+    def _build_net_rs(self, conv_layers=[16, 32, 32], 
                             dense_layers=[128, 128, 64]):
         # return attention scores
-        if self.attn is not None:
-            attn_scores = []
+        attn_scores = []
 
         org_input = tf.keras.layers.Input(shape=self.state_size)
         x = org_input 
@@ -97,10 +96,10 @@ class CNNLSTMFeatureNetwork:
             if self.attn is not None: 
                 if self.attn['type'] == 'luong':
                     attn, scores = tf.keras.layers.TimeDistributed(
-                        tf.keras.layers.Attention(return_attention_scores=True))([x, x])
+                        tf.keras.layers.Attention())([x, x], return_attention_scores=True)
                 elif self.attn['type'] == 'bahdanau':
                     attn, scores = tf.keras.layers.TimeDistributed(
-                         tf.keras.layers.AdditiveAttention(return_attention_scores=True))([x, x])
+                         tf.keras.layers.AdditiveAttention())([x, x], return_attention_scores=True)
                 else:
                     raise ValueError('Wrong type of attention. Exiting ...')
                 
@@ -143,9 +142,17 @@ class CNNLSTMFeatureNetwork:
     def __call__(self, state):
         # input is a tensor of shape (-1, h, w, c)
         if self.attn is not None and self.attn['return_scores'] is True:
-            feature, attn_scores = self.model(state)
-            return feature, attn_scores
+            feature, _ = self.model(state)
         else:
             feature = self.model(state)
             return feature 
+
+    def get_attention_scores(self, state):
+        # input is a tensor
+        if self.attn is not None and self.attn['return_scores'] is True:
+            feature, scores = self.model(state)
+            return feature, scores
+        else:
+            raise ValueError('Please Enable suitable Attention Flags')
+
 

@@ -25,7 +25,8 @@ sys.path.append(current_dir)
 sys.path.append(os.path.dirname(current_dir))
 
 # Local imports
-from common.FeatureNet import CNNLSTMFeatureNetwork, FeatureNetwork, AttentionFeatureNetwork
+from common.FeatureNet2 import FeatureNetwork
+from common.CNNLSTMFeatureNet import CNNLSTMFeatureNetwork
 from common.buffer import HERBuffer
 from common.utils import uniquify
 
@@ -218,7 +219,7 @@ class IPGHERAgent:
                  her_strategy='future',
                  attention=None, 
                  use_lstm = False,
-                 filename=None, wb_log=False, chkpt_freq=None, path='./'):
+                 filename=None, wb_log=False, chkpt_freq=None, path='./', vis_img=False):
         self.env = env
         self.action_size = self.env.action_space.shape
         self.state_size = self.env.observation_space.shape
@@ -244,6 +245,7 @@ class IPGHERAgent:
         self.her_strategy = her_strategy        # HER strategy: final, future, success
         self.stack_size = stack_size
         self.use_lstm = use_lstm        # enable / disable lstm
+        self.vis_img = vis_img          # visualize image
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -528,6 +530,19 @@ class IPGHERAgent:
             # add new experience to the main buffer
             self.buffer.record([state_, action_, reward_, next_state_, done_, goal_])
 
+    def visualize_images(self, state):
+
+        tf_state = tf.expand_dims(tf.convert_to_tensor(state, dtype=tf.float32), axis=0)
+        _, scores = self.feature.get_attention_scores(tf_state)
+        for j in range(len(scores)):
+            t1= np.squeeze(scores[j])
+            if self.stack_size > 0:
+                temp_array = t1[0,:,:,0]
+            else:
+                temp_array = t1[:,:,0]
+            attn_img = wandb.Image(temp_array)
+            wandb.log({'attention maps_{}'.format(j): attn_img})
+
     def run(self):
 
         if self.filename is not None:
@@ -643,6 +658,14 @@ class IPGHERAgent:
                             'Episodes' : self.episodes, 
                             'mean_ep_score': np.mean(ep_scores),
                             'mean_ep_len' : np.mean(ep_lens)})
+
+                    # visualize images and attention maps
+                    if self.vis_img and self.WB_LOG: 
+                        if self.episodes % 100 == 0:
+                            obsv_img = wandb.Image(state_obs)
+                            wandb.log({'obsvn_img': obsv_img})
+                            self.visualize_images(state)
+
 
                     # prepare for next episode
                     state_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
