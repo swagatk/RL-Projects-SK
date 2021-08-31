@@ -83,13 +83,13 @@ config_dict = dict(
     tau = 0.995,                # polyak averaging factor
     alpha = 0.2,                # Entropy Coefficient   required in SAC
     use_attention = {'type': 'luong',   # type: luong, bahdanau
-                     'arch': 0,         # arch: 0, 1, 2, 3
+                     'arch': 1,         # arch: 0, 1, 2, 3
                      'return_scores': True},  # visualize attention maps       
     # use_attention = None, 
     algo = 'ipg_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
     env_name = 'kuka',          # environment name
     her_strategy = 'future',        # HER strategy: final, future, success 
-    stack_size = 7,             # input stack size
+    stack_size = 0,             # input stack size
     use_lstm = False             # enable /disable LSTM
 )
 

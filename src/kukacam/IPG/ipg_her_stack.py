@@ -530,19 +530,21 @@ class IPGHERAgent:
             # add new experience to the main buffer
             self.buffer.record([state_, action_, reward_, next_state_, done_, goal_])
 
-    def visualize_images(self, state):
-
+    def visualize_attn_scores(self, state):
         tf_state = tf.expand_dims(tf.convert_to_tensor(state, dtype=tf.float32), axis=0)
         _, scores = self.feature.get_attention_scores(tf_state)
-        for j in range(len(scores)):
-            t1= np.squeeze(scores[j])
-            if self.stack_size > 0:
-                temp_array = t1[0,:,:,0]
-            else:
-                temp_array = t1[:,:,0]
-            attn_img = wandb.Image(temp_array)
-            wandb.log({'attention maps_{}'.format(j): attn_img})
 
+        for i in range(len(scores)):
+            mean_score = np.squeeze(np.mean(scores[i], axis=tuple(range(scores[i].ndim-3))))
+            d = mean_score.shape[2] // 3  # partition the channel depth
+            score_p1 = np.mean(mean_score[:,:,0:d], axis=2)
+            score_p2 = np.mean(mean_score[:,:,d:2*d], axis=2)
+            score_p3 = np.mean(mean_score[:,:,2*d:], axis=2)
+            attn_array = np.stack([score_p1, score_p2, score_p3], axis=2)
+            attn_img = wandb.Image(attn_array)
+            wandb.log({'attention maps_{}'.format(i): attn_img})
+
+    
     def run(self):
 
         if self.filename is not None:
@@ -661,10 +663,11 @@ class IPGHERAgent:
 
                     # visualize images and attention maps
                     if self.vis_img and self.WB_LOG: 
-                        if self.episodes % 100 == 0:
+                        if self.episodes % 500 == 0:
                             obsv_img = wandb.Image(state_obs)
                             wandb.log({'obsvn_img': obsv_img})
-                            self.visualize_images(state)
+                            if self.attention is not None and self.attention['return_scores'] is True:
+                                self.visualize_attn_scores(state)
 
 
                     # prepare for next episode
