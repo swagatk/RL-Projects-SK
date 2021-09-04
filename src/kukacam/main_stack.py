@@ -26,6 +26,9 @@ import gym
 import os
 import datetime
 
+from dotenv import load_dotenv
+load_dotenv('./.env')
+
 # Add the current folder to python's import path
 import sys
 sys.path.append(os.path.dirname(os.path.realpath(__file__)))
@@ -64,8 +67,6 @@ sess = tf.compat.v1.Session(config=config)
 ################################################
 # check GPU device
 device_name = tf.test.gpu_device_name()
-if device_name != '/device:GPU:0':
-    raise SystemError('GPU device not found')
 print('Found GPU at: {}'.format(device_name))
 ##############################################
 # #### Hyper-parameters
@@ -124,6 +125,7 @@ logfile = config_dict['env_name'] + '_' + config_dict['algo'] + '.txt'
 import wandb
 if WB_LOG:
     print("WandB version", wandb.__version__)
+    WANDB_API_KEY=os.getenv('MY_WANDB_API_KEY')
     wandb.login()
     wandb.init(project='kukacam', config=config_dict)
 #######################################################33
