@@ -27,6 +27,7 @@ sys.path.append(os.path.dirname(current_dir))
 # Local imports
 from common.FeatureNet2 import FeatureNetwork
 from common.CNNLSTMFeatureNet import CNNLSTMFeatureNetwork
+#from common.CNNLSTMFeatureNet_2 import CNNLSTMFeatureNetwork
 from common.buffer import HERBuffer
 from common.utils import uniquify
 
@@ -645,7 +646,7 @@ class IPGHERAgent:
                     # Add hindsight experience to the buffer
                     # in this case, use last state as the goal_state
                     # here ep_experience buffer is cleared at the end of each episode.
-                    self.add_her_experience(ep_experience, hind_goal, extract_feature=False)
+                    self.add_her_experience(ep_experience, hind_goal, extract_feature=True)
                     # clear the local experience buffer
                     ep_experience = []
 

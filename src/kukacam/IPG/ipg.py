@@ -207,7 +207,7 @@ class IPGAgent:
     def __init__(self, env, SEASONS, success_value, 
                  epochs, training_batch, batch_size, buffer_capacity, 
                  lr_a, lr_c, gamma, epsilon, lmbda,
-                 use_attention=False, 
+                 use_attention=None, 
                  filename=None, wb_log=False, chkpt_freq=None, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
@@ -242,16 +242,15 @@ class IPGAgent:
         # Buffer for off-policy training
         self.buffer = Buffer(self.buffer_capacity, self.batch_size)
 
-        # Select a suitable feature extractor
-        if self.use_attention and self.image_input:   # attention + image input
+
+        # extract features from input images
+        if self.image_input:        # input is an image
             print('Currently Attention handles only image input')
-            self.feature = AttentionFeatureNetwork(self.state_size, lr_a)
-        elif self.use_attention is False and self.image_input is True:  # image input
-            print('You have selected an image input')
-            self.feature = FeatureNetwork(self.state_size, lr_a)
+            self.feature = FeatureNetwork(self.state_size, self.use_attention, self.lr_a)
         else:       # non-image input
             print('You have selected a non-image input.')
             self.feature = None
+
 
         # create actor / critic models
         self.actor = IPGActor(self.state_size, self.action_size, self.upper_bound,

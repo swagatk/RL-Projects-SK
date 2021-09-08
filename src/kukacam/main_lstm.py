@@ -20,7 +20,7 @@ sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 from PPO.ppo2 import PPOAgent
 from IPG.ipg import IPGAgent
 #from IPG.ipg_her import IPGHERAgent
-from IPG.ipg_her_stack import IPGHERAgent
+from IPG.ipg_her_lstm import IPGHERAgent
 from SAC.sac import SACAgent
 from SAC.sac_her import SACHERAgent
 from common.TimeLimitWrapper import TimeLimitWrapper
@@ -82,7 +82,7 @@ config_dict = dict(
 #########################################3
 seasons = 35 
 COLAB = False
-WB_LOG = True
+WB_LOG = False
 success_value = None 
 ############################
 # Google Colab Settings

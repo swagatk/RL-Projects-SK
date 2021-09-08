@@ -228,7 +228,7 @@ class PPOAgent:
     def __init__(self, env, SEASONS, success_value, 
                     epochs, training_batch, batch_size,
                     lr_a, lr_c, gamma, epsilon, lmbda,
-                    use_attention=False,
+                    use_attention=None,
                     beta=0.5, c_loss_coeff=0.0,
                     entropy_coeff=0.0, kl_target=0.01, 
                     method='clip', 
@@ -269,12 +269,9 @@ class PPOAgent:
             raise ValueError("Input can be a vector or an image")
 
         # extract features from input images
-        if self.use_attention and self.image_input:   # attention + image input
+        if self.image_input:        # input is an image
             print('Currently Attention handles only image input')
-            self.feature = AttentionFeatureNetwork(self.state_size, lr_a)
-        elif self.use_attention is False and self.image_input is True:  # image input
-            print('You have selected an image input')
-            self.feature = FeatureNetwork(self.state_size, lr_a)
+            self.feature = FeatureNetwork(self.state_size, self.use_attention, self.lr_a)
         else:       # non-image input
             print('You have selected a non-image input.')
             self.feature = None

@@ -17,7 +17,8 @@ class CNNLSTMFeatureNetwork:
         self.attn = attn
         self.stack_size = self.state_size[0]    # verify this ... 
 
-        self.model = self._build_net()
+        #self.model = self._build_net()
+        self.model = self._build_net_2()
 
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
 
@@ -121,20 +122,16 @@ class CNNLSTMFeatureNetwork:
         if self.attn is not None: 
             if self.attn['type'] == 'luong':
                 if self.attn['return_scores']:
-                    attn, scores = tf.keras.layers.TimeDistributed(
-                        tf.keras.layers.Attention())([x, x], 
+                    attn, scores = tf.keras.layers.Attention()([x, x], 
                         return_attention_scores=self.attn['return_scores'])
                 else:
-                    attn = tf.keras.layers.TimeDistributed(
-                        tf.keras.layers.Attention())([x, x])
+                    attn = tf.keras.layers.Attention()([x, x])
             elif self.attn['type'] == 'bahdanau':
                 if self.attn['return_scores']:
-                    attn, scores = tf.keras.layers.TimeDistributed(
-                        tf.keras.layers.AdditiveAttention())([x, x], 
+                    attn, scores = tf.keras.layers.AdditiveAttention()([x, x], 
                         return_attention_scores=self.attn['return_scores'])
                 else:
-                    attn = tf.keras.layers.TimeDistributed(
-                        tf.keras.layers.AdditiveAttention())([x, x])
+                    attn = tf.keras.layers.AdditiveAttention()([x, x])
             else:
                 raise ValueError('Wrong type of attention. Exiting ...')
             
@@ -170,7 +167,6 @@ class CNNLSTMFeatureNetwork:
         keras.utils.plot_model(model, to_file='cnn_lstm_feature_net.png',
                         show_shapes=True, show_layer_names=True)
         return model 
-
 
 
     def __call__(self, state):

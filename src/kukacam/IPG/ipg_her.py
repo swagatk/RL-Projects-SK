@@ -573,7 +573,7 @@ class IPGHERAgent:
                     # Add hindsight experience to the buffer
                     # in this case, use last state as the goal_state
                     # here ep_experience buffer is cleared at the end of each episode.
-                    self.add_her_experience(ep_experience, hind_goal, extract_feature=False)
+                    self.add_her_experience(ep_experience, hind_goal, extract_feature=True)
                     # clear the local experience buffer
                     ep_experience = []
 

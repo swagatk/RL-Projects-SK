@@ -10,10 +10,10 @@ from pybullet_envs.bullet.racecarGymEnv import RacecarGymEnv
 
 SAVE_IMG = False
 SAVE_ANIM = False
-VERBOSE = False
+VERBOSE = True
 
 # observation is an image
-env = RacecarZEDGymEnv(isDiscrete=False, renders=True)
+env = RacecarZEDGymEnv(isDiscrete=False, renders=False)
 #env = RacecarGymEnv(isDiscrete=False, renders=True)
 
 

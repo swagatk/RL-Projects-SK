@@ -3,7 +3,7 @@ import imageio
 from pybullet_envs.bullet.kuka_diverse_object_gym_env import KukaDiverseObjectEnv
 
 import matplotlib.pyplot as plt
-env = KukaDiverseObjectEnv(renders=True,  # True to see the simulation environment
+env = KukaDiverseObjectEnv(renders=False,  # True to see the simulation environment
                            isDiscrete=False,
                            removeHeightHack=False,
                            maxSteps=20)

@@ -52,7 +52,7 @@ gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     try:
         for gpu in gpus:
-            print(gpu)
+            print('GPU Name:',gpu.name)
             tf.config.experimental.set_memory_growth(gpu, True)
     except RuntimeError as e:
         print(e)
@@ -82,10 +82,10 @@ config_dict = dict(
     lmbda = 0.7,  # 0.9         # required for GAE in PPO
     tau = 0.995,                # polyak averaging factor
     alpha = 0.2,                # Entropy Coefficient   required in SAC
-    use_attention = {'type': 'bahdanau',   # type: luong, bahdanau
-                     'arch': 1,         # arch: 0, 1, 2, 3
-                     'return_scores': True},  # visualize attention maps       
-    # use_attention = None, 
+    # use_attention = {'type': 'luong',   # type: luong, bahdanau
+    #                  'arch': 0,         # arch: 0, 1, 2, 3
+    #                  'return_scores': True},  # visualize attention maps       
+    use_attention = None, 
     algo = 'ipg_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
     env_name = 'kuka',          # environment name
     her_strategy = 'future',        # HER strategy: final, future, success 
@@ -100,7 +100,7 @@ seasons = 35
 COLAB = False
 WB_LOG = True
 success_value = None 
-img_vis = True 
+img_vis = False 
 ############################
 # Google Colab Settings
 if COLAB:
