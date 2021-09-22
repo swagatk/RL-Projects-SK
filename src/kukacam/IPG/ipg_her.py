@@ -3,12 +3,7 @@ IPG + HER
 Originally contributed by Mr. Hayden Sampson
 URL: https://github.com/hayden750/DeepHEC
 
-- I use a slightly different reward function
-- function1: add_her_experience(): adds HER experience to the buffer once at the end of each season with K=1.
-- function2: add_her_experience_with_terminal_goal() adds HER experience to the buffer after the end of each episode
-        with terminal state as the goal.
-- both of these functions have same performance. function2 is relatively better with lower variance.
-
+Input frames can be stacked together.
 '''
 
 import sys
@@ -30,7 +25,8 @@ sys.path.append(current_dir)
 sys.path.append(os.path.dirname(current_dir))
 
 # Local imports
-from common.FeatureNet import FeatureNetwork, AttentionFeatureNetwork
+from common.FeatureNet import FeatureNetwork
+from common.CNNLSTMFeatureNet import CNNLSTMFeatureNetwork
 from common.buffer import HERBuffer
 from common.utils import uniquify
 
@@ -219,8 +215,10 @@ class IPGHERAgent:
     def __init__(self, env, SEASONS, success_value, 
                  epochs, training_batch, batch_size, buffer_capacity, 
                  lr_a, lr_c, gamma, epsilon, lmbda, 
-                 her_strategy='future',
+                 stack_size=7,
+                 use_her={'strategy':'future', 'extract_feature':False},
                  attention=None, 
+                 use_lstm=False,
                  filename=None, wb_log=False, chkpt_freq=None, path='./'):
         self.env = env
         self.action_size = self.env.action_space.shape
@@ -244,7 +242,9 @@ class IPGHERAgent:
         self.WB_LOG = wb_log
         self.path = path            # location to store results
         self.chkpt_freq = chkpt_freq          # save checkpoints
-        self.her_strategy = her_strategy        # HER strategy: final, future, success
+        self.use_her = use_her        # HER strategy: final, future, success
+        self.stack_size = stack_size
+        self.use_lstm = use_lstm        # enable / disable lstm
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -258,8 +258,15 @@ class IPGHERAgent:
 
         # extract features from input images
         if self.image_input:        # input is an image
-            print('Currently Attention handles only image input')
-            self.feature = FeatureNetwork(self.state_size, self.attention, self.lr_a)
+            if self.stack_size > 1:
+                self.state_size = (self.stack_size, ) + self.state_size
+                self.goal_size = self.state_size
+            
+            if self.use_lstm:
+                assert self.stack_size > 1, "stack_size must be greater than 0 for lstm"
+                self.feature = CNNLSTMFeatureNetwork(self.state_size, self.attention, self.lr_a)
+            else:
+                self.feature = FeatureNetwork(self.state_size, self.attention, self.lr_a)
         else:       # non-image input
             print('You have selected a non-image input.')
             self.feature = None
@@ -288,6 +295,18 @@ class IPGHERAgent:
 
         action = tf.clip_by_value(action, -self.upper_bound, self.upper_bound)
         return action.numpy()
+
+    def prepare_input(self, img_buffer):
+        # input : list of images of shape: (h, w, c)
+        temp_list = []
+        for i in range(self.stack_size):
+            if i < len(img_buffer):
+                temp_list.append(img_buffer[-1-i])      # fill from beginning
+            else:
+                temp_list.append(img_buffer[-1])        # last element
+
+        stacked_img = np.stack(temp_list, axis=0)
+        return stacked_img      # check the shape:  (stack_size, h, w, c)
 
     def compute_advantage(self, r_batch, s_batch, ns_batch, d_batch):
         # input: tensors
@@ -441,19 +460,31 @@ class IPGHERAgent:
         ep_reward_list = []
         for ep in range(max_eps):
 
-            state = self.env.reset()
-            state = np.asarray(state, dtype=np.float32) / 255.0  # convert into float array
-            goal = self.env.reset()  # take random state as goal
-            goal = np.asarray(goal, dtype=np.float32) / 255.0
+            # empty the buffer for each episode 
+            if self.stack_size > 1:
+                state_buffer = []
+                goal_buffer = []
+
+            state_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0  # convert into float array
+            goal_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
 
             t = 0
             ep_reward = 0
             while True:
-                action = self.policy(state, goal, deterministic=True)
-                next_obsv, reward, done, _ = self.env.step(action)
-                next_state = np.asarray(next_obsv, dtype=np.float32) / 255.0
+                if self.stack_size > 1:
+                    state_buffer.append(state_obs)
+                    goal_buffer.append(goal_obs)
+                    state = self.prepare_input(state_buffer)
+                    goal = self.prepare_input(goal_buffer)
+                else:
+                    state = state_obs
+                    goal = goal_obs
 
-                state = next_state
+                action = self.policy(state, goal, deterministic=True)
+                next_state_obs, reward, done, _ = self.env.step(action)
+                next_state_obs = np.asarray(next_state_obs, dtype=np.float32) / 255.0
+
+                state_obs = next_state_obs
                 ep_reward += reward
                 t += 1
                 if done:
@@ -499,18 +530,40 @@ class IPGHERAgent:
             # add new experience to the main buffer
             self.buffer.record([state_, action_, reward_, next_state_, done_, goal_])
 
+    def visualize_attn_scores(self, state):
+        tf_state = tf.expand_dims(tf.convert_to_tensor(state, dtype=tf.float32), axis=0)
+        _, scores = self.feature.get_attention_scores(tf_state)
+
+        for i in range(len(scores)):
+            mean_score = np.squeeze(np.mean(scores[i], axis=tuple(range(scores[i].ndim-3))))
+            d = mean_score.shape[2] // 3  # partition the channel depth
+            score_p1 = np.mean(mean_score[:,:,0:d], axis=2)
+            score_p2 = np.mean(mean_score[:,:,d:2*d], axis=2)
+            score_p3 = np.mean(mean_score[:,:,2*d:], axis=2)
+            attn_array = np.stack([score_p1, score_p2, score_p3], axis=2)
+            attn_img = wandb.Image(attn_array)
+            wandb.log({'attention maps_{}'.format(i): attn_img})
+
+    
     def run(self):
 
         if self.filename is not None:
             self.filename = uniquify(self.path + self.filename)
 
         # initial state and goal
-        state = np.asarray(self.env.reset(), dtype=np.float32) / 255.0  # convert into float array
-        goal = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
+        state_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0  # convert into float array
+        goal_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
 
+        
         # store successful states
-        if self.her_strategy == 'success':
+        if self.use_her['strategy'] == 'success':
             desired_goals = deque(maxlen=1000)
+
+        if self.stack_size > 1:
+            state_buffer = []
+            goal_buffer = []
+            next_state_buffer = []
+
 
         start = datetime.datetime.now()
         val_scores = []       # validation scores
@@ -529,12 +582,30 @@ class IPGHERAgent:
             ep_len = 0          # length of each episode
             done = False
             for _ in range(self.training_batch):    # time steps
-                action = self.policy(state, goal)
-                next_state, reward, done, _ = self.env.step(action)
-                next_state = np.asarray(next_state, dtype=np.float32) / 255.0
 
-                if self.her_strategy == 'success': 
-                    if reward == 1:
+                if self.stack_size > 1:
+                    state_buffer.append(state_obs)
+                    goal_buffer.append(goal_obs)
+                    state = self.prepare_input(state_buffer)
+                    goal = self.prepare_input(goal_buffer)
+                else:
+                    state = state_obs
+                    goal = goal_obs
+
+                # Take an action according to its current policy
+                action = self.policy(state, goal)
+
+                # obtain reward from the environment
+                next_state_obs, reward, done, _ = self.env.step(action)
+                next_state_obs = np.asarray(next_state_obs, dtype=np.float32) / 255.0
+
+                if self.stack_size > 1:
+                    next_state_buffer.append(next_state_obs)
+                    next_state = self.prepare_input(next_state_buffer)
+                else:
+                    next_state = next_state_obs 
+                
+                if self.use_her['strategy'] == 'success' and reward == 1:
                         desired_goals.append([state, action, reward, next_state, done, goal])
 
                 # this is used for on-policy training
@@ -550,22 +621,22 @@ class IPGHERAgent:
                 # Also store in a separate buffer
                 ep_experience.append([state, action, reward, next_state, done, goal])
 
-                state = next_state
+                state_obs = next_state_obs
                 ep_score += reward
                 ep_len += 1
 
                 if done:
 
                     # HER: Final state strategy
-                    if self.her_strategy == 'final':
+                    if self.use_her['strategy'] == 'final':
                         hind_goal = ep_experience[-1][3]        # final state strategy
-                    elif self.her_strategy == 'success': 
+                    elif self.use_her['strategy'] == 'success': 
                         if len(desired_goals) < 1:
                             hind_goal = ep_experience[-1][3]  
                         else:   # random successful states as a goal
                             index = np.random.choice(len(desired_goals))
                             hind_goal = desired_goals[index][3]
-                    elif self.her_strategy == 'future':   # future state strategy
+                    elif self.use_her['strategy'] == 'future':   # future state strategy
                         hind_goal = None
                     else:
                         raise ValueError("Invalid choice for her strategy. Exiting ...")
@@ -573,7 +644,8 @@ class IPGHERAgent:
                     # Add hindsight experience to the buffer
                     # in this case, use last state as the goal_state
                     # here ep_experience buffer is cleared at the end of each episode.
-                    self.add_her_experience(ep_experience, hind_goal, extract_feature=True)
+                    self.add_her_experience(ep_experience, hind_goal, 
+                                            self.use_her['extract_feature'])
                     # clear the local experience buffer
                     ep_experience = []
 
@@ -588,14 +660,21 @@ class IPGHERAgent:
                             'Episodes' : self.episodes, 
                             'mean_ep_score': np.mean(ep_scores),
                             'mean_ep_len' : np.mean(ep_lens)})
+                        if self.episodes % 500 == 0:
+                            obsv_img = wandb.Image(state_obs)
+                            wandb.log({'obsvn_img': obsv_img})
 
                     # prepare for next episode
-                    state = self.env.reset()
-                    state = np.asarray(state, dtype=np.float32) / 255.0
-                    goal = self.env.reset()
-                    goal = np.asarray(goal, dtype=np.float32) / 255.0
+                    state_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
+                    goal_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
                     ep_len, ep_score = 0, 0
                     done = False
+
+                    if self.stack_size > 1:
+                        state_buffer = []
+                        next_state_buffer = []
+                        goal_buffer = []
+
                 # end of done block
             # end of for training_batch loop
 

@@ -17,7 +17,8 @@ class CNNLSTMFeatureNetwork:
         self.attn = attn
         self.stack_size = self.state_size[0]    # verify this ... 
 
-        self.model = self._build_net()
+        self.model = self._build_net()      # two different architectures for applying attentino
+        # self.model = self._build_net_2()
 
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
 
@@ -170,8 +171,6 @@ class CNNLSTMFeatureNetwork:
         keras.utils.plot_model(model, to_file='cnn_lstm_feature_net.png',
                         show_shapes=True, show_layer_names=True)
         return model 
-
-
 
     def __call__(self, state):
         # input is a tensor of shape (-1, h, w, c)

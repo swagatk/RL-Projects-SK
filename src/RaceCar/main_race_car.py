@@ -26,9 +26,6 @@ import gym
 import os
 import datetime
 
-from dotenv import load_dotenv
-load_dotenv('./.env')
-
 # Add the current folder to python's import path
 import sys
 sys.path.append(os.path.dirname(os.path.realpath(__file__)))
@@ -55,7 +52,7 @@ gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     try:
         for gpu in gpus:
-            print('GPU Name:',gpu.name)
+            print(gpu)
             tf.config.experimental.set_memory_growth(gpu, True)
     except RuntimeError as e:
         print(e)
@@ -67,17 +64,19 @@ sess = tf.compat.v1.Session(config=config)
 ################################################
 # check GPU device
 device_name = tf.test.gpu_device_name()
+if device_name != '/device:GPU:0':
+    raise SystemError('GPU device not found')
 print('Found GPU at: {}'.format(device_name))
 ##############################################
-# #### Hyper-parameters
+# #### Hyper-parameters for RACECAR Environment
 ##########################################
 config_dict = dict(
     lr_a = 0.0002, 
     lr_c = 0.0002, 
     epochs = 20, 
-    training_batch = 1024,    # 5120(racecar)  # 1024 (kuka), 512
-    buffer_capacity = 20000,    # 50k (racecar)  # 20K (kuka)
-    batch_size = 128,  # 512 (racecar) #   128 (kuka)
+    training_batch = 5120,    # 5120(racecar)  # 1024 (kuka), 512
+    buffer_capacity = 50000,    # 50k (racecar)  # 20K (kuka)
+    batch_size = 512,  # 512 (racecar) #   128 (kuka)
     epsilon = 0.2,  # 0.07      # Clip factor required in PPO
     gamma = 0.993,  # 0.99      # discounted factor
     lmbda = 0.7,  # 0.9         # required for GAE in PPO
@@ -85,10 +84,10 @@ config_dict = dict(
     alpha = 0.2,                # Entropy Coefficient   required in SAC
     # use_attention = {'type': 'luong',   # type: luong, bahdanau
     #                  'arch': 0,         # arch: 0, 1, 2, 3
-    #                  'return_scores': True},  # visualize attention maps       
+    #                  'return_scores': False},  # visualize attention maps       
     use_attention = None, 
-    algo = 'ipg_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
-    env_name = 'kuka',          # environment name
+    algo = 'ipg',               # choices: ppo, sac, ipg, sac_her, ipg_her
+    env_name = 'racecar',          # environment name
     her_strategy = 'future',        # HER strategy: final, future, success 
     stack_size = 0,             # input stack size
     use_lstm = False             # enable /disable LSTM
@@ -101,7 +100,7 @@ seasons = 35
 COLAB = False
 WB_LOG = True
 success_value = None 
-img_vis = False 
+img_vis = True 
 ############################
 # Google Colab Settings
 if COLAB:
@@ -124,10 +123,10 @@ logfile = config_dict['env_name'] + '_' + config_dict['algo'] + '.txt'
 # wandb related configuration
 import wandb
 if WB_LOG:
+    #WANDB_API_KEY=os.environ['MY_WANDB_API_KEY']
     print("WandB version", wandb.__version__)
-    WANDB_API_KEY=os.getenv('MY_WANDB_API_KEY')
     wandb.login()
-    wandb.init(project='kukacam', config=config_dict)
+    wandb.init(project='racecar', config=config_dict)
 #######################################################33
 #################################3
 if __name__ == "__main__":
@@ -138,6 +137,10 @@ if __name__ == "__main__":
                                 isDiscrete=False,
                                 maxSteps=20,
                                 removeHeightHack=False)
+    elif config_dict['env_name'] == 'racecar':
+        env = ObsvnResizeTimeLimitWrapper(
+            RacecarZEDGymEnv(isDiscrete=False, renders=False),
+            shape=40, max_steps=20)
 
     # Select RL Agent
     if config_dict['algo'] == 'ppo':

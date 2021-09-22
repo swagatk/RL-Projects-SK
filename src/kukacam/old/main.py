@@ -1,4 +1,18 @@
-""" main for running ppo and ipg agents """
+""" 
+Main python file for implementing following algorithms:
+- SAC
+- SAC + HER
+- PPO
+- IPG
+- IPG + HER
+
+Environment: KUKADiverseObjectEnv
+
+Updates:
+18/08/2021: This is main file for kuka environment.
+"""
+
+
 
 # Imports
 from numpy.lib.npyio import save
@@ -19,8 +33,7 @@ sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 # Local imports
 from PPO.ppo2 import PPOAgent
 from IPG.ipg import IPGAgent
-#from IPG.ipg_her import IPGHERAgent
-from IPG.ipg_her_lstm import IPGHERAgent
+from IPG.ipg_her import IPGHERAgent
 from SAC.sac import SACAgent
 from SAC.sac_her import SACHERAgent
 from common.TimeLimitWrapper import TimeLimitWrapper
@@ -32,13 +45,18 @@ print("Tensorflow Version: ", tf.__version__)
 assert version.parse(tf.__version__).release[0] >= 2, \
     "This program requires Tensorflow 2.0 or above"
 #######################################
-
+# check GPU device
+device_name = tf.test.gpu_device_name()
+if device_name != '/device:GPU:0':
+    raise SystemError('GPU device not found')
+print('Found GPU at: {}'.format(device_name))
 ######################################
 # avoid CUDNN_STATUS_INTERNAL_ERROR
-gpus = tf.config.experimental.list_physical_devices('GPU')
+gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     try:
         for gpu in gpus:
+            print('GPU Name:', gpu.name, 'Device Type:', gpu.device_type)
             tf.config.experimental.set_memory_growth(gpu, True)
     except RuntimeError as e:
         print(e)
@@ -48,11 +66,6 @@ config.gpu_options.allow_growth = True
 config.log_device_placement = True
 sess = tf.compat.v1.Session(config=config)
 ################################################
-# check GPU device
-device_name = tf.test.gpu_device_name()
-if device_name != '/device:GPU:0':
-    raise SystemError('GPU device not found')
-print('Found GPU at: {}'.format(device_name))
 ##############################################
 # #### Hyper-parameters
 ##########################################
@@ -68,13 +81,13 @@ config_dict = dict(
     lmbda = 0.7,  # 0.9         # required for GAE in PPO
     tau = 0.995,                # polyak averaging factor
     alpha = 0.2,                # Entropy Coefficient   required in SAC
-    #use_attention = {'type': 'luong',
-    #                  'arch':0},      # enable/disable attention model
-    use_attention = None, 
+    use_attention = {'type': 'luong',   # type: luong, bahdanau
+                     'arch': 0,
+                     'return_scores': True},        # arch: 0, 1, 2, 3
+    #use_attention = None, 
     algo = 'ipg_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
     env_name = 'kuka',          # environment name
     her_strategy = 'future',        # HER strategy: final, future, success 
-    use_lstm = {'stack_size': 5}     # use CNN-LSTM arch for feature network
 )
 
 ####################################3
@@ -82,7 +95,7 @@ config_dict = dict(
 #########################################3
 seasons = 35 
 COLAB = False
-WB_LOG = False
+WB_LOG = True
 success_value = None 
 ############################
 # Google Colab Settings
@@ -94,7 +107,7 @@ if COLAB:
     load_path = None
 else:
     save_path = './log/'
-    chkpt_freq = None # 10         # wrt seasons
+    chkpt_freq = 10         # wrt seasons
     load_path = None
 ##############################################3
 save_path = save_path + config_dict['env_name'] + '/' + config_dict['algo'] + '/'
@@ -148,7 +161,6 @@ if __name__ == "__main__":
                             config_dict['epsilon'],
                             config_dict['lmbda'],
                             config_dict['use_attention'],
-                            config_dict['use_lstm'],
                             filename=logfile, 
                             wb_log=WB_LOG,  
                             chkpt_freq=chkpt_freq,
@@ -166,7 +178,6 @@ if __name__ == "__main__":
                             config_dict['lmbda'],
                             config_dict['her_strategy'],
                             config_dict['use_attention'],
-                            config_dict['use_lstm'],
                             filename=logfile, 
                             wb_log=WB_LOG,  
                             chkpt_freq=chkpt_freq,

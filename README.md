@@ -17,7 +17,9 @@ Reinforcement Learning Projects
   - PPO 
   - IPG
   - HER
+  - SAC
 
 - Mujoco Environments
    - FetchReach-v1
+
 

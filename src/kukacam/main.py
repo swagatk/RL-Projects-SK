@@ -6,6 +6,8 @@ Main python file for implementing following algorithms:
 - IPG
 - IPG + HER
 
+It can handle stacked frames 
+
 Environment: KUKADiverseObjectEnv
 
 Updates:
@@ -25,6 +27,7 @@ from packaging import version
 import gym
 import os
 import datetime
+
 
 # Add the current folder to python's import path
 import sys
@@ -48,14 +51,14 @@ assert version.parse(tf.__version__).release[0] >= 2, \
 
 ######################################
 # avoid CUDNN_STATUS_INTERNAL_ERROR
-gpus = tf.config.experimental.list_physical_devices('GPU')
+gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     try:
         for gpu in gpus:
+            print('GPU Name:',gpu.name)
             tf.config.experimental.set_memory_growth(gpu, True)
     except RuntimeError as e:
         print(e)
-
 config = tf.compat.v1.ConfigProto()
 config.gpu_options.allow_growth = True
 config.log_device_placement = True
@@ -63,8 +66,6 @@ sess = tf.compat.v1.Session(config=config)
 ################################################
 # check GPU device
 device_name = tf.test.gpu_device_name()
-if device_name != '/device:GPU:0':
-    raise SystemError('GPU device not found')
 print('Found GPU at: {}'.format(device_name))
 ##############################################
 # #### Hyper-parameters
@@ -82,11 +83,15 @@ config_dict = dict(
     tau = 0.995,                # polyak averaging factor
     alpha = 0.2,                # Entropy Coefficient   required in SAC
     use_attention = {'type': 'luong',   # type: luong, bahdanau
-                     'arch': 0},        # arch: 0, 1, 2, 3
+                     'arch': 0,         # arch: 0, 1, 2, 3
+                     'return_scores': False},  # visualize attention maps       
     #use_attention = None, 
     algo = 'ipg_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
-    env_name = 'kuka',          # environment name
-    her_strategy = 'future',        # HER strategy: final, future, success 
+    env_name = 'kuka',              # environment name
+    use_her = {'strategy': 'future',    # HER strategy: final, future, success 
+            'extract_feature' : True}, 
+    stack_size = 7,             # input stack size
+    use_lstm = True             # enable /disable LSTM
 )
 
 ####################################3
@@ -113,12 +118,16 @@ save_path = save_path + config_dict['env_name'] + '/' + config_dict['algo'] + '/
 current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 #current_time = datetime.datetime.now().strftime("%Y%m%d")
 save_path = save_path + current_time + '/'
-logfile = config_dict['env_name'] + '_' + config_dict['algo'] + '.txt'
+# logfile = config_dict['env_name'] + '_' + config_dict['algo'] + '.txt'
+logfile = None
 ###########################################
 # wandb related configuration
-import wandb
+# from dotenv import load_dotenv
+# load_dotenv('./.env')
 if WB_LOG:
+    import wandb
     print("WandB version", wandb.__version__)
+    WANDB_API_KEY=os.getenv('MY_WANDB_API_KEY')
     wandb.login()
     wandb.init(project='kukacam', config=config_dict)
 #######################################################33
@@ -175,8 +184,10 @@ if __name__ == "__main__":
                             config_dict['gamma'],
                             config_dict['epsilon'],
                             config_dict['lmbda'],
-                            config_dict['her_strategy'],
+                            config_dict['stack_size'],
+                            config_dict['use_her'],
                             config_dict['use_attention'],
+                            config_dict['use_lstm'],
                             filename=logfile, 
                             wb_log=WB_LOG,  
                             chkpt_freq=chkpt_freq,
