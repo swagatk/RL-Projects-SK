@@ -11,9 +11,6 @@ Environment: KUKADiverseObjectEnv
 Updates:
 18/08/2021: This is main file for kuka environment.
 """
-
-
-
 # Imports
 from numpy.lib.npyio import save
 import tensorflow as tf
@@ -98,7 +95,7 @@ config_dict = dict(
 #########################################3
 seasons = 100 
 COLAB = False
-WB_LOG = False
+WB_LOG = True
 success_value = None 
 img_vis = True 
 ############################
