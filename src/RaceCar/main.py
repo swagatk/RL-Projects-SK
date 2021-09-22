@@ -31,13 +31,12 @@ import sys
 sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 
 # Local imports
-from PPO.ppo2 import PPOAgent
-from IPG.ipg import IPGAgent
-from IPG.ipg_her_stack import IPGHERAgent
-from SAC.sac import SACAgent
-from SAC.sac_her import SACHERAgent
-from common.TimeLimitWrapper import TimeLimitWrapper
-from common.CustomGymWrapper import ObsvnResizeTimeLimitWrapper
+from ppo import PPOAgent
+from ipg import IPGAgent
+from ipg_her import IPGHERAgent
+from sac import SACAgent
+from sac_her import SACHERAgent
+from CustomGymWrapper import ObsvnResizeTimeLimitWrapper
 
 ########################################
 # check tensorflow version
@@ -88,7 +87,8 @@ config_dict = dict(
     use_attention = None, 
     algo = 'ipg',               # choices: ppo, sac, ipg, sac_her, ipg_her
     env_name = 'racecar',          # environment name
-    her_strategy = 'future',        # HER strategy: final, future, success 
+    use_her = {'strategy': 'future',
+                'extract_feature':False}, 
     stack_size = 0,             # input stack size
     use_lstm = False             # enable /disable LSTM
 )
@@ -96,9 +96,9 @@ config_dict = dict(
 ####################################3
 #  Additional parameters 
 #########################################3
-seasons = 35 
+seasons = 100 
 COLAB = False
-WB_LOG = True
+WB_LOG = False
 success_value = None 
 img_vis = True 
 ############################
@@ -169,6 +169,7 @@ if __name__ == "__main__":
                             config_dict['gamma'],
                             config_dict['epsilon'],
                             config_dict['lmbda'],
+                            config_dict['stack_size'],
                             config_dict['use_attention'],
                             filename=logfile, 
                             wb_log=WB_LOG,  
