@@ -29,7 +29,8 @@ sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 
 # Local imports
 from ppo import PPOAgent
-from ipg import IPGAgent
+#from ipg import IPGAgent
+from ipg_vae import IPGAgent        # feature = VAE
 from ipg_her import IPGHERAgent
 from sac import SACAgent
 from sac_her import SACHERAgent
@@ -95,7 +96,7 @@ config_dict = dict(
 #########################################3
 seasons = 100 
 COLAB = False
-WB_LOG = True
+WB_LOG = False          # WandB logging
 success_value = None 
 img_vis = True 
 ############################

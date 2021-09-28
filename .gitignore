@@ -23,3 +23,6 @@ wandb/
 *.png
 *.gif
 *.env
+**/checkpoints 
+*.zip
+*.csv
