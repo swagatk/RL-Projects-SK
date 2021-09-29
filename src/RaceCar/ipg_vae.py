@@ -251,7 +251,7 @@ class IPGAgent:
                 self.state_size = (self.stack_size, ) + self.state_size
 
             #self.feature = FeatureNetwork(self.state_size, self.use_attention, self.lr_a)
-            self.feature = Encoder(self.state_size, latent_dim=2)
+            self.feature = Encoder(self.state_size, latent_dim=10)
             self.feature.load_model('./trained_models/enc_wts.h5')   # load pretrained model
         else:       # non-image input
             print('You have selected a non-image input.')

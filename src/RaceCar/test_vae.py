@@ -20,6 +20,6 @@ sess = tf.compat.v1.Session(config=config)
 ###########################33
 
 input_shape = (40, 40, 3)
-latent_dim = 2
+latent_dim = 10
 encoder = Encoder(input_shape, latent_dim)
-encoder.model.load_weights('./trained_models/enc_wts.h5')
+encoder.load_model('./trained_models/enc_wts.h5')

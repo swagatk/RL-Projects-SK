@@ -208,7 +208,7 @@ class VAE(keras.Model):
         }
 
     def test_step(self, data):
-        z_mean, z_log_var, z = self.encoder(data)
+        z_mean, z_log_var, z = self.encoder(data, deterministic=False)
         reconstruction = self.decoder(z)
         reconstruction_loss = tf.reduce_mean(
             tf.reduce_sum(
@@ -233,7 +233,7 @@ class VAE(keras.Model):
         assert inp_data.ndim == 4, 'Image should have 4 dimension: (-1, h, w, c)'
 
 
-        z_mean, _, _ = self.encoder(inp_data)
+        z_mean = self.encoder(inp_data, deterministic=True)
         out_data = self.decoder(z_mean)
 
         rows = len(inp_data)
