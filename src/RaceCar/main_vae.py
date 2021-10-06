@@ -29,9 +29,9 @@ sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 
 # Local imports
 from ppo import PPOAgent
-from ipg import IPGAgent
-#from ipg_her import IPGHERAgent
-from ipg_her_vae import IPGHERAgent
+#from ipg import IPGAgent
+from ipg_vae import IPGAgent        # feature = VAE
+from ipg_her import IPGHERAgent
 from sac import SACAgent
 from sac_her import SACHERAgent
 from CustomGymWrapper import ObsvnResizeTimeLimitWrapper
@@ -71,9 +71,9 @@ config_dict = dict(
     lr_a = 0.0002, 
     lr_c = 0.0002, 
     epochs = 20, 
-    training_batch = 2560,    # 5120(racecar)  # 1024 (kuka), 512
-    buffer_capacity = 30000,    # 50k (racecar)  # 20K (kuka)
-    batch_size = 128,  # 512 (racecar) #   128 (kuka)
+    training_batch = 5120,    # 5120(racecar)  # 1024 (kuka), 512
+    buffer_capacity = 50000,    # 50k (racecar)  # 20K (kuka)
+    batch_size = 512,  # 512 (racecar) #   128 (kuka)
     epsilon = 0.2,  # 0.07      # Clip factor required in PPO
     gamma = 0.993,  # 0.99      # discounted factor
     lmbda = 0.7,  # 0.9         # required for GAE in PPO
@@ -83,7 +83,7 @@ config_dict = dict(
     #                  'arch': 0,         # arch: 0, 1, 2, 3
     #                  'return_scores': False},  # visualize attention maps       
     use_attention = None, 
-    algo = 'ipg_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
+    algo = 'ipg',               # choices: ppo, sac, ipg, sac_her, ipg_her
     env_name = 'racecar',          # environment name
     use_her = {'strategy': 'future',
                 'extract_feature':False}, 
@@ -94,9 +94,9 @@ config_dict = dict(
 ####################################3
 #  Additional parameters 
 #########################################3
-seasons = 50 
+seasons = 100 
 COLAB = False
-WB_LOG = True          # WandB logging
+WB_LOG = False          # WandB logging
 success_value = None 
 img_vis = True 
 ############################
@@ -109,15 +109,14 @@ if COLAB:
     load_path = None
 else:
     save_path = './log/'
-    chkpt_freq = None         # wrt seasons
+    chkpt_freq = 10         # wrt seasons
     load_path = None
 ##############################################3
 save_path = save_path + config_dict['env_name'] + '/' + config_dict['algo'] + '/'
 current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 #current_time = datetime.datetime.now().strftime("%Y%m%d")
 save_path = save_path + current_time + '/'
-#logfile = config_dict['env_name'] + '_' + config_dict['algo'] + '.txt'
-logfile = None  # Don't write  into file
+logfile = config_dict['env_name'] + '_' + config_dict['algo'] + '.txt'
 ###########################################
 # wandb related configuration
 import wandb
@@ -125,7 +124,7 @@ if WB_LOG:
     #WANDB_API_KEY=os.environ['MY_WANDB_API_KEY']
     print("WandB version", wandb.__version__)
     wandb.login()
-    wandb.init(project=config_dict['env_name'], config=config_dict)
+    wandb.init(project='racecar', config=config_dict)
 #######################################################33
 #################################3
 if __name__ == "__main__":
@@ -186,13 +185,14 @@ if __name__ == "__main__":
                             config_dict['epsilon'],
                             config_dict['lmbda'],
                             config_dict['stack_size'],
-                            config_dict['use_her'],
+                            config_dict['her_strategy'],
                             config_dict['use_attention'],
                             config_dict['use_lstm'],
                             filename=logfile, 
                             wb_log=WB_LOG,  
                             chkpt_freq=chkpt_freq,
-                            path=save_path)
+                            path=save_path,
+                            vis_img=img_vis)
     elif config_dict['algo'] == 'sac':
         agent = SACAgent(env, seasons, success_value,
                             config_dict['epochs'],
