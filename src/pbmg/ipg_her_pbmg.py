@@ -20,13 +20,13 @@ import wandb
 # Add the current folder to python's import path
 current_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(current_dir)
-sys.path.append(os.path.dirname(current_dir))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+sys.path.append(os.path.join(parent_dir, 'common/'))
 
 # Local imports
-from FeatureNet import FeatureNetwork, CNNLSTMFeatureNetwork
-from buffer import HERBuffer
-from utils import uniquify
-from ipg_her import IPGHERAgent
+from common.utils import uniquify
+from algo.ipg_her import IPGHERAgent
 import pybullet_multigoal_gym as pmg
 
 class IPGHERAgent_pbmg(IPGHERAgent):
@@ -38,6 +38,9 @@ class IPGHERAgent_pbmg(IPGHERAgent):
         ep_reward_list = []
         for ep in range(max_eps):
 
+            # obtain observation
+            obs = self.env.reset()
+
             # empty the buffer for each episode 
             if self.stack_size > 1:
                 state_buffer = []
@@ -45,8 +48,8 @@ class IPGHERAgent_pbmg(IPGHERAgent):
 
             # initial state
             if self.image_input:
-                goal_obs = np.asarray(self.env.reset()['desired_goal_img'], dtype=np.float32) / 255.0
-                state_obs = np.asarray(self.env.reset()['observation'], dtype=np.float32) / 255.0
+                goal_obs = np.asarray(obs['desired_goal_img'], dtype=np.float32) / 255.0
+                state_obs = np.asarray(obs['observation'], dtype=np.float32) / 255.0
             else:
                 goal_obs = self.env.reset()['desired_goal']
                 state_obs = self.env.reset()['observation']
@@ -95,12 +98,13 @@ class IPGHERAgent_pbmg(IPGHERAgent):
 
 
         # initial state
+        obs = self.env.reset()
         if self.image_input:
-            goal_obs = np.asarray(self.env.reset()['desired_goal_img'], dtype=np.float32) / 255.0
-            state_obs = np.asarray(self.env.reset()['observation'], dtype=np.float32) / 255.0
+            goal_obs = np.asarray(obs['desired_goal_img'], dtype=np.float32) / 255.0
+            state_obs = np.asarray(obs['observation'], dtype=np.float32) / 255.0
         else:
-            state_obs = self.env.reset()['observation']
-            goal_obs = self.env.reset()['desired_goal']
+            state_obs = obs['observation']
+            goal_obs = obs['desired_goal']
 
     
         if self.stack_size > 1:
@@ -206,9 +210,10 @@ class IPGHERAgent_pbmg(IPGHERAgent):
                             wandb.log({'obsvn_img': obsv_img})
 
                     # prepare for next episode
+                    obs = self.env.reset()
                     if self.image_input:
-                        goal_obs = np.asarray(self.env.reset()['desired_goal_img'], dtype=np.float32) / 255.0
-                        state_obs = np.asarray(self.env.reset()['observation'], dtype=np.float32) / 255.0
+                        goal_obs = np.asarray(obs['desired_goal_img'], dtype=np.float32) / 255.0
+                        state_obs = np.asarray(obs['observation'], dtype=np.float32) / 255.0
                     else:
                         state_obs = self.env.reset()['observation']
                         goal_obs = self.env.reset()['desired_goal']

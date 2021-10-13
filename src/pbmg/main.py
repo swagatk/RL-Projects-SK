@@ -21,16 +21,17 @@ import datetime
 
 # Add the current folder to python's import path
 import sys
-sys.path.append(os.path.dirname(os.path.realpath(__file__)))
+current_dir = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(current_dir)
+sys.path.append(os.path.dirname(current_dir))
 
 # Local imports
-from ppo import PPOAgent
-from ipg import IPGAgent
+#from algo.ppo import PPOAgent
+#from ..algo.ipg import IPGAgent
 #from ipg_her import IPGHERAgent
 #from ipg_her_vae import IPGHERAgent
 from ipg_her_pbmg import IPGHERAgent_pbmg
-from sac import SACAgent
-from sac_her import SACHERAgent
+from sac_her_pbmg import SACHERAgent_pbmg
 
 ########################################
 # check tensorflow version
@@ -57,8 +58,8 @@ sess = tf.compat.v1.Session(config=config)
 ################################################
 # check GPU device
 device_name = tf.test.gpu_device_name()
-# if device_name != '/device:GPU:0':
-#     raise SystemError('GPU device not found')
+if device_name != '/device:GPU:0':
+    raise SystemError('GPU device not found')
 print('Found GPU at: {}'.format(device_name))
 ##############################################
 # #### Hyper-parameters for RACECAR Environment
@@ -79,7 +80,7 @@ config_dict = dict(
     #                  'arch': 0,         # arch: 0, 1, 2, 3
     #                  'return_scores': False},  # visualize attention maps       
     use_attention = None, 
-    algo = 'ipg_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
+    algo = 'sac_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
     env_name = 'pbmg',          # environment name
     use_her = { 'strategy': 'final',
                 'extract_feature' : False}, 
@@ -220,12 +221,12 @@ if __name__ == "__main__":
     elif config_dict['algo'] == 'ipg_her':
         agent = IPGHERAgent_pbmg(
                             **config_dict,
-                            seasons = 100,
-                            success_value = None,
-                            env = env,
-                            state_size = state_size,
-                            action_size = action_size,
-                            upper_bound = upper_bound,
+                            seasons=50,
+                            success_value=None,
+                            env=env,
+                            state_size=state_size,
+                            action_size=action_size,
+                            upper_bound=upper_bound,
                             filename=logfile, 
                             wb_log=WB_LOG,
                             chkpt_freq=None,
@@ -248,23 +249,18 @@ if __name__ == "__main__":
         #                     chkpt_freq=chkpt_freq,
         #                     path=save_path)
     elif config_dict['algo'] == 'sac_her':
-        pass
-        # agent = SACHERAgent(env, seasons, success_value,
-        #                     config_dict['epochs'],
-        #                     config_dict['training_batch'],
-        #                     config_dict['batch_size'],
-        #                     config_dict['buffer_capacity'],
-        #                     config_dict['lr_a'],
-        #                     config_dict['lr_c'],
-        #                     config_dict['gamma'],
-        #                     config_dict['tau'],
-        #                     config_dict['alpha'],
-        #                     config_dict['her_strategy'],
-        #                     config_dict['use_attention'],
-        #                     filename=logfile, 
-        #                     wb_log=WB_LOG,  
-        #                     chkpt_freq=chkpt_freq,
-        #                     path=save_path)
+        agent = SACHERAgent_pbmg(
+                            **config_dict,
+                            seasons=50,
+                            success_value=None,
+                            env=env,
+                            state_size=state_size,
+                            action_size=action_size,
+                            upper_bound=upper_bound,
+                            filename=logfile, 
+                            wb_log=WB_LOG,
+                            chkpt_freq=None,
+                            path=save_path)
     else:
         raise ValueError('Invalid Choice of Algorithm. Exiting ...')
 

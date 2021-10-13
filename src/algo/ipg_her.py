@@ -24,9 +24,10 @@ sys.path.append(current_dir)
 sys.path.append(os.path.dirname(current_dir))
 
 # Local imports
-from FeatureNet import FeatureNetwork, CNNLSTMFeatureNetwork
-from buffer import HERBuffer
-from utils import uniquify
+from common.FeatureNet import FeatureNetwork
+from common.CNNLSTMFeatureNet import CNNLSTMFeatureNetwork
+from common.buffer import HERBuffer
+from common.utils import uniquify
 
 
 class IPGHERActor:

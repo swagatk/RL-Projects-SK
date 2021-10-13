@@ -16,6 +16,7 @@ from collections import deque
 # Add the current folder to python's import path
 current_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(current_dir)
+#sys.path.append(os.path.dirname(current_dir))
 
 # Local imports
 from FeatureNet import FeatureNetwork

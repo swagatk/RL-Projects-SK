@@ -17,7 +17,7 @@ from datetime import datetime
 
 # Local Imports
 from rc_gym_wrapper import RaceCarCustomWrapper4pt
-from rc_custom_cnn import CustomCNN
+from custom_cnn import CustomCNN
 
 # Directories for storing logs & results
 root_path = './'

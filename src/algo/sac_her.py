@@ -23,12 +23,12 @@ import sys
 # add current directory to python module path
 current_directory = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(current_directory)
-#sys.path.append(os.path.dirname(current_directory))
+sys.path.append(os.path.dirname(current_directory))
 
 # Local imports
-from FeatureNet import FeatureNetwork
-from buffer import HERBuffer
-from utils import uniquify
+from common.FeatureNet import FeatureNetwork
+from common.buffer import HERBuffer
+from common.utils import uniquify
 
 
 ###############
@@ -230,34 +230,35 @@ class SACHERCritic:
 
 
 class SACHERAgent:
-    def __init__(self, env, seasons, success_value, epochs,
-                 training_batch, batch_size, buffer_capacity, lr_a=0.0003, lr_c=0.0003,
-                 gamma=0.99, tau=0.995, alpha=0.2, her_strategy='future', use_attention=None, 
-                 filename=None, wb_log=False, chkpt_freq=None, path='./'):
-        self.env = env
-        self.action_size = self.env.action_space.shape
-        self.state_size = self.env.observation_space.shape
-        self.upper_bound = np.squeeze(self.env.action_space.high)
+    def __init__(self, **kwargs):
+    # def __init__(self, env, seasons, success_value, epochs,
+    #              training_batch, batch_size, buffer_capacity, lr_a=0.0003, lr_c=0.0003,
+    #              gamma=0.99, tau=0.995, alpha=0.2, her_strategy='future', use_attention=None, 
+    #              filename=None, wb_log=False, chkpt_freq=None, path='./'):
+        self.env = kwargs['env']
+        self.action_size = kwargs['action_size']
+        self.state_size = kwargs['state_size']
+        self.goal_size = self.state_size
+        self.upper_bound = kwargs['upper_bound'] 
 
-        self.seasons = seasons
+        self.seasons = kwargs['seasons']
         self.episodes = 0               # total episode count
-        self.seasons = seasons
-        self.success_value = success_value
-        self.lr_a = lr_a
-        self.lr_c = lr_c
-        self.epochs = epochs
-        self.training_batch = training_batch    # no. of time steps in each season
-        self.batch_size = batch_size
-        self.buffer_capacity = buffer_capacity
+        self.success_value = kwargs['success_value']
+        self.lr_a = kwargs['lr_a']
+        self.lr_c = kwargs['lr_c']
+        self.epochs = kwargs['epochs']
+        self.training_batch = kwargs['training_batch']    # no. of time steps in each season
+        self.batch_size = kwargs['batch_size']
+        self.buffer_capacity = kwargs['buffer_capacity']
         self.target_entropy = -tf.constant(np.prod(self.action_size), dtype=tf.float32)
-        self.gamma = gamma                  # discount factor
-        self.tau = tau                      # polyak averaging factor
-        self.use_attention = use_attention
-        self.filename = filename
-        self.WB_LOG = wb_log
-        self.path = path
-        self.chkpt_freq = chkpt_freq                  # store checkpoints
-        self.her_strategy = her_strategy    # HER strategy: final, future, success
+        self.gamma = kwargs['gamma']                  # discount factor
+        self.tau = kwargs['tau']                      # polyak averaging factor
+        self.use_attention = kwargs['use_attention']
+        self.filename = kwargs['filename']
+        self.WB_LOG = kwargs['wb_log']
+        self.path = kwargs['path']
+        self.chkpt_freq = kwargs['chkpt_freq']                  # store checkpoints
+        self.use_her = kwargs['use_her']    # HER strategy: final, future, success
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -293,8 +294,8 @@ class SACHERAgent:
                                  self.lr_c, self.gamma, self.feature)
 
         # create alpha as a trainable variable
-        self.alpha = tf.Variable(alpha, dtype=tf.float32)
-        self.alpha_optimizer = tf.keras.optimizers.Adam(lr_a)
+        self.alpha = tf.Variable(kwargs['alpha'], dtype=tf.float32)
+        self.alpha_optimizer = tf.keras.optimizers.Adam(self.lr_a)
 
         # Buffer for off-policy training
         self.buffer = HERBuffer(self.buffer_capacity, self.batch_size)
@@ -361,7 +362,7 @@ class SACHERAgent:
         mean_c_loss = np.mean([c1_loss, c2_loss])
         return mean_c_loss 
 
-    def train(self, CRIT_T2=True):
+    def train(self, CRIT_T2=False):
         critic_losses, actor_losses, alpha_losses = [], [], []
         for epoch in range(self.epochs):
 
@@ -599,7 +600,7 @@ class SACHERAgent:
         reward = 1 if good_done else 0
         return good_done, reward
 
-    def her_reward_func_2(self, state, goal, thr=0.3):
+    def her_reward_func_2(self, state, goal, thr=0.2):
         # input: numpy array, output: numpy value
         good_done = np.linalg.norm(state - goal) <= thr 
         reward = 1 if good_done else 0
@@ -626,6 +627,7 @@ class SACHERAgent:
             self.buffer.record([state_, action_, reward_, next_state_, done_, goal_])
 
     def save_model(self, save_path):
+        os.makedirs(save_path, exist_ok=True)
         actor_file = save_path + 'sac_actor_wts.h5'
         critic1_file = save_path + 'sac_c1_wts.h5'
         critic2_file = save_path + 'sac_c2_wts.h5'

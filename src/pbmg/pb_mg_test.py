@@ -32,7 +32,7 @@ env = pmg.make_env(
     binary_reward=True,
     max_episode_steps=5,
     # image observation args
-    image_observation=False,
+    image_observation=True,
     depth_image=False,
     goal_image=True,
     visualize_target=True,
@@ -50,10 +50,10 @@ print('Action Space:', env.action_space)
 print('Shape of action space:', env.action_space.__getattribute__('shape'))
 #print('Shape of Observation space:', env.observation_space['observation'].__getattribute__('shape'))
 print('Reward Range:',env.reward_range)
-print('Observation:', obs)
 
 input('Press Enter to continue ...')
 t = 0
+ep_reward = 0
 while True:
     t += 1
     action = env.action_space.sample()
@@ -63,6 +63,7 @@ while True:
           'achieved_goal: ', obs['achieved_goal'], '\n',
           'reward: ', reward, '\n',
           'action:', action, '\n')
+    ep_reward += reward
     axes[0].imshow(obs['observation'])
     axes[0].set_title('Observation')
     axes[1].imshow(obs['desired_goal_img'])
@@ -71,4 +72,7 @@ while True:
     axes[2].set_title('achieved_goal')
     plt.pause(0.00001)      
     if done:
+        print('Max steps: {}, Total episodic reward:{}'.format(t, ep_reward))
         env.reset()
+        t = 0
+        ep_reward = 0

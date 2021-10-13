@@ -6,6 +6,12 @@ from collections import deque
 import random
 import pickle
 import tensorflow as tf
+import sys
+import os
+
+current_dir = os.path.dirname(os.path.realpath(__file__))
+sys.path.append(current_dir)
+sys.path.append(os.path.dirname(current_dir))
 
 
 #########################################
