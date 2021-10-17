@@ -65,17 +65,8 @@ print('Found GPU at: {}'.format(device_name))
 # #### Hyper-parameters for RACECAR Environment
 ##########################################
 config_dict = dict(
-    lr_a = 0.0002, 
-    lr_c = 0.0002, 
-    epochs = 20, 
-    training_batch = 2560,    # 5120(racecar)  # 1024 (kuka), 512
     buffer_capacity = 30000,    # 50k (racecar)  # 20K (kuka)
     batch_size = 128,  # 512 (racecar) #   128 (kuka)
-    epsilon = 0.2,  # 0.07      # Clip factor required in PPO
-    gamma = 0.993,  # 0.99      # discounted factor
-    lmbda = 0.7,  # 0.9         # required for GAE in PPO
-    tau = 0.995,                # polyak averaging factor
-    alpha = 0.2,                # Entropy Coefficient   required in SAC
     # use_attention = {'type': 'luong',   # type: luong, bahdanau
     #                  'arch': 0,         # arch: 0, 1, 2, 3
     #                  'return_scores': False},  # visualize attention maps       
@@ -250,19 +241,12 @@ if __name__ == "__main__":
         #                     path=save_path)
     elif config_dict['algo'] == 'sac_her':
         agent = SACHERAgent_pbmg(
-                            **config_dict,
-                            seasons=50,
-                            success_value=None,
-                            env=env,
                             state_size=state_size,
                             action_size=action_size,
                             upper_bound=upper_bound,
-                            filename=logfile, 
-                            wb_log=WB_LOG,
-                            chkpt_freq=None,
-                            path=save_path)
+                            use_her=config_dict['use_her'])
     else:
         raise ValueError('Invalid Choice of Algorithm. Exiting ...')
 
     # Train
-    agent.run()
+    agent.run(env, train_freq=20, WB_LOG=WB_LOG)

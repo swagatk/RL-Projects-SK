@@ -27,14 +27,11 @@ from common.utils import uniquify
 
 
 class SACHERAgent_pbmg(SACHERAgent):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
 
-
-    def validate(self, max_eps=50):
+    def validate(self, env, max_eps=20):
         ep_reward_list = []
         for ep in range(max_eps):
-            obs = self.env.reset()
+            obs = env.reset()
 
             if self.image_input:
                 state = np.asarray(obs['observation'], dtype=np.float32) / 255.0
@@ -46,8 +43,8 @@ class SACHERAgent_pbmg(SACHERAgent):
             t = 0
             ep_reward = 0
             while True:
-                action, _ = self.policy(state, goal)
-                next_obs, reward, done, _ = self.env.step(action)
+                action, _ = self.sample_action(state, goal)
+                next_obs, reward, done, _ = env.step(action)
 
                 # make reward positive
                 reward = 1 if reward == 0 else 0
@@ -67,40 +64,38 @@ class SACHERAgent_pbmg(SACHERAgent):
         mean_ep_reward = np.mean(ep_reward_list)
         return mean_ep_reward
 
-    def run(self, train_freq=5):
+    def run(self, env, max_episodes=50000, train_freq=1, WB_LOG=True):
 
-        if self.filename is not None: 
-            self.filename = uniquify(self.path + self.filename)
-
-        # initial state
-        obs = self.env.reset()
-        if self.image_input:
-            state = np.asarray(obs['observation'], dtype=np.float32) / 255.0
-            goal = np.asarray(obs['desired_goal_img'], dtype=np.float32) / 255.0
-        else:
-            state = obs['observation']
-            goal = obs['desired_goal']
+        filename='pbmg_sac_her.txt'
 
         start = datetime.datetime.now()
+        
         val_scores = []                 # validation scores 
         best_score = -np.inf
         ep_lens = []        # episodic length
         ep_scores = []      # All episodic scores
-        s_scores = []       # season scores
-        self.episodes = 0       # total episode count
         ep_actor_losses = []    # actor losses
         ep_critic_losses = []   # critic losses
+        ep_alpha_losses = []
+        global_steps = 0
 
-        for s in range(self.seasons):
+        for ep in range(max_episodes):
+            # initial state
+            obs = env.reset()
+            if self.image_input:
+                state = np.asarray(obs['observation'], dtype=np.float32) / 255.0
+                goal = np.asarray(obs['desired_goal_img'], dtype=np.float32) / 255.0
+            else:
+                state = obs['observation']
+                goal = obs['desired_goal']
+
             ep_experience = []    # required for HER
-            s_score = 0         # season score 
             ep_len = 0          # episode length
             ep_score = 0        # score for each episode
-            ep_cnt = 0          # no. of episodes in each season
             done = False
-            for t in range(self.training_batch):
-                action, _ = self.policy(state, goal)
-                next_obs, reward, done, _ = self.env.step(action)
+            while not done:
+                action, _ = self.sample_action(state, goal)
+                next_obs, reward, done, _ = env.step(action)
 
                 # make reward positive
                 reward = 1 if reward == 0 else 0
@@ -121,106 +116,53 @@ class SACHERAgent_pbmg(SACHERAgent):
                 state = next_state
                 ep_score += reward
                 ep_len += 1     # no. of time steps in each episode
+            # end of episode
                 
-                if done:
-                    s_score += ep_score
-                    ep_cnt += 1     # no. of episodes in each season
-                    self.episodes += 1  # total episode count
-                    ep_scores.append(ep_score)
-                    ep_lens.append(ep_len) 
-
-                    # HER strategies
-                    hind_goal = achieved_goal
-
-                    self.add_her_experience(ep_experience, hind_goal, 
-                                                self.use_her['extract_feature'])
-                    ep_experience = [] # clear temporary buffer
-
-                    # off-policy training after each episode
-                    if self.episodes % train_freq == 0:
-                        a_loss, c_loss, alpha_loss = self.train()
-
-                        ep_actor_losses.append(a_loss)
-                        ep_critic_losses.append(c_loss)
-
-                        if self.WB_LOG:
-                            wandb.log({
-                            'ep_actor_loss' : a_loss,
-                            'ep_critic_loss' : c_loss,
-                            'ep_alpha_loss' : alpha_loss})
-
-                    if self.WB_LOG:
-                        wandb.log({
-                            'Episodes' : self.episodes, 
-                            'mean_ep_score': np.mean(ep_scores),
-                            'mean_ep_len' : np.mean(ep_lens)})
-                    
-                    # prepare for next episode
-                    obs = self.env.reset()
-                    if self.image_input:
-                        state = np.asarray(obs['observation'], dtype=np.float32) / 255.0
-                        goal = np.asarray(obs['desired_goal_img'], dtype=np.float32) / 255.0
-                    else:
-                        state = obs['observation']
-                        goal = obs['desired_goal']
-
-                    ep_len, ep_score = 0, 0
-                    done = False
-                # done block ends here
-            # end of one season
-            
-            s_score = np.mean(ep_scores[-ep_cnt : ])
-            s_scores.append(s_score)
+            ep_scores.append(ep_score)
+            ep_lens.append(ep_len) 
             mean_ep_score = np.mean(ep_scores)
-            mean_ep_len = np.mean(ep_lens)
-            mean_s_score = np.mean(s_scores)
-            mean_actor_loss = np.mean(ep_actor_losses[-ep_cnt:])
-            mean_critic_loss = np.mean(ep_critic_losses[-ep_cnt:])
+            
 
-            # run validation once in each iteration
-            val_score = self.validate()
-            val_scores.append(val_score)
-            mean_val_score = np.mean(val_scores)
+            # HER strategies
+            hind_goal = achieved_goal
 
-            if mean_s_score > best_score:
-                best_model_path = self.path + 'best_model/'
-                os.makedirs(best_model_path, exist_ok=True)
+            self.add_her_experience(ep_experience, hind_goal, 
+                                                self.use_her['extract_feature'])
+            ep_experience = [] # clear temporary buffer
+
+            if ep % train_freq == 0:
+                # train
+                a_loss, c_loss, alpha_loss = self.train()
+
+                ep_actor_losses.append(a_loss)
+                ep_critic_losses.append(c_loss)
+                ep_alpha_losses.append(alpha_loss)
+
+                # validate
+                val_score = self.validate(env, max_eps=20)
+                val_scores.append(val_score)
+
+                if WB_LOG:
+                    wandb.log({
+                        'episodes' : ep,
+                        'mean_ep_score': np.mean(ep_scores),
+                        'mean_ep_len' : np.mean(ep_lens),
+                        'mean_val_score' : np.mean(val_scores),
+                        'ep_actor_loss' : np.mean(ep_actor_losses),
+                        'ep_critic_loss' : np.mean(ep_critic_losses),
+                        'ep_alpha_loss' : np.mean(ep_alpha_losses)})
+
+
+            if mean_ep_score > best_score:
+                best_model_path =  './log/best_model/'
                 self.save_model(best_model_path)
-                best_score = mean_s_score
-                print('Season: {}, Update best score: {}-->{}, Model saved!'.format(s, best_score, mean_ep_score))
-                print('Season: {}, Validation Score: {}, Mean Validation Score: {}' \
-                .format(s, val_score, mean_val_score))
+                best_score = mean_ep_score
+                print('Episode: {}, Update best score: {:.3f}-->{:.3f}, Model saved!'.format(ep, best_score, mean_ep_score))
+                print('Episode: {}, Validation Score: {:.3f}, Mean Validation Score: {}' \
+                .format(ep, val_score, np.mean(val_scores)))
 
-            if self.WB_LOG:
-                wandb.log({'Season Score' : s_score, 
-                            'Mean Season Score' : mean_s_score,
-                            'Actor Loss' : mean_actor_loss,
-                            'Critic Loss' : mean_critic_loss,
-                            'Mean episode length' : mean_ep_len,
-                            'val_score': val_score, 
-                            'mean_val_score': mean_val_score,
-                            'ep_per_season' : ep_cnt,
-                            'Season' : s})
-
-            if self.chkpt_freq is not None and s % self.chkpt_freq == 0:
-                chkpt_path = self.path + 'chkpt_{}/'.format(s)
-                self.save_model(chkpt_path)
-
-            if self.filename is not None:
-                with open(self.filename, 'a') as file:
-                    file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
-                            .format(s, self.episodes, ep_cnt, mean_ep_len,
-                                    s_score, mean_s_score, mean_actor_loss, mean_critic_loss, alpha_loss,
-                                    val_score, mean_val_score))
-
-            if self.success_value is not None:
-                if best_score > self.success_value:
-                    print('Problem is solved in {} episodes with score {}'.format(s, best_score))
-                    print('Mean Episodic score: {}'.format(mean_s_score))
-                    break
-
-        # end of season-loop
+        # end offor-loop
         end = datetime.datetime.now()
         print('Time to Completion: {}'.format(end - start))
-        self.env.close()
-        print('Mean episodic score over {} episodes: {:.2f}'.format(self.episodes, np.mean(ep_scores)))
+        env.close()
+        print('Mean episodic score over {} episodes: {:.2f}'.format(ep, mean_ep_score))

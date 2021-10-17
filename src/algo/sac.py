@@ -7,7 +7,6 @@ Original Source: https://github.com/shakti365/soft-actor-critic
     replicated to other algorithms such as PPO, IPG, DDPG, TD3 etc. (To do)
 
 '''
-from re import I
 import numpy as np
 import tensorflow as tf
 from tensorflow.python.ops.gen_array_ops import extract_image_patches_eager_fallback
@@ -47,7 +46,6 @@ class SACActor:
         self.feature_model = feature
         self.model = self._build_net()    # returns mean action
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
-
 
     def _build_net(self):
         # input is a stack of 1-channel YUV images
@@ -182,12 +180,12 @@ class SACCritic:
 
 
 class SACAgent:
-    def __init__(self, env, state_size, action_size, action_upper_bound,
+    def __init__(self, state_size, action_size, action_upper_bound,
                 buffer_capacity=100000, batch_size=128, epochs=50, 
                 learning_rate=0.0003, alpha=0.2, gamma=0.99,
                 polyak=0.995, use_attention=None, 
                 filename=None, wb_log=False, path='./'):
-        self.env = env
+                
         self.action_size = action_size 
         self.state_size = state_size 
         self.upper_bound = action_upper_bound 
@@ -356,7 +354,7 @@ class SACAgent:
         mean_ep_reward = np.mean(ep_reward_list)
         return mean_ep_reward
 
-    def run(self, max_episodes=1000):
+    def run(self, env, max_episodes=1000):
 
         if self.filename is not None:
             self.filename = uniquify(self.path + self.filename)
@@ -372,7 +370,7 @@ class SACAgent:
 
         for ep in range(max_episodes):
 
-            state = self.env.reset()
+            state = env.reset()
             if self.image_input:
                 state = np.asarray(state, dtype=np.float32) / 255.0
 
@@ -424,7 +422,7 @@ class SACAgent:
                 best_model_path = self.path + 'best_model/'
                 self.save_model(best_model_path)
                 best_score = np.mean(ep_scores) 
-                print('Season: {}, Update best score: {}-->{}, Model saved!'.format(ep, best_score, np.mean(ep_scores)))
+                print('Season: {}, Update best score: {:.2f}-->{:.2f}, Model saved!'.format(ep, best_score, np.mean(ep_scores)))
 
             if self.filename is not None:
                 with open(self.filename, 'a') as file:
