@@ -25,8 +25,21 @@ from common.buffer import HERBuffer
 from common.utils import uniquify
 
 
-
 class SACHERAgent_pbmg(SACHERAgent):
+
+    def add_her_experience(self, ep_experience, hind_goal):
+        for i in range(len(ep_experience)):
+            state_ = ep_experience[i][0]
+            action_ = ep_experience[i][1]
+            next_state_ = ep_experience[i][3]
+            goal_ = ep_experience[i][5]
+
+            done_ = np.array_equal(goal_, hind_goal)
+            hind_reward = 0 if done_ else -1
+
+            self.buffer.record(
+                [state_, action_, hind_reward, next_state_, done_, hind_goal]
+            )
 
     def validate(self, env, max_eps=20):
         ep_reward_list = []
@@ -46,9 +59,6 @@ class SACHERAgent_pbmg(SACHERAgent):
                 action, _ = self.sample_action(state, goal)
                 next_obs, reward, done, _ = env.step(action)
 
-                # make reward positive
-                reward = 1 if reward == 0 else 0
-
                 if self.image_input:
                     next_state = np.asarray(next_obs['observation'], dtype=np.float32) / 255.0
                 else:
@@ -64,9 +74,8 @@ class SACHERAgent_pbmg(SACHERAgent):
         mean_ep_reward = np.mean(ep_reward_list)
         return mean_ep_reward
 
-    def run(self, env, max_episodes=50000, train_freq=1, WB_LOG=True):
+    def run(self, env, max_episodes=5000, train_freq=1, WB_LOG=True):
 
-        filename='pbmg_sac_her.txt'
 
         start = datetime.datetime.now()
         
@@ -97,9 +106,6 @@ class SACHERAgent_pbmg(SACHERAgent):
                 action, _ = self.sample_action(state, goal)
                 next_obs, reward, done, _ = env.step(action)
 
-                # make reward positive
-                reward = 1 if reward == 0 else 0
-
                 if self.image_input:
                     next_state = np.asarray(next_obs['observation'], dtype=np.float32) / 255.0
                     achieved_goal = np.asarray(next_obs['achieved_goal_img'], dtype=np.float32) / 255.0
@@ -116,18 +122,17 @@ class SACHERAgent_pbmg(SACHERAgent):
                 state = next_state
                 ep_score += reward
                 ep_len += 1     # no. of time steps in each episode
+                global_steps += 1
             # end of episode
                 
             ep_scores.append(ep_score)
             ep_lens.append(ep_len) 
             mean_ep_score = np.mean(ep_scores)
             
-
             # HER strategies
             hind_goal = achieved_goal
 
-            self.add_her_experience(ep_experience, hind_goal, 
-                                                self.use_her['extract_feature'])
+            self.add_her_experience(ep_experience, hind_goal) 
             ep_experience = [] # clear temporary buffer
 
             if ep % train_freq == 0:
@@ -166,3 +171,4 @@ class SACHERAgent_pbmg(SACHERAgent):
         print('Time to Completion: {}'.format(end - start))
         env.close()
         print('Mean episodic score over {} episodes: {:.2f}'.format(ep, mean_ep_score))
+        print('Total number of steps =', global_steps)

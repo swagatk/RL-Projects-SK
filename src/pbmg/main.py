@@ -65,8 +65,8 @@ print('Found GPU at: {}'.format(device_name))
 # #### Hyper-parameters for RACECAR Environment
 ##########################################
 config_dict = dict(
-    buffer_capacity = 30000,    # 50k (racecar)  # 20K (kuka)
-    batch_size = 128,  # 512 (racecar) #   128 (kuka)
+    buffer_capacity = 100000,    # 50k (racecar)  # 20K (kuka)
+    batch_size = 256,  # 512 (racecar) #   128 (kuka)
     # use_attention = {'type': 'luong',   # type: luong, bahdanau
     #                  'arch': 0,         # arch: 0, 1, 2, 3
     #                  'return_scores': False},  # visualize attention maps       
@@ -139,7 +139,7 @@ if __name__ == "__main__":
             num_block=4,  # only meaningful for multi-block tasks
             render=False,
             binary_reward=True,
-            max_episode_steps=5,
+            max_episode_steps=20,
             # image observation args
             image_observation=False,
             depth_image=False,
@@ -244,9 +244,11 @@ if __name__ == "__main__":
                             state_size=state_size,
                             action_size=action_size,
                             upper_bound=upper_bound,
-                            use_her=config_dict['use_her'])
+                            buffer_capacity=config_dict['buffer_capacity'],
+                            use_her=config_dict['use_her'],
+                            batch_size=config_dict['batch_size'])
     else:
         raise ValueError('Invalid Choice of Algorithm. Exiting ...')
 
     # Train
-    agent.run(env, train_freq=20, WB_LOG=WB_LOG)
+    agent.run(env, train_freq=1, WB_LOG=WB_LOG)
