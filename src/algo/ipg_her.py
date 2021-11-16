@@ -211,32 +211,40 @@ class Baseline:
         self.model.load_weights(filename)
 
 class IPGHERAgent:
-    def __init__(self, **kwargs):
-        self.env = kwargs['env']
-        self.action_size = kwargs['action_size']
-        self.state_size = kwargs['state_size']
+    def __init__(self, state_size, action_size, upper_bound, 
+                        buffer_capacity=100000,
+                        batch_size=256,
+                        max_seasons=100,
+                        learning_rate=0.0002,
+                        epochs=20,
+                        training_batch=5120,
+                        epsilon=0.2,
+                        gamma=0.95,
+                        lmbda=0.7,
+                        use_attention=None,
+                        use_her=None,
+                        stack_size=0,
+                        use_lstm=None):
+        
+        self.state_size = state_size
+        self.action_size = action_size
         self.goal_size = self.state_size
-        self.upper_bound = kwargs['upper_bound']
-        self.SEASONS = kwargs['seasons']
+        self.upper_bound = upper_bound
+        self.max_seasons = max_seasons
         self.episodes = 0       # global episode count
-        self.success_value = kwargs['success_value']
-        self.lr_a = kwargs['lr_a']
-        self.lr_c = kwargs['lr_c']
-        self.epochs = kwargs['epochs']
-        self.training_batch = kwargs['training_batch']
-        self.batch_size = kwargs['batch_size']
-        self.buffer_capacity = kwargs['buffer_capacity']
-        self.epsilon = kwargs['epsilon']
-        self.gamma = kwargs['gamma']
-        self.lmbda = kwargs['lmbda']
-        self.attention = kwargs['use_attention']
-        self.filename = kwargs['filename']
-        self.WB_LOG = kwargs['wb_log']
-        self.path = kwargs['path']            # location to store results
-        self.chkpt_freq = kwargs['chkpt_freq']          # save checkpoints
-        self.use_her = kwargs['use_her']        # HER strategy: final, future, success
-        self.stack_size = kwargs['stack_size']
-        self.use_lstm = kwargs['use_lstm']        # enable / disable lstm
+        self.global_time_steps = 0      # global time steps
+        self.lr = learning_rate 
+        self.epochs = epochs
+        self.training_batch = training_batch
+        self.batch_size = batch_size
+        self.buffer_capacity = buffer_capacity
+        self.epsilon = epsilon          # PPO clip factor
+        self.gamma = gamma              # discount factor
+        self.lmbda = lmbda              # discount factor for GAE
+        self.attention = use_attention
+        self.use_her = use_her        # HER strategy: final, future, success
+        self.stack_size = stack_size
+        self.use_lstm = use_lstm        # enable / disable lstm
 
         if len(self.state_size) == 3:
             self.image_input = True     # image input
@@ -266,13 +274,13 @@ class IPGHERAgent:
         # Actor Model
         self.actor = IPGHERActor(state_size=self.state_size, goal_size=self.goal_size,
                               action_size=self.action_size, upper_bound=self.upper_bound,
-                              lr=self.lr_a, epsilon=self.epsilon, feature=self.feature)
+                              lr=self.lr, epsilon=self.epsilon, feature=self.feature)
         # Critic Model
         self.critic = DDPGCritic(state_size=self.state_size, action_size=self.action_size,
-                                 learning_rate=self.lr_c, gamma=self.gamma, feature_model=self.feature)
+                                 learning_rate=self.lr, gamma=self.gamma, feature_model=self.feature)
         # Baseline Model
         self.baseline = Baseline(state_size=self.state_size, action_size=self.action_size,
-                                                lr=self.lr_c, feature=self.feature)
+                                                lr=self.lr, feature=self.feature)
 
     def policy(self, state, goal, deterministic=False):
         tf_state = tf.expand_dims(tf.convert_to_tensor(state), 0)
@@ -448,7 +456,7 @@ class IPGHERAgent:
         return np.mean(a_loss_list), np.mean(c_loss_list)
 
     # Validation routine
-    def validate(self, max_eps=50):
+    def validate(self, env, max_eps=50):
         ep_reward_list = []
         for ep in range(max_eps):
 
@@ -458,8 +466,8 @@ class IPGHERAgent:
                 goal_buffer = []
 
             # initial state
-            state_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0  # convert into float array
-            goal_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
+            state_obs = np.asarray(env.reset(), dtype=np.float32) / 255.0  # convert into float array
+            goal_obs = np.asarray(env.reset(), dtype=np.float32) / 255.0
 
             t = 0
             ep_reward = 0
@@ -474,7 +482,7 @@ class IPGHERAgent:
                     goal = goal_obs
 
                 action = self.policy(state, goal, deterministic=True)
-                next_state_obs, reward, done, _ = self.env.step(action)
+                next_state_obs, reward, done, _ = env.step(action)
                 next_state_obs = np.asarray(next_state_obs, dtype=np.float32) / 255.0
 
                 state_obs = next_state_obs
@@ -537,19 +545,18 @@ class IPGHERAgent:
             attn_img = wandb.Image(attn_array)
             wandb.log({'attention maps_{}'.format(i): attn_img})
 
-    
-    def run(self):
+    def run(self, env, filename='ipg_her_output.txt', WB_LOG=False, success_value=None, chkpt_freq=None, path='./'):
 
-        if self.filename is not None:
-            self.filename = uniquify(self.path + self.filename)
+        if filename is not None:
+            filename = uniquify(self.path + filename)
 
         # initial state and goal
         if self.image_input:    # normalize image inputs
-            state_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0  # convert into float array
-            goal_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
+            state_obs = np.asarray(env.reset(), dtype=np.float32) / 255.0  # convert into float array
+            goal_obs = np.asarray(env.reset(), dtype=np.float32) / 255.0
         else:   # vector input
-            state_obs = self.env.reset()    
-            goal_obs = self.env.reset()
+            state_obs = env.reset()    
+            goal_obs = env.reset()
 
         
         # store successful states
@@ -569,7 +576,7 @@ class IPGHERAgent:
         ep_lens = []                # episode lengths 
         ep_scores = []              # episodic rewards
         self.episodes = 0           # global episode count
-        for s in range(self.SEASONS):
+        for s in range(self.max_seasons):
             # discard trajectories from previous season
             states, next_states, actions, rewards, dones, goals = [], [], [], [], [], []
             ep_experience = []     # episodic experience buffer
@@ -593,7 +600,7 @@ class IPGHERAgent:
                 action = self.policy(state, goal)
 
                 # obtain reward from the environment
-                next_state_obs, reward, done, _ = self.env.step(action)
+                next_state_obs, reward, done, _ = env.step(action)
                 next_state_obs = np.asarray(next_state_obs, dtype=np.float32) / 255.0
 
                 if self.stack_size > 1:
@@ -651,7 +658,7 @@ class IPGHERAgent:
                     ep_scores.append(ep_score)
                     ep_lens.append(ep_len)
 
-                    if self.WB_LOG:
+                    if WB_LOG:
                         wandb.log({
                             'Episodes' : self.episodes, 
                             'mean_ep_score': np.mean(ep_scores),
@@ -661,8 +668,8 @@ class IPGHERAgent:
                             wandb.log({'obsvn_img': obsv_img})
 
                     # prepare for next episode
-                    state_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
-                    goal_obs = np.asarray(self.env.reset(), dtype=np.float32) / 255.0
+                    state_obs = np.asarray(env.reset(), dtype=np.float32) / 255.0
+                    goal_obs = np.asarray(env.reset(), dtype=np.float32) / 255.0
                     ep_len, ep_score = 0, 0
                     done = False
 
@@ -701,7 +708,7 @@ class IPGHERAgent:
                 print('Season: {}, Validation Score: {}, Mean Validation Score: {}'\
                     .format(s, val_score, mean_val_score))
 
-            if self.WB_LOG:
+            if WB_LOG:
                 wandb.log({'Season Score' : s_score, 
                             'Mean Season Score' : mean_s_score,
                             'Actor Loss' : actor_loss,
@@ -712,19 +719,19 @@ class IPGHERAgent:
                             'ep_per_season' : ep_cnt, 
                             'Season' : s})
 
-            if self.chkpt_freq is not None and s % self.chkpt_freq == 0:          
+            if chkpt_freq is not None and s % self.chkpt_freq == 0:          
                 chkpt_path = self.path + 'chkpt_{}/'.format(s)
                 self.save_model(chkpt_path)
 
-            if self.filename is not None:
-                with open(self.filename, 'a') as file:
+            if filename is not None:
+                with open(filename, 'a') as file:
                     file.write('{}\t{}\t{}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\t{:.2f}\n'
                             .format(s, self.episodes, ep_cnt, mean_ep_len,
                                     s_score, mean_s_score, actor_loss, critic_loss,
                                     val_score, mean_val_score))
 
-            if self.success_value is not None:
-                if best_score > self.success_value:
+            if success_value is not None:
+                if best_score > success_value:
                     print('Problem is solved in {} episodes with score {}'.format(self.episodes, best_score))
                     break
 
@@ -732,7 +739,7 @@ class IPGHERAgent:
         end = datetime.datetime.now()
         print('Time to completion: {}'.format(end-start))
         print('Mean episodic score over {} episodes: {:.2f}'.format(self.episodes, np.mean(ep_scores)))
-        self.env.close()
+        env.close()
 
         # Save the final model
         final_model_path = self.path + 'final_model/'
@@ -755,267 +762,3 @@ class IPGHERAgent:
         self.critic.load_weights(critic_file)
         self.baseline.load_weights(baseline_file)
 
-
-###############################################3
-class IPGHERAgent2:
-    def __init__(self, state_size, action_size, action_upper_bound, 
-                 epochs, batch_size, buffer_capacity, 
-                 lr_a, lr_c, epsilon, gamma, lmbda, 
-                 her_strategy='future',
-                 use_attention=False,
-                 filename=None, wb_log=False, chkpt_freq=None, path='./'):
-        self.state_size = state_size
-        self.action_size = action_size 
-        self.goal_size = state_size
-        self.upper_bound = action_upper_bound
-        self.lr_a = lr_a
-        self.lr_c = lr_c
-        self.epochs = epochs
-        self.batch_size = batch_size
-        self.buffer_capacity = buffer_capacity
-        self.epsilon = epsilon
-        self.gamma = gamma
-        self.lmbda = lmbda
-        self.use_attention = use_attention
-        self.thr = 0.1          # threshold similarity between state & goal
-        self.her_strategy=her_strategy
-        self.WB_LOG = wb_log
-        self.path = path
-        self.chkpt_freq = chkpt_freq
-        self.episodes = 0                   # global episode count
-
-        if len(self.state_size) == 3:
-            self.image_input = True     # image input
-        elif len(self.state_size) == 1:
-            self.image_input = False        # vector input
-        else:
-            raise ValueError("Input can be a vector or an image")
-
-        # create HER buffer to store experiences
-        self.buffer = HERBuffer(self.buffer_capacity, self.batch_size)
-
-        # extract features from input images
-        if self.use_attention and self.image_input:   # attention + image input
-            print('Currently Attention handles only image input')
-            self.feature = AttentionFeatureNetwork(self.state_size, lr_a)
-        elif self.use_attention is False and self.image_input is True:  # image input
-            print('You have selected an image input')
-            self.feature = FeatureNetwork(self.state_size, lr_a)
-        else:       # non-image input
-            print('You have selected a non-image input.')
-            self.feature = None
-
-        # Actor Model
-        self.actor = IPGHERActor(state_size=self.state_size, goal_size=self.goal_size,
-                              action_size=self.action_size, upper_bound=self.upper_bound,
-                              lr=self.lr_a, epsilon=self.epsilon, feature=self.feature)
-        # Critic Model
-        self.critic = DDPGCritic(state_size=self.state_size, action_size=self.action_size,
-                                 learning_rate=self.lr_c, gamma=self.gamma, feature_model=self.feature)
-        # Baseline Model
-        self.baseline = Baseline(state_size=self.state_size, action_size=self.action_size,
-                                                lr=self.lr_c, feature=self.feature)
-
-    def policy(self, state, goal, deterministic=False):
-        tf_state = tf.expand_dims(tf.convert_to_tensor(state), 0)
-        tf_goal = tf.expand_dims(tf.convert_to_tensor(goal), 0)
-        mean, std = self.actor(tf_state, tf_goal)
-        if deterministic:
-            action = mean
-        else:
-            pi = tfp.distributions.Normal(mean, std)
-            action = pi.sample()
-            #action = mean + tf.random.uniform(-self.upper_bound, self.upper_bound, size=mean.shape) * std
-
-        action = tf.clip_by_value(action, -self.upper_bound, self.upper_bound)
-        return action.numpy()
-
-    def compute_advantage(self, r_batch, s_batch, ns_batch, d_batch):
-        # input: tensors
-        gamma = self.gamma
-        lmbda = self.lmbda
-        s_values = tf.squeeze(self.baseline.model(s_batch)) # input: tensor
-        ns_values = tf.squeeze(self.baseline.model(ns_batch))
-        returns = []
-        gae = 0     # generalized advantage estimate
-        for i in reversed(range(len(r_batch))):
-            delta = r_batch[i] + gamma * ns_values[i] * (1 - d_batch[i]) - s_values[i]
-            gae = delta + gamma * lmbda * (1 - d_batch[i]) * gae
-            returns. insert(0, gae + s_values[i])
-
-        returns = np.array(returns)
-        adv = returns - s_values.numpy()
-        adv = (adv - np.mean(adv)) / (np.std(adv) + 1e-10) # output: numpy array
-        return adv, returns
-
-    def compute_targets(self, r_batch, ns_batch, d_batch, g_batch):
-        mean = self.actor.model([ns_batch, g_batch])
-        target_critic = self.critic.model([ns_batch, mean])
-        y = r_batch + self.gamma * (1 - d_batch) * target_critic
-        return y
-
-    def compute_adv_bar(self, s_batch, a_batch, g_batch):
-        mean = self.actor.model([s_batch, g_batch])
-        x = tf.squeeze(a_batch) - tf.squeeze(mean)
-        y = tf.squeeze(self.critic.model([s_batch, mean]))
-        adv_bar = y * x         # check this
-        return adv_bar
-
-    def her_reward_func_2(self, state, goal):
-        good_done = np.linalg.norm(state - goal) <= self.thr
-        reward = 1 if good_done else 0
-        return good_done, reward
-
-    # implements on-policy & off-policy training
-    def train(self, states, actions, rewards, next_states, dones, goals):
-        n_split = len(rewards) // self.batch_size
-
-        # use this if you are using tf.split
-        # valid_length = n_split * self.batch_size
-        # states = states[0:valid_length]
-        # actions = actions[0:valid_length]
-        # rewards = rewards[0:valid_length]
-        # dones = dones[0:valid_length]
-        # next_states = next_states[0:valid_length]
-        # goals = goals[0:valid_length]
-
-        # convert to tensors
-        states = tf.convert_to_tensor(states, dtype=tf.float32)
-        actions = tf.convert_to_tensor(actions, dtype=tf.float32)
-        rewards = tf.convert_to_tensor(rewards, dtype=tf.float32)
-        dones = tf.convert_to_tensor(dones, dtype=tf.float32)
-        next_states = tf.convert_to_tensor(next_states, dtype=tf.float32)
-        goals = tf.convert_to_tensor(goals, dtype=tf.float32)
-
-        # IPG paper: https: // arxiv.org / abs / 1706.00387
-        # Fit baseline using collected experience and compute advantages
-        advantages, returns = self.compute_advantage(rewards, states, next_states, dones) # returns np.arrays
-
-        advantages = tf.convert_to_tensor(advantages, dtype=tf.float32)
-        returns = tf.convert_to_tensor(returns, dtype=tf.float32)
-
-        # if use control variate: Compute critic-based advantages
-        # and compute learning signal
-        use_CV = False
-        v = 0.2
-        if use_CV:
-            # compute critic-based advantage
-            adv_bar = self.compute_adv_bar(states, actions)
-            ls = advantages - adv_bar
-            b = 1
-        else:
-            ls = advantages
-            b = v
-
-        ls *= (1 - v)
-
-        # s_split = tf.split(states, n_split)
-        # a_split = tf.split(actions, n_split)
-        # t_split = tf.split(returns, n_split)
-        # ls_split = tf.split(ls, n_split)
-        # g_split = tf.split(goals, n_split)
-
-        indexes = np.arange(n_split, dtype=int)
-
-        # current policy
-        mean, std = self.actor(states, goals)
-        pi = tfp.distributions.Normal(mean, std)
-
-        a_loss_list = []
-        c_loss_list = []
-        np.random.shuffle(indexes)
-        for _ in range(self.epochs):
-            s_batch, a_batch, r_batch, ns_batch, d_batch, g_batch = self.buffer.sample()
-
-            # convert to tensors
-            s_batch = tf.convert_to_tensor(s_batch, dtype=tf.float32)
-            a_batch = tf.convert_to_tensor(a_batch, dtype=tf.float32)
-            r_batch = tf.convert_to_tensor(r_batch, dtype=tf.float32)
-            ns_batch = tf.convert_to_tensor(ns_batch, dtype=tf.float32)
-            d_batch = tf.convert_to_tensor(np.asarray(d_batch), dtype=tf.float32)
-            g_batch = tf.convert_to_tensor(g_batch, dtype=tf.float32)
-
-            for i in indexes:
-                old_pi = pi[i * self.batch_size: (i+1) * self.batch_size]
-                s_split = tf.gather(states, indices=np.arange(i * self.batch_size, (i+1) * self.batch_size), axis=0)
-                a_split = tf.gather(actions, indices=np.arange(i * self.batch_size, (i+1) * self.batch_size), axis=0)
-                ls_split = tf.gather(ls, indices=np.arange(i * self.batch_size, (i+1) * self.batch_size), axis=0)
-                g_split = tf.gather(goals, indices=np.arange(i * self.batch_size, (i+1) * self.batch_size), axis=0)
-                t_split = tf.gather(returns, indices=np.arange(i * self.batch_size, (i+1) * self.batch_size), axis=0)
-
-                # update actor
-                # a_loss = self.actor.train(s_split[i], a_split[i], ls_split[i],
-                #                           old_pi, self.critic, b, s_batch,
-                #                           g_split[i], g_batch)
-                a_loss = self.actor.train(s_split, a_split, ls_split,
-                                          old_pi, self.critic, b, s_batch,
-                                          g_split, g_batch)
-                a_loss_list.append(a_loss)
-                # update baseline
-                # v_loss = self.baseline.train(s_split[i], t_split[i])
-                v_loss = self.baseline.train(s_split, t_split)
-
-            # update critic
-            y = self.compute_targets(r_batch, ns_batch, d_batch, g_batch)
-            c_loss = self.critic.train(s_batch, a_batch, y)
-            c_loss_list.append(c_loss)
-
-        self.replay_count += 1      # Why do you need this?
-        return np.mean(a_loss_list), np.mean(c_loss_list)
-
-    def add_her_experience2(self, ep_experience, K=1):
-        # add additional experience to the replay buffer
-        for t in range(len(ep_experience)):
-            # get K future steps per time-step
-            for _ in range(K):
-                # get a random future time instant
-                future = np.random.randint(t, len(ep_experience))
-                # get a new goal at t_future
-                goal_ = ep_experience[future][3]
-                state_ = ep_experience[t][0]
-                action_ = ep_experience[t][1]
-                next_state_ = ep_experience[t][3]
-                done_, reward_ = self.her_reward_func_2(next_state_, goal_)
-                # add new experience to HER buffer
-                self.buffer.record([state_, action_, reward_, next_state_, done_, goal_])
-
-    def add_her_experience(self, ep_experience, hind_goal):
-        for i in range(len(ep_experience)):
-            if hind_goal is None:
-                future = np.random.randint(i, len(ep_experience))
-                goal_ = ep_experience[future][3]
-            else:
-                goal_ = hind_goal
-
-            state_ = ep_experience[i][0]
-            action_ = ep_experience[i][1]
-            next_state_ = ep_experience[i][3]
-            current_goal = ep_experience[i][5]
-
-            # if self.use_mujoco:
-            #     done_ = np.array_equal(current_goal, goal_)
-            #     reward_ = 1 if done_ else 0
-            # else:
-            done_, reward_ = self.her_reward_func_2(next_state_, goal_)
-
-            # add new experience to the main buffer
-            self.buffer.record([state_, action_, reward_, next_state_, done_, goal_])
-
-    def save_model(self, save_path):
-        actor_file = save_path + 'ipg_actor_wts.h5'
-        critic_file = save_path + 'ipg_critic_wts.h5'
-        baseline_file = save_path + 'ipg_bl_wts.h5'
-        self.actor.save_weights(actor_file)
-        self.critic.save_weights(critic_file)
-        self.baseline.save_weights(baseline_file)
-
-    def load_model(self, load_path):
-        actor_file = load_path + 'ipg_actor_wts.h5'
-        critic_file = load_path + 'ipg_critic_wts.h5'
-        baseline_file = load_path + 'ipg_bl_wts.h5'
-        self.actor.load_weights(actor_file)
-        self.critic.load_weights(critic_file)
-        self.baseline.load_weights(baseline_file)
-
-
-        

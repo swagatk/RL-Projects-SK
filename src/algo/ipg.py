@@ -18,9 +18,9 @@ current_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(current_dir)
 
 # Local imports
-from FeatureNet import FeatureNetwork
-from buffer import Buffer
-from utils import uniquify
+from common.FeatureNet import FeatureNetwork
+from common.buffer import Buffer
+from common.utils import uniquify
 
 ###############
 # ACTOR NETWORK

@@ -71,7 +71,7 @@ config_dict = dict(
     #                  'arch': 0,         # arch: 0, 1, 2, 3
     #                  'return_scores': False},  # visualize attention maps       
     use_attention = None, 
-    algo = 'sac_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
+    algo = 'ipg_her',               # choices: ppo, sac, ipg, sac_her, ipg_her
     env_name = 'pbmg',          # environment name
     use_her = { 'strategy': 'final',
                 'extract_feature' : False}, 
@@ -80,19 +80,11 @@ config_dict = dict(
 )
 #######################
 WB_LOG = True
-COLAB = False
 ############################
 # Google Colab Settings
-if COLAB:
-    import pybullet as p
-    p.connect(p.DIRECT)
-    save_path = '/content/gdrive/MyDrive/Colab/' 
-    chkpt_freq = 5
-    load_path = None
-else:
-    save_path = './log/'
-    chkpt_freq = None         # wrt seasons
-    load_path = None
+save_path = './log/'
+chkpt_freq = None         # wrt seasons
+load_path = None
 ##############################################3
 save_path = save_path + config_dict['env_name'] + '/' + config_dict['algo'] + '/'
 current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -168,9 +160,9 @@ if __name__ == "__main__":
     print('Action size:', action_size)
     print('Action upper bound:', upper_bound)
 
-    ans = input('Do you want to continue?(Y/N)')
-    if ans.lower() == 'n':
-        exit()
+    # ans = input('Do you want to continue?(Y/N)')
+    # if ans.lower() == 'n':
+    #     exit()
 
     # Select RL Agent
     if config_dict['algo'] == 'ppo':
@@ -193,52 +185,14 @@ if __name__ == "__main__":
         #                     path=save_path)
     elif config_dict['algo'] == 'ipg':
         pass
-        # agent = IPGAgent(env, seasons, success_value, 
-        #                     config_dict['epochs'],
-        #                     config_dict['training_batch'],
-        #                     config_dict['batch_size'],
-        #                     config_dict['buffer_capacity'],
-        #                     config_dict['lr_a'],
-        #                     config_dict['lr_c'],
-        #                     config_dict['gamma'],
-        #                     config_dict['epsilon'],
-        #                     config_dict['lmbda'],
-        #                     config_dict['stack_size'],
-        #                     config_dict['use_attention'],
-        #                     filename=logfile, 
-        #                     wb_log=WB_LOG,  
-        #                     chkpt_freq=chkpt_freq,
-        #                     path=save_path)
     elif config_dict['algo'] == 'ipg_her':
-        agent = IPGHERAgent_pbmg(
-                            **config_dict,
-                            seasons=50,
-                            success_value=None,
-                            env=env,
-                            state_size=state_size,
-                            action_size=action_size,
-                            upper_bound=upper_bound,
-                            filename=logfile, 
-                            wb_log=WB_LOG,
-                            chkpt_freq=None,
-                            path=save_path)
+        agent = IPGHERAgent_pbmg(state_size, action_size, upper_bound,
+                                buffer_capacity=config_dict['buffer_capacity'],
+                                batch_size=config_dict['batch_size'],
+                                use_her=config_dict['use_her'])
+
     elif config_dict['algo'] == 'sac':
         pass
-        # agent = SACAgent(env, seasons, success_value,
-        #                     config_dict['epochs'],
-        #                     config_dict['training_batch'],
-        #                     config_dict['batch_size'],
-        #                     config_dict['buffer_capacity'],
-        #                     config_dict['lr_a'],
-        #                     config_dict['lr_c'],
-        #                     config_dict['gamma'],
-        #                     config_dict['tau'],
-        #                     config_dict['alpha'],
-        #                     config_dict['use_attention'],
-        #                     filename=logfile, 
-        #                     wb_log=WB_LOG,  
-        #                     chkpt_freq=chkpt_freq,
-        #                     path=save_path)
     elif config_dict['algo'] == 'sac_her':
         agent = SACHERAgent_pbmg(
                             state_size=state_size,
@@ -251,4 +205,5 @@ if __name__ == "__main__":
         raise ValueError('Invalid Choice of Algorithm. Exiting ...')
 
     # Train
-    agent.run(env, train_freq=1, WB_LOG=WB_LOG)
+    #agent.run(env, train_freq=1, WB_LOG=WB_LOG)
+    agent.run(env, WB_LOG=WB_LOG)
