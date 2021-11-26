@@ -41,7 +41,7 @@ class SACHERAgent_pbmg(SACHERAgent):
                 [state_, action_, hind_reward, next_state_, done_, hind_goal]
             )
 
-    def validate(self, env, max_eps=20):
+    def validate(self, env, max_eps=50):
         ep_reward_list = []
         for ep in range(max_eps):
             obs = env.reset()
@@ -61,10 +61,15 @@ class SACHERAgent_pbmg(SACHERAgent):
 
                 if self.image_input:
                     next_state = np.asarray(next_obs['observation'], dtype=np.float32) / 255.0
+                    next_goal = np.asarray(next_obs['desired_goal_img'], dtype=np.float32) / 255.0
                 else:
                     next_state = next_obs['observation']
+                    next_goal = next_obs['desired_goal']
 
+                # convert negative reward to positive reward
+                reward = 1 if reward == 0 else 0
                 state = next_state
+                goal = next_goal
                 ep_reward += reward
                 t += 1
                 if done:
@@ -74,11 +79,9 @@ class SACHERAgent_pbmg(SACHERAgent):
         mean_ep_reward = np.mean(ep_reward_list)
         return mean_ep_reward
 
-    def run(self, env, max_episodes=5000, train_freq=1, WB_LOG=True):
-
+    def run(self, env, max_episodes=50000, train_freq=10, WB_LOG=True):
 
         start = datetime.datetime.now()
-        
         val_scores = []                 # validation scores 
         best_score = -np.inf
         ep_lens = []        # episodic length
@@ -106,12 +109,17 @@ class SACHERAgent_pbmg(SACHERAgent):
                 action, _ = self.sample_action(state, goal)
                 next_obs, reward, done, _ = env.step(action)
 
+                # change negative reward to positive
+                reward = 1 if reward == 0 else 0
+
                 if self.image_input:
                     next_state = np.asarray(next_obs['observation'], dtype=np.float32) / 255.0
                     achieved_goal = np.asarray(next_obs['achieved_goal_img'], dtype=np.float32) / 255.0
+                    next_goal = np.asarray(next_obs['desired_goal_img'], dtype=np.float32) / 255.0
                 else:
                     next_state = next_obs['observation']
                     achieved_goal = next_obs['achieved_goal']
+                    next_goal = np.asarray(next_obs['desired_goal'])
 
                 # store in replay buffer for off-policy training
                 self.buffer.record([state, action, reward, next_state, done, goal])
@@ -120,6 +128,7 @@ class SACHERAgent_pbmg(SACHERAgent):
                 ep_experience.append([state, action, reward, next_state, done, goal])
 
                 state = next_state
+                goal = next_goal
                 ep_score += reward
                 ep_len += 1     # no. of time steps in each episode
                 global_steps += 1
@@ -144,7 +153,7 @@ class SACHERAgent_pbmg(SACHERAgent):
                 ep_alpha_losses.append(alpha_loss)
 
                 # validate
-                val_score = self.validate(env, max_eps=20)
+                val_score = self.validate(env)
                 val_scores.append(val_score)
 
                 if WB_LOG:

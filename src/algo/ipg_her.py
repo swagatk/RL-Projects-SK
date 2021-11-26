@@ -214,10 +214,8 @@ class IPGHERAgent:
     def __init__(self, state_size, action_size, upper_bound, 
                         buffer_capacity=100000,
                         batch_size=256,
-                        max_seasons=100,
                         learning_rate=0.0002,
                         epochs=20,
-                        training_batch=5120,
                         epsilon=0.2,
                         gamma=0.95,
                         lmbda=0.7,
@@ -230,12 +228,10 @@ class IPGHERAgent:
         self.action_size = action_size
         self.goal_size = self.state_size
         self.upper_bound = upper_bound
-        self.max_seasons = max_seasons
         self.episodes = 0       # global episode count
         self.global_time_steps = 0      # global time steps
         self.lr = learning_rate 
         self.epochs = epochs
-        self.training_batch = training_batch
         self.batch_size = batch_size
         self.buffer_capacity = buffer_capacity
         self.epsilon = epsilon          # PPO clip factor
@@ -264,9 +260,9 @@ class IPGHERAgent:
             
             if self.use_lstm:
                 assert self.stack_size > 1, "stack_size must be greater than 0 for lstm"
-                self.feature = CNNLSTMFeatureNetwork(self.state_size, self.attention, self.lr_a)
+                self.feature = CNNLSTMFeatureNetwork(self.state_size, self.attention, self.lr)
             else:
-                self.feature = FeatureNetwork(self.state_size, self.attention, self.lr_a)
+                self.feature = FeatureNetwork(self.state_size, self.attention, self.lr)
         else:       # non-image input
             print('You have selected a non-image input.')
             self.feature = None
@@ -545,7 +541,9 @@ class IPGHERAgent:
             attn_img = wandb.Image(attn_array)
             wandb.log({'attention maps_{}'.format(i): attn_img})
 
-    def run(self, env, filename='ipg_her_output.txt', WB_LOG=False, success_value=None, chkpt_freq=None, path='./'):
+    def run(self, env, max_seasons=100, training_batch=5120, 
+                filename='ipg_her_output.txt', WB_LOG=False, 
+                    success_value=None, chkpt_freq=None, path='./'):
 
         if filename is not None:
             filename = uniquify(self.path + filename)
@@ -576,7 +574,7 @@ class IPGHERAgent:
         ep_lens = []                # episode lengths 
         ep_scores = []              # episodic rewards
         self.episodes = 0           # global episode count
-        for s in range(self.max_seasons):
+        for s in range(max_seasons):
             # discard trajectories from previous season
             states, next_states, actions, rewards, dones, goals = [], [], [], [], [], []
             ep_experience = []     # episodic experience buffer
@@ -585,7 +583,7 @@ class IPGHERAgent:
             ep_cnt = 0          # episodes in each season
             ep_len = 0          # length of each episode
             done = False
-            for _ in range(self.training_batch):    # time steps
+            for _ in range(training_batch):    # time steps
 
                 if self.stack_size > 1:
                     state_buffer.append(state_obs)

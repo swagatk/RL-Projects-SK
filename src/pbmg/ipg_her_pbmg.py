@@ -8,6 +8,7 @@ Input frames can be stacked together.
 
 import sys
 import numpy as np
+from numpy.lib.npyio import load
 import tensorflow as tf
 import tensorflow_probability as tfp
 import os
@@ -16,6 +17,8 @@ import random
 import sys
 from collections import deque
 import wandb
+import imageio 
+import matplotlib.pyplot as plt
 
 # Add the current folder to python's import path
 current_dir = os.path.dirname(os.path.realpath(__file__))
@@ -32,7 +35,13 @@ import pybullet_multigoal_gym as pmg
 class IPGHERAgent_pbmg(IPGHERAgent):
 
     # Validation routine
-    def validate(self, env, max_eps=50):
+    def validate(self, env, max_eps=50, render=False, load_path=None):
+
+        if load_path is not None:
+            self.load_model(load_path)
+
+        if render:
+            images = []
         ep_reward_list = []
         for ep in range(max_eps):
 
@@ -52,8 +61,13 @@ class IPGHERAgent_pbmg(IPGHERAgent):
                 goal_obs = env.reset()['desired_goal']
                 state_obs = env.reset()['observation']
 
+            if render:
+                img = env.render(mode='rgb_array')
+                images.append(img)
+
             ep_reward = 0
             while True:
+
                 if self.stack_size > 1:
                     state_buffer.append(state_obs)
                     goal_buffer.append(goal_obs)
@@ -66,6 +80,11 @@ class IPGHERAgent_pbmg(IPGHERAgent):
                 #action = self.policy(state, goal, deterministic=True)
                 action = self.policy(state, goal, deterministic=True)
                 next_obs, reward, done, _ = env.step(action)
+
+
+                if render:
+                    img = env.render(mode='rgb_array')
+                    images.append(img)
 
                 if self.image_input:
                     next_state_obs = np.asarray(next_obs['observation'], dtype=np.float32) / 255.0
@@ -85,10 +104,16 @@ class IPGHERAgent_pbmg(IPGHERAgent):
                     break
         # outside for loop
         mean_ep_reward = np.mean(ep_reward_list)
+
+        if render:
+            imageio.mimsave('./pbmg_reach.gif', np.array(images), fps=10)
+
         return mean_ep_reward
 
     
-    def run(self, env, WB_LOG=False, success_value=None, filename=None, chkpt_freq=None, path='./' ):
+    def run(self, env, max_seasons=200, training_batch=2560, 
+                WB_LOG=False, success_value=None, 
+                filename=None, chkpt_freq=None, path='./'):
 
         if filename is not None:
             filename = uniquify(path + filename)
@@ -115,7 +140,7 @@ class IPGHERAgent_pbmg(IPGHERAgent):
         ep_scores = []              # episodic rewards
         self.episodes = 0           # global episode count
         self.global_time_steps = 0       # global time steps
-        for s in range(self.max_seasons):
+        for s in range(max_seasons):
             # discard trajectories from previous season
             states, next_states, actions, rewards, dones, goals = [], [], [], [], [], []
             ep_experience = []     # episodic experience buffer
@@ -124,7 +149,7 @@ class IPGHERAgent_pbmg(IPGHERAgent):
             ep_cnt = 0          # episodes in each season
             ep_len = 0          # length of each episode
             done = False
-            for _ in range(self.training_batch):    # time steps
+            for _ in range(training_batch):    # time steps
 
                 if self.stack_size > 1:
                     state_buffer.append(state_obs)
@@ -266,7 +291,7 @@ class IPGHERAgent_pbmg(IPGHERAgent):
                             'Season' : s})
 
             if chkpt_freq is not None and s % self.chkpt_freq == 0:          
-                chkpt_path = self.path + 'chkpt_{}/'.format(s)
+                chkpt_path = path + 'chkpt_{}/'.format(s)
                 self.save_model(chkpt_path)
 
             if filename is not None:
@@ -288,5 +313,7 @@ class IPGHERAgent_pbmg(IPGHERAgent):
         env.close()
 
         # Save the final model
-        final_model_path = self.path + 'final_model/'
+        final_model_path = path + 'final_model/'
         self.save_model(final_model_path)
+
+        

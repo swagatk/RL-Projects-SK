@@ -65,8 +65,8 @@ print('Found GPU at: {}'.format(device_name))
 # #### Hyper-parameters for RACECAR Environment
 ##########################################
 config_dict = dict(
-    buffer_capacity = 100000,    # 50k (racecar)  # 20K (kuka)
-    batch_size = 256,  # 512 (racecar) #   128 (kuka)
+    buffer_capacity = 30000,    # 50k (racecar)  # 20K (kuka)
+    batch_size = 128,  # 512 (racecar) #   128 (kuka)
     # use_attention = {'type': 'luong',   # type: luong, bahdanau
     #                  'arch': 0,         # arch: 0, 1, 2, 3
     #                  'return_scores': False},  # visualize attention maps       
@@ -77,11 +77,11 @@ config_dict = dict(
                 'extract_feature' : False}, 
     stack_size = 0,             # input stack size
     use_lstm = False,             # enable /disable LSTM
+    image_obsvn=True
 )
 #######################
 WB_LOG = True
 ############################
-# Google Colab Settings
 save_path = './log/'
 chkpt_freq = None         # wrt seasons
 load_path = None
@@ -94,8 +94,8 @@ save_path = save_path + current_time + '/'
 logfile = None  # Don't write  into file
 ###########################################
 # wandb related configuration
-import wandb
 if WB_LOG:
+    import wandb
     #WANDB_API_KEY=os.environ['MY_WANDB_API_KEY']
     print("WandB version", wandb.__version__)
     wandb.login()
@@ -111,15 +111,15 @@ if __name__ == "__main__":
                 'cameraEyePosition': [-1.0, 0.25, 0.6],
                 'cameraTargetPosition': [-0.6, 0.05, 0.2],
                 'cameraUpVector': [0, 0, 1],
-                'render_width': 128,
-                'render_height': 128
+                'render_width': 64,
+                'render_height': 64
             },
             {
                 'cameraEyePosition': [-1.0, -0.25, 0.6],
                 'cameraTargetPosition': [-0.6, -0.05, 0.2],
                 'cameraUpVector': [0, 0, 1],
-                'render_width': 128,
-                'render_height': 128
+                'render_width': 64,
+                'render_height': 64
             }
         ]
 
@@ -129,11 +129,11 @@ if __name__ == "__main__":
             task='reach',
             gripper='parallel_jaw',
             num_block=4,  # only meaningful for multi-block tasks
-            render=False,
+            render=False,    # only for saving image
             binary_reward=True,
             max_episode_steps=20,
             # image observation args
-            image_observation=False,
+            image_observation=config_dict['image_obsvn'],
             depth_image=False,
             goal_image=True,
             visualize_target=True,
@@ -144,10 +144,11 @@ if __name__ == "__main__":
             use_curriculum=True,
             num_goals_to_generate=90)
 
+        
+
 
     #print('Observation:', env.observation_space)
-    image_observation = False
-    if image_observation: 
+    if config_dict['image_obsvn']: 
         state_size = env.observation_space['observation'].__getattribute__('shape')
     else:
         state_size = env.observation_space['state'].__getattribute__('shape')
@@ -186,7 +187,10 @@ if __name__ == "__main__":
     elif config_dict['algo'] == 'ipg':
         pass
     elif config_dict['algo'] == 'ipg_her':
-        agent = IPGHERAgent_pbmg(state_size, action_size, upper_bound,
+        agent = IPGHERAgent_pbmg(
+                                state_size=state_size, 
+                                action_size=action_size, 
+                                upper_bound=upper_bound,
                                 buffer_capacity=config_dict['buffer_capacity'],
                                 batch_size=config_dict['batch_size'],
                                 use_her=config_dict['use_her'])
@@ -205,5 +209,11 @@ if __name__ == "__main__":
         raise ValueError('Invalid Choice of Algorithm. Exiting ...')
 
     # Train
-    #agent.run(env, train_freq=1, WB_LOG=WB_LOG)
     agent.run(env, WB_LOG=WB_LOG)
+
+
+    # test
+    # print('Mean Episodic Reward:', agent.validate(env, max_eps=50, render=True, load_path='./best_model/'))
+    
+
+
