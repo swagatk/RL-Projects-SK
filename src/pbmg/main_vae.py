@@ -30,7 +30,8 @@ sys.path.append(os.path.dirname(current_dir))
 #from ..algo.ipg import IPGAgent
 #from ipg_her import IPGHERAgent
 #from ipg_her_vae import IPGHERAgent
-from ipg_her_pbmg import IPGHERAgent_pbmg
+from ipg_her_pbmg_vae import IPGHERAgent_pbmg
+#from ipg_her_pbmg import IPGHERAgent_pbmg
 from sac_her_pbmg import SACHERAgent_pbmg
 from vae_utils import vae_train
 
@@ -66,7 +67,7 @@ print('Found GPU at: {}'.format(device_name))
 # #### Hyper-parameters for RACECAR Environment
 ##########################################
 config_dict = dict(
-    buffer_capacity = 30000,    # 50k (racecar)  # 20K (kuka)
+    buffer_capacity = 20000,    # 50k (racecar)  # 20K (kuka)
     batch_size = 128,  # 512 (racecar) #   128 (kuka)
     # use_attention = {'type': 'luong',   # type: luong, bahdanau
     #                  'arch': 0,         # arch: 0, 1, 2, 3
@@ -81,7 +82,7 @@ config_dict = dict(
     image_obsvn=True
 )
 #######################
-WB_LOG = False
+WB_LOG = True
 ############################
 save_path = './log/'
 chkpt_freq = None         # wrt seasons
@@ -146,8 +147,6 @@ if __name__ == "__main__":
             num_goals_to_generate=90)
 
         
-
-
     #print('Observation:', env.observation_space)
     if config_dict['image_obsvn']: 
         state_size = env.observation_space['observation'].__getattribute__('shape')
@@ -165,6 +164,12 @@ if __name__ == "__main__":
     # ans = input('Do you want to continue?(Y/N)')
     # if ans.lower() == 'n':
     #     exit()
+
+
+    # Train VAE
+    # if config_dict['image_obsvn']: # applicable only for image observation
+    #     vae_train(env, ep_max=2000)
+    
 
 
     # Select RL Agent
@@ -193,6 +198,13 @@ if __name__ == "__main__":
                             batch_size=config_dict['batch_size'])
     else:
         raise ValueError('Invalid Choice of Algorithm. Exiting ...')
+
+    # load VAE Model
+    agent.feature.load_model('/home/swagat/GIT/RL-Projects-SK/src/pbmg/vae_models/enc_wts.h5')
+
+    agent.feature.model.trainable = False     # Freeze the encoder
+    agent.feature.model.summary()
+    input('Check non-trainable parameters. Press Enter to continue ...')
 
     # Train
     agent.run(env, WB_LOG=WB_LOG)

@@ -760,3 +760,5 @@ class IPGHERAgent:
         self.critic.load_weights(critic_file)
         self.baseline.load_weights(baseline_file)
 
+        print('model parameters are loaded')
+
