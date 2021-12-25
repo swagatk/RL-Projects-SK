@@ -127,7 +127,7 @@ class IPGHERAgent_pbmg(IPGHERAgent):
         return mean_ep_reward
 
     
-    def run(self, env, max_seasons=200, training_batch=2560, 
+    def run(self, env, max_seasons=200, training_batch=5120, 
                 WB_LOG=False, success_value=None, 
                 filename=None, chkpt_freq=None, path='./'):
 

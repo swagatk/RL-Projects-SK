@@ -125,7 +125,7 @@ class Encoder(keras.Model):
         plt.xlabel('z - dim 1')
         plt.ylabel('z - dim 2')
         plt.colorbar()
-        plt.savefig('./latent_space.png')
+        plt.savefig('./vae_latent_space.png')
 
     def save_model(self, filename):
         self.model.save_weights(filename)
@@ -213,6 +213,7 @@ class VAE(keras.Model):
             name="reconstruction_loss"
         )
         self.kl_loss_tracker = keras.metrics.Mean(name="kl_loss")
+        self.optimizer = keras.optimizers.Adam(learning_rate=0.001)
 
     @property
     def metrics(self):
@@ -318,7 +319,8 @@ if __name__ == '__main__':
 
     vae = VAE(obs_shape=inp_shape, latent_dim=latent_dim)
     vae.compile(optimizer=keras.optimizers.Adam())
-    vae.fit(mnist_digits, epochs=30, batch_size=128)    
+    history = vae.fit(mnist_digits, epochs=10, batch_size=128, verbose=1)   
+    print(history.history.keys())
     vae.viz_decoded(mnist_digits[0:4])
     vae.encoder.viz_latent_space((mnist_digits, mnist_labels))
     

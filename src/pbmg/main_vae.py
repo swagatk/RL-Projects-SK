@@ -67,8 +67,8 @@ print('Found GPU at: {}'.format(device_name))
 # #### Hyper-parameters for RACECAR Environment
 ##########################################
 config_dict = dict(
-    buffer_capacity = 20000,    # 50k (racecar)  # 20K (kuka)
-    batch_size = 128,  # 512 (racecar) #   128 (kuka)
+    buffer_capacity = 30000,    # 50k (racecar)  # 20K (kuka)
+    batch_size = 256,  # 512 (racecar) #   128 (kuka)
     # use_attention = {'type': 'luong',   # type: luong, bahdanau
     #                  'arch': 0,         # arch: 0, 1, 2, 3
     #                  'return_scores': False},  # visualize attention maps       
@@ -202,7 +202,7 @@ if __name__ == "__main__":
     # load VAE Model
     agent.feature.load_model('/home/swagat/GIT/RL-Projects-SK/src/pbmg/vae_models/enc_wts.h5')
 
-    agent.feature.model.trainable = False     # Freeze the encoder
+    #agent.feature.model.trainable = False     # Freeze the encoder
     agent.feature.model.summary()
     input('Check non-trainable parameters. Press Enter to continue ...')
 
