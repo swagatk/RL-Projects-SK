@@ -4,6 +4,13 @@ Originally contributed by Mr. Hayden Sampson
 URL: https://github.com/hayden750/DeepHEC
 
 Input frames can be stacked together.
+
+13/01/2022: 
+    - Images are stacked along the channel axis. 
+        shape of stacked_img: (h, w, c*stack_size)
+    - __init__() function is modified to accept stacked_img_size.
+    - uses function 'utils.prepare_stacked_images()' to stack images.
+
 '''
 
 import sys
@@ -28,13 +35,40 @@ sys.path.append(parent_dir)
 sys.path.append(os.path.join(parent_dir, 'common/'))
 
 # Local imports
-from common.utils import uniquify
-from algo.ipg_her import IPGHERAgent
+from common.utils import uniquify, prepare_stacked_images, visualize_stacked_images
+from common.FeatureNet import FeatureNetwork
+from algo.ipg_her import IPGHERAgent, IPGHERActor, DDPGCritic, Baseline
 import pybullet_multigoal_gym as pmg
 
 DEBUG = False
 
 class IPGHERAgent_pbmg(IPGHERAgent):
+    def __init__(self, state_size, action_size, upper_bound, buffer_capacity=100000, batch_size=256, 
+        learning_rate=0.0002, epochs=20, epsilon=0.2, gamma=0.95, lmbda=0.7, 
+        use_attention=None, use_her=None, stack_size=0, use_lstm=None):
+
+        super(IPGHERAgent_pbmg, self).__init__(state_size, action_size, upper_bound, buffer_capacity, batch_size, 
+            learning_rate, epochs, epsilon, gamma, lmbda, use_attention, use_her, stack_size, use_lstm)
+
+        if self.image_input:
+            if self.stack_size > 1:
+                h, w, c = state_size
+                self.state_size = (h, w, c * self.stack_size)
+                self.goal_size = self.state_size
+            self.feature = FeatureNetwork(self.state_size, self.attention, self.lr)
+        else:
+            self.feature = None
+        
+        # Actor Model
+        self.actor = IPGHERActor(state_size=self.state_size, goal_size=self.goal_size,
+                              action_size=self.action_size, upper_bound=self.upper_bound,
+                              lr=self.lr, epsilon=self.epsilon, feature=self.feature)
+        # Critic Model
+        self.critic = DDPGCritic(state_size=self.state_size, action_size=self.action_size,
+                                 learning_rate=self.lr, gamma=self.gamma, feature_model=self.feature)
+        # Baseline Model
+        self.baseline = Baseline(state_size=self.state_size, action_size=self.action_size,
+                                                lr=self.lr, feature=self.feature)
 
     # Validation routine
     def validate(self, env, max_eps=50, render=False, load_path=None):
@@ -52,9 +86,8 @@ class IPGHERAgent_pbmg(IPGHERAgent):
 
             # empty the buffer for each episode 
             # this is important otherwise the buffer will keep growing
-            if self.stack_size > 1:
-                state_buffer = []
-                goal_buffer = []
+            state_buffer = []
+            goal_buffer = []
 
             # initial state
             if self.image_input:
@@ -71,15 +104,18 @@ class IPGHERAgent_pbmg(IPGHERAgent):
             ep_reward = 0
             while True:
 
-                if self.stack_size > 1:
-                    state_buffer.append(state_obs)
-                    goal_buffer.append(goal_obs)
-                    state = self.prepare_input(state_buffer)
-                    goal = self.prepare_input(goal_buffer)
-                else:
-                    state = state_obs
-                    goal = goal_obs
+                state_buffer.append(state_obs)
+                goal_buffer.append(goal_obs)
+                state = prepare_stacked_images(state_buffer, self.stack_size)
+                goal = prepare_stacked_images(goal_buffer, self.stack_size)
 
+                if DEBUG:
+                    print('state shape: ', state.shape)
+                    print('goal shape: ', goal.shape)
+                    visualize_stacked_images(state, save_fig=True)
+                    print('Do you want to exit? (y/n)')
+                    if input() == 'y':
+                        exit()
 
                 # select action
                 action = self.policy(state, goal, deterministic=True)
@@ -116,7 +152,7 @@ class IPGHERAgent_pbmg(IPGHERAgent):
 
         return mean_ep_reward
 
-    
+    # main training routine
     def run(self, env, max_seasons=200, training_batch=2560, 
                 WB_LOG=False, success_value=None, 
                 filename=None, chkpt_freq=None, path='./'):
@@ -134,9 +170,10 @@ class IPGHERAgent_pbmg(IPGHERAgent):
             goal_obs = obs['desired_goal']
 
         if self.stack_size > 1:
-            state_buffer = []
-            goal_buffer = []
-            next_state_buffer = []
+            state_buffer = []   # empty after every episode
+            goal_buffer = []    # empty after every episode
+            next_state_buffer = []  # empty after every episode
+            achieved_goal_buffer = []  # empty after every episode
 
         start = datetime.datetime.now()
         val_scores = []       # validation scores
@@ -160,8 +197,8 @@ class IPGHERAgent_pbmg(IPGHERAgent):
                 if self.stack_size > 1:
                     state_buffer.append(state_obs)
                     goal_buffer.append(goal_obs)
-                    state = self.prepare_input(state_buffer)
-                    goal = self.prepare_input(goal_buffer)
+                    state = prepare_stacked_images(state_buffer, self.stack_size)
+                    goal = prepare_stacked_images(goal_buffer, self.stack_size)
                 else:
                     state = state_obs
                     goal = goal_obs
@@ -177,7 +214,7 @@ class IPGHERAgent_pbmg(IPGHERAgent):
 
                 if self.image_input: 
                     next_state_obs = np.asarray(next_obs['observation'], dtype=np.float32) / 255.0
-                    achieved_goal = np.asarray(next_obs['achieved_goal_img'], dtype=np.float32) / 255.0
+                    achieved_goal_obs = np.asarray(next_obs['achieved_goal_img'], dtype=np.float32) / 255.0
                     next_goal_obs = np.asarray(next_obs['desired_goal_img'], dtype=np.float32) / 255.0
                 else:
                     next_state_obs = next_obs['observation']
@@ -187,9 +224,13 @@ class IPGHERAgent_pbmg(IPGHERAgent):
                 # stacking 
                 if self.stack_size > 1:
                     next_state_buffer.append(next_state_obs)
-                    next_state = self.prepare_input(next_state_buffer)
+                    achieved_goal_buffer.append(achieved_goal_obs)
+                    next_state = prepare_stacked_images(next_state_buffer, self.stack_size)
+                    achieved_goal = prepare_stacked_images(achieved_goal_buffer, self.stack_size)
+
                 else:
                     next_state = next_state_obs 
+                    achieved_goal = achieved_goal_obs
                 
 
                 # this is used for on-policy training
@@ -212,9 +253,9 @@ class IPGHERAgent_pbmg(IPGHERAgent):
                 self.global_time_steps += 1
 
                 if done:
-                    # HER: Final state strategy
 
                     hind_goal = achieved_goal
+
 
                     # Add hindsight experience to the buffer
                     # in this case, use last state as the goal_state
@@ -256,6 +297,7 @@ class IPGHERAgent_pbmg(IPGHERAgent):
                         state_buffer = []
                         next_state_buffer = []
                         goal_buffer = []
+                        achieved_goal_buffer = []
 
                 # end of done block
             # end of for training_batch loop

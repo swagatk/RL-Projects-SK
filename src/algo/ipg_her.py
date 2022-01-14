@@ -4,6 +4,7 @@ Originally contributed by Mr. Hayden Sampson
 URL: https://github.com/hayden750/DeepHEC
 
 Input frames can be stacked together.
+
 '''
 
 import sys
@@ -259,7 +260,7 @@ class IPGHERAgent:
                 self.goal_size = self.state_size
             
             if self.use_lstm:
-                assert self.stack_size > 1, "stack_size must be greater than 0 for lstm"
+                assert self.stack_size > 1, "stack_size must be greater than 1 for lstm"
                 self.feature = CNNLSTMFeatureNetwork(self.state_size, self.attention, self.lr)
             else:
                 self.feature = FeatureNetwork(self.state_size, self.attention, self.lr)
@@ -302,7 +303,7 @@ class IPGHERAgent:
                 temp_list.append(img_buffer[-1])        # last element
 
         stacked_img = np.stack(temp_list, axis=0)
-        return stacked_img      # check the shape:  (stack_size, h, w, c)
+        return stacked_img      # check the shape:  (stack_size, h, w, c
 
     def compute_advantage(self, r_batch, s_batch, ns_batch, d_batch):
         # input: tensors
@@ -472,7 +473,7 @@ class IPGHERAgent:
                     state_buffer.append(state_obs)
                     goal_buffer.append(goal_obs)
                     state = self.prepare_input(state_buffer)
-                    goal = self.prepare_input(goal_buffer)
+                    goal = self.prepare_input(goal_buffer, self.stack_size)
                 else:
                     state = state_obs
                     goal = goal_obs
@@ -603,7 +604,7 @@ class IPGHERAgent:
 
                 if self.stack_size > 1:
                     next_state_buffer.append(next_state_obs)
-                    next_state = self.prepare_input(next_state_buffer)
+                    next_state = self.prepare_input(next_state_buffer, self.stack_size)
                 else:
                     next_state = next_state_obs 
                 

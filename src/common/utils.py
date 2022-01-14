@@ -1,8 +1,17 @@
+'''
+Utility functions
+
+13/01/2022: Added the following functions:
+            - prepare_stacked_images()
+            - visualize_stacked_images()
+'''
 import os
 import signal
 import time
+import numpy as np
+import matplotlib.pyplot as plt
 
-
+#################################
 def uniquify(path):
     # creates a unique file name by adding an incremented number
     # to the existing filename
@@ -28,3 +37,46 @@ class GracefulExiter():
 
     def exit(self):
         return self.state
+
+########################
+## Create stacked frames
+########################
+
+def prepare_stacked_images(img_buffer, stack_size=2):
+    # input : list of images of shape: (h, w, c)
+    # output: stacked frames of shape: (h, w, c*stack_size)
+    if stack_size > 1:
+        temp_list = []
+        for i in range(stack_size):
+            if i < len(img_buffer):
+                temp_list.append(img_buffer[-1-i])      # fill in the reversed order
+            else:
+                temp_list.append(img_buffer[-1])        # last element
+
+        stacked_img = np.dstack(temp_list)      # stack the images along depth channel
+        return stacked_img      # check the shape:  (h, w, c*stack_size)
+    else:
+        return img_buffer[-1]   # return the last image in the buffer
+
+def visualize_stacked_images(stacked_img, save_fig=False, fig_name='stacked_img.png'):
+    # input : stacked frames of shape: (h, w, c*stack_size)
+    # output: Plot of stacked images
+    assert(len(stacked_img.shape) == 3), "stacked_img must have 3 dimensions"
+    assert(stacked_img.shape[2] % 3 == 0), "stacked_img must have 3x channels"
+    image_list = np.dsplit(stacked_img, int(stacked_img.shape[2]//3))      # split the stacked image into sections of 3 channels
+
+    rows = int(len(image_list) // 2)
+    cols = int(np.ceil(len(image_list) / 2))
+    fig, axs = plt.subplots(rows, cols, figsize=(10, 10))
+    fig.suptitle('Stacked Images', fontsize=12)
+    for i in range(rows):
+        for j in range(cols):
+            k = i*cols+j
+            if k < len(image_list):
+                axs[i, j].imshow(image_list[k])
+                axs[i, j].axis('off')
+                axs[i, j].set_title('Frame {}'.format(k))
+    fig.tight_layout()
+    plt.show()
+    if save_fig:
+        plt.savefig(uniquify(fig_name))

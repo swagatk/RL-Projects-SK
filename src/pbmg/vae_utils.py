@@ -38,13 +38,14 @@ print('Found GPU at: {}'.format(device_name))
 
 def vae_train(env, ep_max=20000, latent_dim=10):
 
+    print('[INFO] Observation Statistics:')
     print('shape of Observation space: ', env.observation_space['observation'].__getattribute__('shape'))
     print('shape of Action space: ', env.action_space.shape)
     print('Reward Range: ', env.reward_range)
     print('Action High value: ', env.action_space.high)
     print('Action Low Value: ', env.action_space.low)
 
-    print('Data Collection from the Gym Environment:')
+    print('[INFO] Collecting Data from the Gym Environment. Wait ....')
     data_buffer = [] 
     time_steps = 0
     for _ in range(ep_max):
@@ -67,13 +68,13 @@ def vae_train(env, ep_max=20000, latent_dim=10):
     dataset = np.concatenate(data_buffer, axis=0)
     print('dataset shape:', np.shape(dataset))
 
-    print('Training the VAE model ... wait!')
+    print('[INFO] Training the VAE model ... wait!')
     input_shape = env.observation_space['observation'].__getattribute__('shape')
     print('Input shape:', input_shape)
     vae = VAE(input_shape, latent_dim)
     vae.compile(optimizer=tf.keras.optimizers.Adam())
     history = vae.fit(dataset,  validation_split=0.33, epochs=1000, batch_size=200)
-    print('Training completed!')
+    print('[INFO] Training completed!')
 
     # plotting
     print(history.history.keys())

@@ -12,12 +12,12 @@ Updates:
 18/08/2021: This is main file for kuka environment.
 """
 # Imports
-from numpy.lib.npyio import save
 import tensorflow as tf
 import pybullet_multigoal_gym as pmg
 from packaging import version
 import os
 import datetime
+import numpy as np
 
 # Add the current folder to python's import path
 import sys
@@ -30,7 +30,8 @@ sys.path.append(os.path.dirname(current_dir))
 #from ..algo.ipg import IPGAgent
 #from ipg_her import IPGHERAgent
 #from ipg_her_vae import IPGHERAgent
-from ipg_her_pbmg import IPGHERAgent_pbmg
+#from ipg_her_pbmg import IPGHERAgent_pbmg
+from ipg_her_pbmg_stack import IPGHERAgent_pbmg
 from sac_her_pbmg import SACHERAgent_pbmg
 from vae_utils import vae_train
 
@@ -40,7 +41,12 @@ print("Tensorflow Version: ", tf.__version__)
 assert version.parse(tf.__version__).release[0] >= 2, \
     "This program requires Tensorflow 2.0 or above"
 #######################################
-
+# Random seed
+#######################################################
+# Random seed
+np.random.seed(42)
+tf.random.set_seed(42)
+#######################################################
 ######################################
 # avoid CUDNN_STATUS_INTERNAL_ERROR
 gpus = tf.config.list_physical_devices('GPU')
@@ -66,7 +72,7 @@ print('Found GPU at: {}'.format(device_name))
 # #### Hyper-parameters for RACECAR Environment
 ##########################################
 config_dict = dict(
-    buffer_capacity = 30000,    # 50k (racecar)  # 20K (kuka)
+    buffer_capacity = 10000,    # 50k (racecar)  # 20K (kuka)
     batch_size = 128,  # 512 (racecar) #   128 (kuka)
     # use_attention = {'type': 'luong',   # type: luong, bahdanau
     #                  'arch': 0,         # arch: 0, 1, 2, 3
@@ -76,7 +82,7 @@ config_dict = dict(
     env_name = 'pbmg',          # environment name
     use_her = { 'strategy': 'final',
                 'extract_feature' : False}, 
-    stack_size = 0,             # input stack size
+    stack_size = 3,             # input stack size
     use_lstm = False,             # enable /disable LSTM
     image_obsvn=True
 )
@@ -104,6 +110,7 @@ if WB_LOG:
 #######################################################33
 #################################3
 if __name__ == "__main__":
+
 
     if config_dict['env_name'] == 'pbmg':
 
@@ -179,7 +186,8 @@ if __name__ == "__main__":
                                 upper_bound=upper_bound,
                                 buffer_capacity=config_dict['buffer_capacity'],
                                 batch_size=config_dict['batch_size'],
-                                use_her=config_dict['use_her'])
+                                use_her=config_dict['use_her'],
+                                stack_size=config_dict['stack_size'])
 
     elif config_dict['algo'] == 'sac':
         pass
@@ -196,6 +204,9 @@ if __name__ == "__main__":
 
     # Train
     agent.run(env, WB_LOG=WB_LOG)
+
+    # validate
+    #agent.validate(env)
 
 
     # test

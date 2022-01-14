@@ -82,7 +82,7 @@ config_dict = dict(
     image_obsvn=True
 )
 #######################
-WB_LOG = True
+WB_LOG = False
 ############################
 save_path = './log/'
 chkpt_freq = None         # wrt seasons
@@ -167,8 +167,8 @@ if __name__ == "__main__":
 
 
     # Train VAE
-    # if config_dict['image_obsvn']: # applicable only for image observation
-    #     vae_train(env, ep_max=2000)
+    if config_dict['image_obsvn']: # applicable only for image observation
+        vae_train(env, ep_max=200)
     
 
 
@@ -200,14 +200,14 @@ if __name__ == "__main__":
         raise ValueError('Invalid Choice of Algorithm. Exiting ...')
 
     # load VAE Model
-    agent.feature.load_model('/home/swagat/GIT/RL-Projects-SK/src/pbmg/vae_models/enc_wts.h5')
+    # agent.feature.load_model('/home/swagat/GIT/RL-Projects-SK/src/pbmg/vae_models/enc_wts.h5')
 
     #agent.feature.model.trainable = False     # Freeze the encoder
-    agent.feature.model.summary()
-    input('Check non-trainable parameters. Press Enter to continue ...')
+    # agent.feature.model.summary()
+    # input('Check non-trainable parameters. Press Enter to continue ...')
 
     # Train
-    agent.run(env, WB_LOG=WB_LOG)
+    # agent.run(env, WB_LOG=WB_LOG)
 
 
     # test
