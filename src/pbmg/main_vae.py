@@ -1,15 +1,11 @@
 """ 
-Main python file for implementing following algorithms:
-- SAC
-- SAC + HER
-- PPO
-- IPG
-- IPG + HER
+IPG+HER+VAE for PBMG environment
 
-Environment: KUKADiverseObjectEnv
 
 Updates:
-18/08/2021: This is main file for kuka environment.
+- 20/01/2022: 
+    - Seed the random number generator
+    - Provide support for stacked frames with VAE
 """
 # Imports
 from numpy.lib.npyio import save
@@ -18,6 +14,7 @@ import pybullet_multigoal_gym as pmg
 from packaging import version
 import os
 import datetime
+import numpy as np
 
 # Add the current folder to python's import path
 import sys
@@ -41,7 +38,10 @@ print("Tensorflow Version: ", tf.__version__)
 assert version.parse(tf.__version__).release[0] >= 2, \
     "This program requires Tensorflow 2.0 or above"
 #######################################
-
+# Random seed
+#######################################################
+np.random.seed(42)
+tf.random.set_seed(42)
 ######################################
 # avoid CUDNN_STATUS_INTERNAL_ERROR
 gpus = tf.config.list_physical_devices('GPU')
@@ -186,7 +186,8 @@ if __name__ == "__main__":
                                 upper_bound=upper_bound,
                                 buffer_capacity=config_dict['buffer_capacity'],
                                 batch_size=config_dict['batch_size'],
-                                use_her=config_dict['use_her'])
+                                use_her=config_dict['use_her'],
+                                stack_size=config_dict['stack_size'])
 
     elif config_dict['algo'] == 'sac':
         pass

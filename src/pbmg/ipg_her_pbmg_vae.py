@@ -1,9 +1,11 @@
 '''
-IPG + HER
+IPG + HER + VAE
 Originally contributed by Mr. Hayden Sampson
 URL: https://github.com/hayden750/DeepHEC
 
 Input frames can be stacked together.
+
+20/01/2022: Added stacking frames.
 '''
 
 import sys
