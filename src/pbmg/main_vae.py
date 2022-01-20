@@ -77,7 +77,7 @@ config_dict = dict(
     env_name = 'pbmg',          # environment name
     use_her = { 'strategy': 'final',
                 'extract_feature' : False}, 
-    stack_size = 0,             # input stack size
+    stack_size = 3,             # input stack size
     use_lstm = False,             # enable /disable LSTM
     image_obsvn=True
 )
@@ -168,7 +168,9 @@ if __name__ == "__main__":
 
     # Train VAE
     if config_dict['image_obsvn']: # applicable only for image observation
-        vae_train(env, ep_max=200)
+        vae_train(env, ep_max=20)
+    
+    input('Press Enter to continue...')
     
 
 

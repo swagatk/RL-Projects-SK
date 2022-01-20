@@ -28,7 +28,7 @@ sys.path.append(parent_dir)
 sys.path.append(os.path.join(parent_dir, 'common/'))
 
 # Local imports
-from common.utils import uniquify
+from common.utils import uniquify, prepare_stacked_images
 from algo.ipg_her import IPGHERAgent, IPGHERActor, DDPGCritic, Baseline
 from common.VariationAutoEncoder import Encoder
 
@@ -36,7 +36,14 @@ class IPGHERAgent_pbmg(IPGHERAgent):
     def __init__(self, state_size, action_size, upper_bound, buffer_capacity=100000, batch_size=256, learning_rate=0.0002, epochs=20, epsilon=0.2, gamma=0.95, lmbda=0.7, use_attention=None, use_her=None, stack_size=0, use_lstm=None):
         super().__init__(state_size, action_size, upper_bound, buffer_capacity=buffer_capacity, batch_size=batch_size, learning_rate=learning_rate, epochs=epochs, epsilon=epsilon, gamma=gamma, lmbda=lmbda, use_attention=use_attention, use_her=use_her, stack_size=stack_size, use_lstm=use_lstm)
 
-        self.feature = Encoder(self.state_size, latent_dim=10)
+        if self.image_input:
+            if self.stack_size > 1:
+                h, w, c = state_size
+                self.state_size = (h, w, c * self.stack_size)
+                self.goal_size = self.state_size
+            self.feature = Encoder(self.state_size, latent_dim=10) # Use encoder to get latent representation
+        else:
+            self.feature = None
 
         # Actor Model
         self.actor = IPGHERActor(state_size=self.state_size, goal_size=self.goal_size,
@@ -87,8 +94,8 @@ class IPGHERAgent_pbmg(IPGHERAgent):
                 if self.stack_size > 1:
                     state_buffer.append(state_obs)
                     goal_buffer.append(goal_obs)
-                    state = self.prepare_input(state_buffer)
-                    goal = self.prepare_input(goal_buffer)
+                    state = prepare_stacked_images(state_buffer)
+                    goal = prepare_stacked_images(goal_buffer)
                 else:
                     state = state_obs
                     goal = goal_obs
@@ -147,6 +154,7 @@ class IPGHERAgent_pbmg(IPGHERAgent):
             state_buffer = []
             goal_buffer = []
             next_state_buffer = []
+            achieved_goal_buffer = [] # empty after each episode
 
         start = datetime.datetime.now()
         val_scores = []       # validation scores
@@ -170,8 +178,8 @@ class IPGHERAgent_pbmg(IPGHERAgent):
                 if self.stack_size > 1:
                     state_buffer.append(state_obs)
                     goal_buffer.append(goal_obs)
-                    state = self.prepare_input(state_buffer)
-                    goal = self.prepare_input(goal_buffer)
+                    state = prepare_stacked_images(state_buffer)
+                    goal = prepare_stacked_images(goal_buffer)
                 else:
                     state = state_obs
                     goal = goal_obs
@@ -191,15 +199,18 @@ class IPGHERAgent_pbmg(IPGHERAgent):
                     next_goal_obs = np.asarray(next_obs['desired_goal_img'], dtype=np.float32) / 255.0
                 else:
                     next_state_obs = next_obs['observation']
-                    achieved_goal = next_obs['achieved_goal']
+                    achieved_goal_obs = next_obs['achieved_goal']
                     next_goal_obs = np.asarray(next_obs['desired_goal'])
                 
                 # stacking 
                 if self.stack_size > 1:
                     next_state_buffer.append(next_state_obs)
-                    next_state = self.prepare_input(next_state_buffer)
+                    achieved_goal_buffer.append(achieved_goal_obs)
+                    next_state = prepare_stacked_images(next_state_buffer, self.stack_size)
+                    achieved_goal = prepare_stacked_images(achieved_goal_buffer, self.stack_size)
                 else:
                     next_state = next_state_obs 
+                    achieved_goal = achieved_goal_obs
                 
 
                 # this is used for on-policy training
@@ -266,6 +277,7 @@ class IPGHERAgent_pbmg(IPGHERAgent):
                         state_buffer = []
                         next_state_buffer = []
                         goal_buffer = []
+                        achieved_goal_buffer = []
 
                 # end of done block
             # end of for training_batch loop
