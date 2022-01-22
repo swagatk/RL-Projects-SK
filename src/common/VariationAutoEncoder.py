@@ -1,5 +1,8 @@
 """
 Variational Auto Encoder
+
+22/01/2022: 
+    - It now supports stacked frames
 """
 import os
 import numpy as np
@@ -233,6 +236,13 @@ class VAE(keras.Model):
 
         z_mean = self.encoder(inp_data, deterministic=True)
         out_data = self.decoder(z_mean)
+
+
+        if inp_data.shape[3] > 3:
+            inp_data = inp_data[:, :, :, :3] # retain only first 3 channels
+        
+        if out_data.shape[3] > 3:
+            out_data = out_data[:, :, :, :3] # retain only first 3 channels
 
         rows = len(inp_data)
         plt.figure()

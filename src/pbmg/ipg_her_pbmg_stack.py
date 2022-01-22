@@ -218,7 +218,7 @@ class IPGHERAgent_pbmg(IPGHERAgent):
                     next_goal_obs = np.asarray(next_obs['desired_goal_img'], dtype=np.float32) / 255.0
                 else:
                     next_state_obs = next_obs['observation']
-                    achieved_goal = next_obs['achieved_goal']
+                    achieved_goal_obs = next_obs['achieved_goal']
                     next_goal_obs = np.asarray(next_obs['desired_goal'])
                 
                 # stacking 

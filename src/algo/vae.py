@@ -275,6 +275,11 @@ class VAE(keras.Model):
         z_mean = self.encoder(inp_data, deterministic=True)
         out_data = self.decoder(z_mean)
 
+        # needed for visualization
+        if inp_data.shape[3] > 3:
+            inp_data = inp_data[:, :, :, :3]
+            out_data = out_data[:, :, :, :3]    # retain first 3 channels   
+
         rows = len(inp_data)
         plt.figure()
         fig, axes = plt.subplots(rows,2)

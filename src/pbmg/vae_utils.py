@@ -11,6 +11,7 @@ sys.path.append(os.path.dirname(current_dir))
 # local imports
 import pybullet_multigoal_gym as pmg
 from common.VariationAutoEncoder import VAE
+from common.utils import prepare_stacked_images
 
 ######################################
 # avoid CUDNN_STATUS_INTERNAL_ERROR
@@ -36,7 +37,8 @@ print('Found GPU at: {}'.format(device_name))
 ##############################################
 
 
-def vae_train(env, ep_max=20000, latent_dim=10):
+def vae_train(env, ep_max=20000, latent_dim=10, stack_size=0,
+            epochs=100, batch_size=64):
 
     print('[INFO] Observation Statistics:')
     print('shape of Observation space: ', env.observation_space['observation'].__getattribute__('shape'))
@@ -46,22 +48,41 @@ def vae_train(env, ep_max=20000, latent_dim=10):
     print('Action Low Value: ', env.action_space.low)
 
     print('[INFO] Collecting Data from the Gym Environment. Wait ....')
+
+    if stack_size > 1:
+        state_buffer = []
+
     data_buffer = [] 
     time_steps = 0
     for _ in range(ep_max):
         obsv = env.reset()
-        state = np.asarray(obsv['observation'], dtype=np.float32) / 255.0
+        state_obs = np.asarray(obsv['observation'], dtype=np.float32) / 255.0
 
         while True:
+            # stack frames
+            if stack_size > 1:
+                state_buffer.append(state_obs)
+                state = prepare_stacked_images(state_buffer, stack_size)
+            else:
+                state = state_obs
+
+            # store state observation in a buffer
             data_buffer.append(np.expand_dims(state, axis=0))
+
+            # take random action
             action = env.action_space.sample()
+
+            # obtain rewards and new state
             next_obsv, _, done, _ = env.step(action)
 
-            next_state = np.asarray(next_obsv['observation'], dtype=np.float32) / 255.0
-            state = next_state
+            next_state_obs = np.asarray(next_obsv['observation'], dtype=np.float32) / 255.0
+
+            state_obs = next_state_obs
 
             time_steps += 1
             if done:
+                if stack_size > 1:
+                    state_buffer = []
                 break
     env.close()
 
@@ -69,11 +90,17 @@ def vae_train(env, ep_max=20000, latent_dim=10):
     print('dataset shape:', np.shape(dataset))
 
     print('[INFO] Training the VAE model ... wait!')
-    input_shape = env.observation_space['observation'].__getattribute__('shape')
+    obs_shape = env.observation_space['observation'].__getattribute__('shape')
+    if stack_size > 1:
+        h, w, c = obs_shape
+        input_shape = (h, w, c * stack_size)
+    else:
+        input_shape = obs_shape
+
     print('Input shape:', input_shape)
     vae = VAE(input_shape, latent_dim)
     vae.compile(optimizer=tf.keras.optimizers.Adam())
-    history = vae.fit(dataset,  validation_split=0.33, epochs=1000, batch_size=200)
+    history = vae.fit(dataset,  validation_split=0.33, epochs=epochs, batch_size=batch_size)
     print('[INFO] Training completed!')
 
     # plotting

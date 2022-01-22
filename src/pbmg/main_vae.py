@@ -168,9 +168,8 @@ if __name__ == "__main__":
 
     # Train VAE
     if config_dict['image_obsvn']: # applicable only for image observation
-        vae_train(env, ep_max=20)
-    
-    input('Press Enter to continue...')
+        vae_train(env, ep_max=20, stack_size=config_dict['stack_size'], epochs=10, batch_size=200)
+        input('Press Enter to continue...')
     
 
 
@@ -203,14 +202,13 @@ if __name__ == "__main__":
         raise ValueError('Invalid Choice of Algorithm. Exiting ...')
 
     # load VAE Model
-    # agent.feature.load_model('/home/swagat/GIT/RL-Projects-SK/src/pbmg/vae_models/enc_wts.h5')
-
-    #agent.feature.model.trainable = False     # Freeze the encoder
+    # agent.feature.load_model(os.path.expanduser('~/GIT/RL-Projects-SK/src/pbmg/vae_models/enc_wts.h5'))
+    # agent.feature.model.trainable = False     # Freeze the encoder
     # agent.feature.model.summary()
     # input('Check non-trainable parameters. Press Enter to continue ...')
 
     # Train
-    # agent.run(env, WB_LOG=WB_LOG)
+    #agent.run(env, WB_LOG=WB_LOG)
 
 
     # test
