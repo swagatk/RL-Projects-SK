@@ -67,8 +67,8 @@ print('Found GPU at: {}'.format(device_name))
 # #### Hyper-parameters for RACECAR Environment
 ##########################################
 config_dict = dict(
-    buffer_capacity = 30000,    # 50k (racecar)  # 20K (kuka)
-    batch_size = 256,  # 512 (racecar) #   128 (kuka)
+    buffer_capacity = 10000,    # 50k (racecar)  # 20K (kuka)
+    batch_size = 128,  # 512 (racecar) #   128 (kuka)
     # use_attention = {'type': 'luong',   # type: luong, bahdanau
     #                  'arch': 0,         # arch: 0, 1, 2, 3
     #                  'return_scores': False},  # visualize attention maps       
@@ -167,9 +167,10 @@ if __name__ == "__main__":
 
 
     # Train VAE
-    if config_dict['image_obsvn']: # applicable only for image observation
-        vae_train(env, ep_max=20, stack_size=config_dict['stack_size'], epochs=10, batch_size=200)
-        input('Press Enter to continue...')
+    # if config_dict['image_obsvn']: # applicable only for image observation
+    #     vae_train(env, ep_max=20, stack_size=config_dict['stack_size'], 
+    #                         epochs=50, batch_size=200)
+    #     input('Press Enter to continue...')
     
 
 
@@ -202,13 +203,13 @@ if __name__ == "__main__":
         raise ValueError('Invalid Choice of Algorithm. Exiting ...')
 
     # load VAE Model
-    # agent.feature.load_model(os.path.expanduser('~/GIT/RL-Projects-SK/src/pbmg/vae_models/enc_wts.h5'))
-    # agent.feature.model.trainable = False     # Freeze the encoder
-    # agent.feature.model.summary()
-    # input('Check non-trainable parameters. Press Enter to continue ...')
+    agent.feature.load_model(os.path.expanduser('~/GIT/RL-Projects-SK/src/pbmg/vae_models/enc_wts.h5'))
+    agent.feature.model.trainable = False     # Freeze the encoder
+    agent.feature.model.summary()
+    input('Check non-trainable parameters. Press Enter to continue ...')
 
     # Train
-    #agent.run(env, WB_LOG=WB_LOG)
+    agent.run(env, WB_LOG=WB_LOG)
 
 
     # test

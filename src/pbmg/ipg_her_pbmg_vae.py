@@ -96,8 +96,8 @@ class IPGHERAgent_pbmg(IPGHERAgent):
                 if self.stack_size > 1:
                     state_buffer.append(state_obs)
                     goal_buffer.append(goal_obs)
-                    state = prepare_stacked_images(state_buffer)
-                    goal = prepare_stacked_images(goal_buffer)
+                    state = prepare_stacked_images(state_buffer, self.stack_size)
+                    goal = prepare_stacked_images(goal_buffer, self.stack_size)
                 else:
                     state = state_obs
                     goal = goal_obs
@@ -180,8 +180,8 @@ class IPGHERAgent_pbmg(IPGHERAgent):
                 if self.stack_size > 1:
                     state_buffer.append(state_obs)
                     goal_buffer.append(goal_obs)
-                    state = prepare_stacked_images(state_buffer)
-                    goal = prepare_stacked_images(goal_buffer)
+                    state = prepare_stacked_images(state_buffer, self.stack_size)
+                    goal = prepare_stacked_images(goal_buffer, self.stack_size)
                 else:
                     state = state_obs
                     goal = goal_obs
@@ -197,7 +197,7 @@ class IPGHERAgent_pbmg(IPGHERAgent):
 
                 if self.image_input: 
                     next_state_obs = np.asarray(next_obs['observation'], dtype=np.float32) / 255.0
-                    achieved_goal = np.asarray(next_obs['achieved_goal_img'], dtype=np.float32) / 255.0
+                    achieved_goal_obs = np.asarray(next_obs['achieved_goal_img'], dtype=np.float32) / 255.0
                     next_goal_obs = np.asarray(next_obs['desired_goal_img'], dtype=np.float32) / 255.0
                 else:
                     next_state_obs = next_obs['observation']
