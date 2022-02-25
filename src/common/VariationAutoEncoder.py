@@ -8,12 +8,12 @@ import os
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-from keras.layers import Conv2D, Conv2DTranspose, Input, Flatten, Dense, Lambda, Reshape
-from keras.layers import BatchNormalization
-from keras.models import Model
-from keras.datasets import mnist
-from keras.losses import binary_crossentropy
-from keras import backend as K
+from tensorflow.keras.layers import Conv2D, Conv2DTranspose, Input, Flatten, Dense, Lambda, Reshape
+from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.models import Model
+from tensorflow.keras.datasets import mnist
+from tensorflow.keras.losses import binary_crossentropy
+from tensorflow.keras import backend as K
 import matplotlib.pyplot as plt
 from tensorflow.python.eager.context import num_gpus
 
