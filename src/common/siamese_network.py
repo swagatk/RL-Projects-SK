@@ -63,12 +63,6 @@ class SiameseNetwork():
         labels = tf.range(logits.shape[0])
         return logits, labels # (B, B)
 
-    def compute_loss(self, z_pos):
-        logits = self.compute_logits(z_pos)
-        labels = tf.range(logits.shape[0])
-        loss = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels)
-        return loss
-
     def train(self, data):
         """ train the model on the data
         data: obs & augmented obs (tensor of shape: (batch_size, height, width, channels))  
