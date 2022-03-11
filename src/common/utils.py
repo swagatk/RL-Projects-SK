@@ -65,8 +65,8 @@ def visualize_stacked_images(stacked_img, save_fig=False, fig_name='stacked_img.
     assert(stacked_img.shape[2] % 3 == 0), "stacked_img must have 3x channels"
     image_list = np.dsplit(stacked_img, int(stacked_img.shape[2]//3))      # split the stacked image into sections of 3 channels
 
-    rows = int(len(image_list) // 2)
-    cols = int(np.ceil(len(image_list) / 2))
+    rows = int(np.ceil(len(image_list) / 2)) # upper bound for the number of rows
+    cols = int(np.ceil(len(image_list) / 2)) # upper bound for the number of columns
     fig, axs = plt.subplots(rows, cols, figsize=(10, 10))
     fig.suptitle('Stacked Images', fontsize=12)
     for i in range(rows):
@@ -80,3 +80,5 @@ def visualize_stacked_images(stacked_img, save_fig=False, fig_name='stacked_img.
     plt.show()
     if save_fig:
         plt.savefig(uniquify(fig_name))
+
+###################################33

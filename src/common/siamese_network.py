@@ -65,7 +65,7 @@ class SiameseNetwork():
 
     def train(self, data):
         """ train the model on the data
-        data: obs & augmented obs (tensor of shape: (batch_size, height, width, channels))  
+        data: tuple (obs & augmented obs): obs tensor of shape: (batch_size, height, width, channels) 
         """
         x_q, x_k = data 
 
@@ -74,8 +74,8 @@ class SiameseNetwork():
             z_k = tf.stop_gradient(self.key_encoder(x_k))
             logits, labels = self.compute_logits(z_k, z_q)
             loss = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels)
-            gradients = tape.gradient(loss, self.W)
-            self.optimizer.apply_gradients(zip(gradients, [self.W]))
+        gradients = tape.gradient(loss, self.W)
+        self.optimizer.apply_gradients(zip(gradients, [self.W]))
 
 
 
