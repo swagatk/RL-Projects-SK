@@ -25,3 +25,4 @@ wandb/
 **/checkpoints 
 *.zip
 *.csv
+*.png
