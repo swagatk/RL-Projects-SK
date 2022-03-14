@@ -10,6 +10,7 @@ import signal
 import time
 import numpy as np
 import matplotlib.pyplot as plt
+from skimage.util import view_as_windows
 
 #################################
 def uniquify(path):
@@ -82,3 +83,54 @@ def visualize_stacked_images(stacked_img, save_fig=False, fig_name='stacked_img.
         plt.savefig(uniquify(fig_name))
 
 ###################################33
+# Random crop 
+# Source: https://github.com/MishaLaskin/curl/blob/master/utils.py
+###################################33
+def random_crop(imgs, out_h, out_w):
+    """
+    args:
+        imgs: batch images with size (B, H, W, C)
+        out_h: output height
+        out_w: output width
+
+    returns:
+        cropped images with size (B, H, W, C)
+    """
+    n = imgs.shape[0]   # batch size
+    img_h = imgs.shape[1]  # height
+    img_w = imgs.shape[2]  # width
+
+    assert img_h >= out_h and img_w >= out_w, "Image size is greater than output size"
+
+
+    crop_max_h = img_h - out_h 
+    crop_max_w = img_w - out_w
+
+    # create 
+    h1_idx = np.random.randint(0, crop_max_h, n)
+    w1_idx = np.random.randint(0, crop_max_w, n)
+
+    # create all sliding windows combination of size: output_size
+    windows =  view_as_windows(
+        imgs, (1, out_h, out_w, 1)
+    )[..., 0, :, :, 0]
+    cropped_imgs = windows[np.arange(n), h1_idx, w1_idx]
+    cropped_imgs = cropped_imgs.transpose(0, 2, 3, 1)
+    return cropped_imgs
+
+def center_crop_image(image, out_h, out_w):
+    '''
+    args: 
+        image: input image of shape (h, w, c)
+        output_h: output height
+        output_w: output width
+
+    returns:
+        cropped image of shape (h, w, c)
+    '''
+    h, w = image.shape[:2]  # height and width of the image
+    top = (h - out_h) // 2
+    left = (w - out_w) // 2
+    cropped_image = image[top:top+out_h, left:left+out_w, :]
+    return cropped_image
+
