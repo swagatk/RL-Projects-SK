@@ -97,16 +97,22 @@ class ObsvnResizeTimeLimitWrapper(gym.Wrapper):
 #####################################3
 ## frame stacking wrapper
 class FrameStackWrapper(gym.Wrapper):
-    def __init__(self, env, k) -> None:
+    def __init__(self, env, k, org_shape:tuple = None,
+                    dtype_value=None) -> None:
         super().__init__(env)
 
         self._k = k # number of frames to stack
         self._frames = deque([], maxlen=k)
-        new_shape = env.observation_space.shape 
+        if org_shape is None:
+            org_shape = env.observation_space.shape 
+        
+        if dtype_value is None:
+            dtype_value = env.observation_space.dtype
+        
         self.observation_space = gym.spaces.Box(
             low=0, high=255, 
-            shape=(new_shape[0], new_shape[1], 3 * k), 
-            dtype=env.observation_space.dtype
+            shape=(org_shape[0], org_shape[1], org_shape[2] * k), 
+            dtype=dtype_value
             )
 
     def reset(self):

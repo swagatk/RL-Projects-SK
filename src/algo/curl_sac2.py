@@ -6,7 +6,7 @@ from torch import rand
 from common.siamese_network import Encoder, SiameseNetwork
 from algo.sac import SACActor, SACAgent, SACCritic, SACActor
 from common.buffer import Buffer
-from common.utils import random_crop
+from common.utils import random_crop, uniquify
 
 class curlSacAgent(SACAgent):
     def __init__(self, state_size, 
@@ -20,7 +20,10 @@ class curlSacAgent(SACAgent):
                 gamma=0.99, polyak=0.995, 
                 cropped_img_size=50,
                 use_attention=None, filename=None, wb_log=False, path='./'):
-        super().__init__(state_size, action_size, action_upper_bound, buffer_capacity, batch_size, epochs, learning_rate, alpha, gamma, polyak, use_attention, filename, wb_log, path)
+        super().__init__(state_size, action_size, action_upper_bound, 
+            buffer_capacity, batch_size, epochs, learning_rate, 
+            alpha, gamma, polyak, use_attention, 
+            filename, wb_log, path)
         
         assert state_size.ndim == 3, 'state_size must be a 3D tensor'
 
@@ -30,7 +33,6 @@ class curlSacAgent(SACAgent):
 
         # create the encoder
         self.encoder = Encoder(self.state_size, self.feature_dim)
-
 
         # Contrastive network
         cont_net = SiameseNetwork(self.state_size, self.curl_latent_dim, self.feature_dim)
@@ -67,9 +69,19 @@ class curlSacAgent(SACAgent):
         obs_n = random_crop(next_states, self.cropped_img_size)  # negative images
 
 
+    # main training loop
+    def run(self, env, max_seasons=200,
+            training_batch=2560,
+            WB_LOG=False, success_value=None,
+            filename=None, chkpt_freq=None,
+            path='./'):
 
-    def main_loop(self):
-        pass
+        if filename is not None:
+            filename = uniquify(path + filename)
+
+        
+
+        
 
 
 
