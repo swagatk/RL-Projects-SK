@@ -11,6 +11,7 @@ import time
 import numpy as np
 import matplotlib.pyplot as plt
 from skimage.util import view_as_windows
+import tensorflow as tf
 
 #################################
 def uniquify(path):
@@ -86,7 +87,7 @@ def visualize_stacked_images(stacked_img, save_fig=False, fig_name='stacked_img.
 # Random crop 
 # Source: https://github.com/MishaLaskin/curl/blob/master/utils.py
 ###################################33
-def random_crop(imgs, out_h, out_w):
+def random_crop(imgs, out_h, out_w=None):
     """
     args:
         imgs: batch images with size (B, H, W, C)
@@ -100,7 +101,10 @@ def random_crop(imgs, out_h, out_w):
     img_h = imgs.shape[1]  # height
     img_w = imgs.shape[2]  # width
 
-    assert img_h >= out_h and img_w >= out_w, "Image size is greater than output size"
+    if out_w is None:
+        out_w = out_h
+
+    assert img_h >= out_h and img_w >= out_w, "Image size must be greater than output size"
 
 
     crop_max_h = img_h - out_h 
@@ -118,7 +122,7 @@ def random_crop(imgs, out_h, out_w):
     cropped_imgs = cropped_imgs.transpose(0, 2, 3, 1)
     return cropped_imgs
 
-def center_crop_image(image, out_h, out_w):
+def center_crop_image(image, out_h, out_w=None):
     '''
     args: 
         image: input image of shape (h, w, c)
@@ -128,9 +132,20 @@ def center_crop_image(image, out_h, out_w):
     returns:
         cropped image of shape (h, w, c)
     '''
+    if out_w is None:
+        out_w = out_h
+        
     h, w = image.shape[:2]  # height and width of the image
     top = (h - out_h) // 2
     left = (w - out_w) // 2
     cropped_image = image[top:top+out_h, left:left+out_w, :]
     return cropped_image
+
+
+def set_seed_everywhere(seed=42, env=None) -> None:
+    tf.random.set_seed = seed 
+    np.random.seed(seed)
+    if env is not None:
+        env.seed(seed)
+    
 

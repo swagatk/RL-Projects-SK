@@ -213,7 +213,7 @@ class SACAgent:
         # extract features from input images
         if self.image_input:        # input is an image
             print('Currently Attention handles only image input')
-            self.feature = FeatureNetwork(self.state_size, self.use_attention, self.lr_a)
+            self.feature = FeatureNetwork(self.state_size, self.use_attention, self.lr)
         else:       # non-image input
             print('You have selected a non-image input.')
             self.feature = None
@@ -240,6 +240,10 @@ class SACAgent:
 
         # Buffer for off-policy training
         self.buffer = Buffer(self.buffer_capacity, self.batch_size)
+
+        # initially target networks share same weights as the original networks
+        self.target_critic1.model.set_weights(self.critic1.model.get_weights())
+        self.target_critic2.model.set_weights(self.critic2.model.get_weights())
 
     def sample_action(self, state):
         # input: numpy array

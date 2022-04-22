@@ -1,251 +1,235 @@
-'''
-CURL implementation in Tensorflow 2.0
-Source for Pytorch implementation: 
-URL: https://github.com/MishaLaskin/curl
-'''
+# Implementing CURL-SAC Algorithm
+from turtle import st
 import numpy as np
 import tensorflow as tf
+import gym
+from collections import deque
+import wandb
 
 from common.siamese_network import Encoder, SiameseNetwork
+from algo.sac import SACActor, SACAgent, SACCritic, SACActor
+from common.buffer import Buffer
+from common.utils import center_crop_image, random_crop, uniquify
 
-class curlActor():
-    """ MLP Actor Network"""
-    def __init__(self, obs_shape, action_shape, feature_dim, hidden_dim,
-                    action_upper_bound, log_std_min=-20, log_std_max=2, 
-                    encoder_model=None):
-        self.obs_shape = obs_shape
-        self.action_shape = action_shape
-        self.feature_dim = feature_dim
-        self.hidden_dim = hidden_dim
-        self.log_std_min = log_std_min
-        self.log_std_max = log_std_max
-        self.action_upper_bound = action_upper_bound
 
-        self.encoder = encoder_model
-        self.model = self.build_model()
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+class curlSacAgent(SACAgent):
+    def __init__(self, state_size, 
+                action_size, 
+                feature_dim, 
+                curl_latent_dim, 
+                action_upper_bound, 
+                buffer_capacity=100000, 
+                batch_size=128, epochs=50, 
+                learning_rate=0.0003, alpha=0.2, 
+                gamma=0.99, polyak=0.995, 
+                cropped_img_size=50,
+                stack_size=3,
+                use_attention=None, filename=None, wb_log=False, path='./'):
+        super().__init__(state_size, action_size, action_upper_bound, 
+            buffer_capacity, batch_size, epochs, learning_rate, 
+            alpha, gamma, polyak, use_attention, 
+            filename, wb_log, path)
+        
+        assert len(state_size) == 3, 'state_size must be a 3D tensor'
 
-    def build_model(self):
-        inputs = tf.keras.layers.Input(shape=self.obs_shape)
-        if self.encoder is None:
-            x = tf.keras.layers.Dense(self.hidden_dim, activation='relu')(inputs)
-        else:
-            x = self.encoder(inputs)
-        x = tf.keras.layers.Dense(self.hidden_dim*2, activation='relu')(x)
-        x = tf.keras.layers.Dense(self.hidden_dim, activation='relu')(x)
-        mu = tf.keras.layers.Dense(self.action_shape[0], activation='tanh')(x)
-        mu = mu * self.action_upper_bound
-        log_sig = tf.keras.layers.Dense(self.action_shape[0])(x)
-        model = tf.keras.Model(inputs=inputs, outputs=[mu, log_sig])
-        return model 
+        self.feature_dim = feature_dim  # encoder feature dim
+        self.curl_latent_dim = curl_latent_dim  
+        self.cropped_img_size = cropped_img_size # needed for contrastive learning
+        self.stack_size = stack_size
+        
+        # final observation shape obtained after augmentation
+        self.obs_shape = (self.cropped_img_size, self.cropped_img_size, self.state_size[2])
+
+
+        # Contrastive network
+        self.cont_net = SiameseNetwork(self.obs_shape, self.curl_latent_dim, self.feature_dim)
+
+        # create the encoder
+        self.actor_encoder = self.cont_net.key_encoder
+        self.critic_encoder = self.cont_net.query_encoder
+
+        # Actor
+        self.actor = SACActor(self.obs_shape, action_size, 
+                        action_upper_bound, self.lr, self.actor_encoder)
+
+        # create two critics
+        self.critic1 = SACCritic(self.obs_shape, self.action_size,
+                                 self.lr, self.gamma, self.critic_encoder)
+        self.critic2 = SACCritic(self.obs_shape, self.action_size,
+                                 self.lr, self.gamma, self.critic_encoder)
+
+        # create two target critics
+        self.target_critic1 = SACCritic(self.obs_shape, self.action_size,
+                                 self.lr, self.gamma, self.critic_encoder)
+        self.target_critic2 = SACCritic(self.obs_shape, self.action_size,
+                                 self.lr, self.gamma, self.critic_encoder)
+
+        # alpha & buffer are defined from the parent class
+
+
+    def create_image_pairs(self):
+        # sample a minibatch from the replay buffer
+        states, _, _, next_states, _ = self.buffer.sample()
+        obs_a = random_crop(states, self.cropped_img_size)  # anchor images
+        obs_p = random_crop(states, self.cropped_img_size)  # positive images
+        obs_n = random_crop(next_states, self.cropped_img_size)  # negative images - not used.
+        return obs_a, obs_p, obs_n 
 
     
-    def __call__(self, obs):
-        # input is a tensor
-        mu, log_sigma = self.model(obs)
-        std = tf.math.exp(log_sigma)
-        return mu, std
+    def train_encoder(self, itn_max=10):
+        # train encoder using contrastive learning
+        enc_losses = []
+        for _ in range(itn_max):
+            obs_a, obs_p, obs_n = self.create_image_pairs()
+            loss = self.cont_net.train((obs_a, obs_p))
+            enc_losses.append(loss)
+        return np.mean(enc_losses)
+
+    def update_target_networks(self):
+        super().update_target_networks()
+        self.cont_net.update_key_encoder_wts
+            
+
+    def train_actor_critic(self, itn_max=20):
+
+        critic_losses, actor_losses, alpha_losses = [], [], []
+        for _ in range(itn_max):
+
+            # sample a minibatch from the replay buffer
+            states, actions, rewards, next_states, dones = self.buffer.sample()
+
+            states = [random_crop(states[i], self.cropped_img_size) for i in range(len(states))]
+            next_states = [random_crop(states[i], self.cropped_img_size) for i in range(len(next_states))]
+
+            # convert to tensors
+            states = tf.convert_to_tensor(states, dtype=tf.float32)
+            actions = tf.convert_to_tensor(actions, dtype=tf.float32)
+            rewards = tf.convert_to_tensor(rewards, dtype=tf.float32)
+            next_states = tf.convert_to_tensor(next_states, dtype=tf.float32)
+            dones = tf.convert_to_tensor(dones, dtype=tf.float32)
+
+            # update Q network weights
+            critic_loss = self.update_q_networks(states, actions, rewards, next_states, dones)
+                                    
+            # update policy networks
+            actor_loss = self.actor.train(states, self.alpha, self.critic1, self.critic2)
+
+            # update entropy coefficient
+            alpha_loss = self.update_alpha(states)
+
+            # update target network weights
+            self.update_target_networks()
+
+            critic_losses.append(critic_loss)
+            actor_losses.append(actor_loss)
+            alpha_losses.append(alpha_loss)
+        # itn loop ends here
+        mean_critic_loss = np.mean(critic_losses)
+        mean_actor_loss = np.mean(actor_losses)
+        mean_alpha_loss = np.mean(alpha_losses)
+
+        return mean_actor_loss, mean_critic_loss, mean_alpha_loss
+
+    def validate(self, env, max_eps=20):
+        '''
+        evaluate model performance
+        '''
+        ep_reward_list = []
+        for _ in range(max_eps):
+            obs = env.reset()
+            state = np.asarray(obs, dtype=np.float32) / 255.0
+            t = 0
+            ep_reward = 0
+            while True:
+                action, _ = self.sample_action(state)
+                next_obs, reward, done, _ = env.step(action)
+                next_state = np.asarray(next_obs, dtype=np.float32) / 255.0
+                state = next_state 
+                ep_reward += reward 
+                t += 1
+                if done:
+                    ep_reward_list.append(ep_reward)
+                    break
+        # outside the loop
+        mean_ep_reward = np.mean(ep_reward_list)
+        return mean_ep_reward
 
 
-class curlCritic():
-    def __init__(self, obs_shape, action_shape, hidden_dim, gamma, feature_model=None) -> None:
-        self.obs_shape = obs_shape
-        self.action_shape = action_shape
-        self.gamma = gamma
-        self.hidden_dim = hidden_dim
-        self.encoder = feature_model
-        #self.model = self.build_model()
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+    # main training loop
+    def run(self, env, max_training_steps=100000,
+            eval_freq=1000, init_steps=1000,
+            ac_train_freq=5, enc_train_freq=2, 
+            WB_LOG=False): 
 
-        self.Q1 = self.build_model()
-        self.Q2 = self.build_model()
+        episode, ep_reward, done = 0, 0, True
+        ep_rewards = []
+        for step in range(max_training_steps):
 
-
-    def build_model(self):
-        obs = tf.keras.layers.Input(shape=self.obs_shape)
-        action = tf.keras.layers.Input(shape=self.action_shape)  
-        if self.encoder is None:
-            x = tf.keras.layers.Dense(self.hidden_dim, activation='relu')(obs)
-        else:
-            x = self.encoder(obs)
-
-        x = tf.keras.layers.Dense(self.hidden_dim, activation='relu')(x)
-        xa = tf.keras.layers.Dense(self.hidden_dim, activation='relu')(action)
-        x = tf.keras.layers.Concatenate()([x, action])
-
-        x = tf.keras.layers.Dense(self.hidden_dim*2, activation='relu')(x)
-        x = tf.keras.layers.Dense(self.hidden_dim, activation='relu')(x)
-        v = tf.keras.layers.Dense(1)(x)
-        model = tf.keras.Model(inputs=[obs, action], outputs=v)
-        return model
-
-    def __call__(self, state, action):
-        # input: tensors
-        q1_value = self.Q1([state, action])
-        q2_value = self.Q2([state, action])
-        return q1_value, q2_value
-
-    def set_weights(self, q1_wts, q2_wts):
-        self.Q1.set_weights(q1_wts)
-        self.Q2.set_weights(q2_wts)
-
-    def get_weights(self):
-        q1_wts = self.Q1.get_weights()
-        q2_wts = self.Q2.get_weights()
-        return q1_wts, q2_wts
-
-class CURL():
-    """
-    CURL
-    - It is essentially a siamese twin network
-    """
-    def __init__(self, obs_shape, z_dim, batch_size, critic, critic_target) -> None:
-        self.batch_size = batch_size
-        self.encoder = critic.encoder       # query
-        self.encoder_target = critic_target.encoder # key
-
-        # bilinear product
-        self.W = tf.Variable(tf.random.uniform(shape=(z_dim, z_dim)))
-
-        # how to use this?
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
-
-    def encode(self, x, ema=False):
-        if ema:
-            z_out = self.encoder_target(x)
-        else:
-            z_out = self.encoder(x)
-
-        return z_out
-
-    def compute_logits(self, z_a, z_pos):
-        """
-        Use logits trick for CURL
-        - Compute (B, B) matrix z_a * W * z_pos.T
-        - positives are all diagonal elements
-        - negatives are all other elements.
-        - to compute loss use multi-class crossentropy with identity matrix for labels
-        """
-
-        wz = tf.matmul(self.W, z_pos.T) # (z_dim, B)
-        logits = tf.matmul(z_a, wz) # (B, B)
-        logits = logits - tf.math.reduce_max(logits, axis=1)[0][:, None]  # what is this?
-
-        return logits 
+            if step % eval_freq == 0:
+                self.validate(env, max_eps=50)
 
 
-class curlSacAgent():
-    """ Curl Representation learning with SAC """
-    def __init__(self, obs_shape, action_shape, 
-                    hidden_dim=256, 
-                    discount=0.99,
-                    init_temperature=0.01,  # ??
-                    alpha_lr=1e-3,          # ??
-                    alpha_beta=0.9,         # ??
-                    actor_lr=1e-3,
-                    actor_beta=0.9,
-                    actor_log_std_min=-10,
-                    actor_log_std_max=2,
-                    actor_update_freq=2,
-                    critic_lr=1e-3,
-                    critic_tau=0.005,
-                    critic_target_update_freq=2,
-                    encoder_feature_dim=50,
-                    encoder_lr=1e-3,
-                    encoder_tau=0.005,
-                    num_layers=4,
-                    num_filters=32,
-                    cpc_update_freq=1,
-                    log_interval=100,
-                    curl_latent_dim=128
-    ):
-        self.discount = discount
-        self.critic_tau = critic_tau 
-        self.encoder_tau = encoder_tau
-        self.actor_update_freq = actor_update_freq
-        self.critic_target_update_freq = critic_target_update_freq
-        self.cpc_update_freq = cpc_update_freq
-        self.log_interval = log_interval
-        self.image_size = obs_shape
-        self.curl_latent_dim = curl_latent_dim
-        self.action_shape = action_shape
+            if done:
+                done = False
+                ep_reward = 0
+                episode += 1 
+                ep_step = 0
+                obs = env.reset()
+                
 
-        self.actor = curlActor(
-            obs_shape, action_shape, hidden_dim, encoder_feature_dim, 
-            actor_log_std_min, actor_log_std_max, num_layers, num_filters
-            )
+            # make an observation                
+            state = np.asarray(obs['observation'], dtype=np.float32) / 255.0
+            
+            # actor takes cropped_img_size
+            cropped_state = center_crop_image(state, out_h=self.cropped_img_size)
 
-        self.critic = curlCritic(
-            obs_shape, action_shape, hidden_dim, encoder_feature_dim,
-            num_layers, num_filters
-        )
-        
-        self.critic_target = curlCritic(
-            obs_shape, action_shape, hidden_dim, encoder_feature_dim,
-            num_layers, num_filters
-        )
+            # take an action
+            action = self.sample_action(cropped_state)
 
-        self.curl = CURL(obs_shape, encoder_feature_dim, self.curl_latent_dim,
-                        self.critic, self.critic_target)
+            # obtain rewards
+            next_obs, reward, done, _ = self.env.step(action)
+            next_state = np.asarray(next_obs['observation'], dtype=np.float32)
 
-        # copy the weights from the main critic to target
-        self.critic_target.model.set_weights(self.critic.model.get_weights())
+            # record experience
+            self.buffer.record([state, action, reward, next_state, done])
 
-        # what is this?
-        self.log_alpha = tf.Variable(np.log(init_temperature), dtype=tf.float32)
-        self.log_alpha.trainable = True
-        self.log_alpha_optimizer = tf.keras.optimizers.Adam(learning_rate=alpha_lr, beta_1=alpha_beta)
-        
-        # Check its use
-        self.target_entropy = -np.prod(action_shape)
+            # train
+            if step > init_steps and step % ac_train_freq == 0:
+                a_loss, c_loss, alpha_loss = self.train_actor_critic()
 
-    def train(self):
-        self.actor.train()
-        self.critic.train()
-        self.curl.train()
+            if step > init_steps and step % enc_train_freq == 0:
+                enc_loss = self.train_encoder()
 
-    @property
-    def alpha(self):
-        return tf.exp(self.log_alpha)
+            ep_reward += reward 
+            ep_rewards.append(reward)
 
-    def select_action(self, obs):  
-        # obs: (H, W, C)
-        assert obs.shape() == self.image_size, "observation shape is not correct"
+            if WB_LOG:
+                wandb.log({
+                    'episodes' : episode,
+                    'ep_reward' : ep_reward,
+                    'mean_ep_reward' : np.mean(ep_rewards),
+                    'mean_actor_loss' : a_loss,
+                    'mean_critic_loss' : c_loss,
+                    'mean_alpha_loss' : alpha_loss,
+                    'mean_enc_loss' : enc_loss,
+                })
 
-        tf_state = tf.expand_dims(tf.convert_to_tensor(obs, dtype=tf.float32), 0)
-        action, _ = self.actor(tf_state)
-        action = action.numpy()[0]
-        return action
+            state = next_state    
+            ep_step += 1
 
-    def sample_action(self, obs):
-        pass
+        env.close()
+        print('Mean episodic score over {} episodes: {:.2f}'\
+                            .format(episode, np.mean(ep_rewards)))
 
-    def update_critic(self, obs, action, next_obs, reward, done):
-        # obs: (B, H, W, C)
-        # action: (B, A)
-        # next_obs: (B, H, W, C)
-        # reward: (B)
-        # done: (B)
 
-        _, policy_action, log_pi, _ = self.actor(next_obs)
-        target_Q1, target_Q2 = self.critic_target(next_obs, policy_action)
-        target_V = tf.minimum(target_Q1, target_Q2) - self.alpha * log_pi
 
-        # update the critic
-        with tf.GradientTape() as tape:
-            # compute the value of the next state
-            next_value = self.critic_target(next_obs)
-            # compute the value of the current state
-            value = self.critic(obs, action)
-            # compute the target value
-            target_value = reward + self.discount * next_value * (1-done)
-            # compute the loss
-            loss = tf.reduce_mean(tf.square(target_value - value))
-        grads = tape.gradient(loss, self.critic.model.trainable_variables)
-        self.critic.optimizer.apply_gradients(zip(grads, self.critic.model.trainable_variables))
-
-    
+            
 
 
         
+
         
+
+
+
+

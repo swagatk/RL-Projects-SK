@@ -19,11 +19,12 @@ import gym
 import sys
 current_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(current_dir)
-sys.path.append(os.path.dirname(current_dir))
+sys.path.append(os.path.dirname(current_dir)) # parent director
 
 # Local imports
 from algo.curl_sac import curlSacAgent
 from common.CustomGymWrapper import FrameStackWrapper
+from common.utils import set_seed_everywhere
 
 ########################################
 # check tensorflow version
@@ -33,8 +34,8 @@ assert version.parse(tf.__version__).release[0] >= 2, \
 #######################################
 # Random seed
 #######################################################
-np.random.seed(42)
-tf.random.set_seed(42)
+# np.random.seed(42)
+# tf.random.set_seed(42)
 ######################################
 # avoid CUDNN_STATUS_INTERNAL_ERROR
 gpus = tf.config.list_physical_devices('GPU')
@@ -97,23 +98,8 @@ if WB_LOG:
     wandb.login()
     wandb.init(project=config_dict['env_name'], config=config_dict)
 #######################################################33
-# class FrameStackWrapperPbmg(FrameStackWrapper):
-#     def __init__(self, env, k):
-#         """Frame-stacking wrapper for PBMG environment.
-
-#         Args:
-#             env (PBMG): PBMG environment
-#             k (int): number of frames to stack
-#         """
-#         super().__init__(env, k)
-#         org_shape = env.observation_space['observation'].__getattribute__('shape')
-#         self.observation_space = gym.spaces.Box(
-#             low=0, high=255, 
-#             shape=(org_shape[0], org_shape[1], org_shape[2] * k),
-#             dtype=env.observation_space['observation'].dtype
-#             )
-#################################3
 if __name__ == "__main__":
+
 
     if config_dict['env_name'] == 'pbmg':
 
@@ -160,7 +146,7 @@ if __name__ == "__main__":
         # Apply stacking wrapper to the environment
         env = FrameStackWrapper(env, config_dict['stack_size'],
         org_shape=obs_shape, dtype_value=dtype_value)
-    #print('Observation:', env.observation_space)
+        #print('Observation:', env.observation_space)
 
 
     if config_dict['image_obsvn']: 
@@ -177,8 +163,9 @@ if __name__ == "__main__":
     print('Action size:', action_size)
     print('Action upper bound:', upper_bound)
 
-    # check if we can also set environment seeds
-    env.seed(42)
+
+    # set seed
+    set_seed_everywhere(seed=42, env=env)
 
     ans = input('Do you want to continue?(Y/N)')
     if ans.lower() == 'n':
@@ -186,13 +173,18 @@ if __name__ == "__main__":
 
 
     ######################################################
-    # if config_dict['algo'] == 'curl_sac': # curl_sac
-    #     agent = curlSacAgent(state_size, action_size, upper_bound, config_dict)
+    if config_dict['algo'] == 'curl_sac': # curl_sac
+        agent = curlSacAgent(
+            state_size=state_size, 
+            action_size=action_size,
+            feature_dim=50,
+            curl_latent_dim=128,
+            action_upper_bound=upper_bound)
 
 
 
-    # # Train
-    # agent.run(env, WB_LOG=WB_LOG)
+        # Train
+        agent.run(env, WB_LOG=WB_LOG)
 
 
     # test
