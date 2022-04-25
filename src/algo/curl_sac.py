@@ -16,7 +16,6 @@ class curlSacAgent(SACAgent):
     def __init__(self, state_size, 
                 action_size, 
                 feature_dim, 
-                curl_latent_dim, 
                 action_upper_bound, 
                 buffer_capacity=100000, 
                 batch_size=128, epochs=50, 
@@ -33,7 +32,6 @@ class curlSacAgent(SACAgent):
         assert len(state_size) == 3, 'state_size must be a 3D tensor'
 
         self.feature_dim = feature_dim  # encoder feature dim
-        self.curl_latent_dim = curl_latent_dim  
         self.cropped_img_size = cropped_img_size # needed for contrastive learning
         self.stack_size = stack_size
         
@@ -42,7 +40,7 @@ class curlSacAgent(SACAgent):
 
 
         # Contrastive network
-        self.cont_net = SiameseNetwork(self.obs_shape, self.curl_latent_dim, self.feature_dim)
+        self.cont_net = SiameseNetwork(self.obs_shape, self.feature_dim)
 
         # create the encoder
         self.actor_encoder = self.cont_net.key_encoder
@@ -66,7 +64,6 @@ class curlSacAgent(SACAgent):
 
         # alpha & buffer are defined from the parent class
 
-
     def create_image_pairs(self):
         # sample a minibatch from the replay buffer
         states, _, _, next_states, _ = self.buffer.sample()
@@ -75,21 +72,20 @@ class curlSacAgent(SACAgent):
         obs_n = random_crop(next_states, self.cropped_img_size)  # negative images - not used.
         return obs_a, obs_p, obs_n 
 
-    
-    def train_encoder(self, itn_max=10):
+    def train_encoder(self, itn_max=5):
         # train encoder using contrastive learning
         enc_losses = []
         for _ in range(itn_max):
             obs_a, obs_p, obs_n = self.create_image_pairs()
-            loss = self.cont_net.train((obs_a, obs_p))
-            enc_losses.append(loss)
+            loss_1 = self.cont_net.train((obs_a, obs_p))
+            loss_2 = self.cont_net.query_encoder.train(obs_a, obs_p) # check
+            enc_losses.append(np.minimum(loss_1, loss_2))
         return np.mean(enc_losses)
 
     def update_target_networks(self):
         super().update_target_networks()
         self.cont_net.update_key_encoder_wts
             
-
     def train_actor_critic(self, itn_max=20):
 
         critic_losses, actor_losses, alpha_losses = [], [], []
@@ -98,8 +94,8 @@ class curlSacAgent(SACAgent):
             # sample a minibatch from the replay buffer
             states, actions, rewards, next_states, dones = self.buffer.sample()
 
-            states = [random_crop(states[i], self.cropped_img_size) for i in range(len(states))]
-            next_states = [random_crop(states[i], self.cropped_img_size) for i in range(len(next_states))]
+            states = random_crop(states, self.cropped_img_size)
+            next_states = random_crop(next_states, self.cropped_img_size) 
 
             # convert to tensors
             states = tf.convert_to_tensor(states, dtype=tf.float32)
@@ -136,14 +132,13 @@ class curlSacAgent(SACAgent):
         '''
         ep_reward_list = []
         for _ in range(max_eps):
-            obs = env.reset()
-            state = np.asarray(obs, dtype=np.float32) / 255.0
+            state = env.reset()  # normalized floating point pixel obsvn
             t = 0
             ep_reward = 0
             while True:
-                action, _ = self.sample_action(state)
-                next_obs, reward, done, _ = env.step(action)
-                next_state = np.asarray(next_obs, dtype=np.float32) / 255.0
+                cropped_state = center_crop_image(state, out_h=self.cropped_img_size)
+                action, _ = self.sample_action(cropped_state)
+                next_state, reward, done, _ = env.step(action)
                 state = next_state 
                 ep_reward += reward 
                 t += 1
@@ -154,41 +149,45 @@ class curlSacAgent(SACAgent):
         mean_ep_reward = np.mean(ep_reward_list)
         return mean_ep_reward
 
-
     # main training loop
     def run(self, env, max_training_steps=100000,
-            eval_freq=1000, init_steps=1000,
+            eval_freq=1000, init_steps=500,
             ac_train_freq=5, enc_train_freq=2, 
             WB_LOG=False): 
+        '''
+        Main training loop
+        '''
 
+        a_loss, c_loss, alpha_loss, enc_loss = 0, 0, 0, 0
         episode, ep_reward, done = 0, 0, True
         ep_rewards = []
+        val_scores = []
+
         for step in range(max_training_steps):
-
-            if step % eval_freq == 0:
-                self.validate(env, max_eps=50)
-
 
             if done:
                 done = False
                 ep_reward = 0
                 episode += 1 
                 ep_step = 0
-                obs = env.reset()
-                
+                state = env.reset() # normalized & floating point pixel obs
 
-            # make an observation                
-            state = np.asarray(obs['observation'], dtype=np.float32) / 255.0
-            
+            # validation
+            if  step > init_steps & step % eval_freq == 0:
+                val_score = self.validate(env, max_eps=50)
+                val_scores.append(val_score)
+
             # actor takes cropped_img_size
             cropped_state = center_crop_image(state, out_h=self.cropped_img_size)
 
             # take an action
-            action = self.sample_action(cropped_state)
+            if step < init_steps:
+                action = env.action_space.sample()
+            else:
+                action, _ = self.sample_action(cropped_state)
 
             # obtain rewards
-            next_obs, reward, done, _ = self.env.step(action)
-            next_state = np.asarray(next_obs['observation'], dtype=np.float32)
+            next_state, reward, done, _ = env.step(action)
 
             # record experience
             self.buffer.record([state, action, reward, next_state, done])
@@ -212,6 +211,7 @@ class curlSacAgent(SACAgent):
                     'mean_critic_loss' : c_loss,
                     'mean_alpha_loss' : alpha_loss,
                     'mean_enc_loss' : enc_loss,
+                    'mean_val_score' : np.mean(val_scores),
                 })
 
             state = next_state    

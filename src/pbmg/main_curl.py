@@ -77,7 +77,7 @@ config_dict = dict(
     image_obsvn=True
 )
 #######################
-WB_LOG = False
+WB_LOG = True
 ############################
 save_path = './log/'
 chkpt_freq = None         # wrt seasons
@@ -178,9 +178,7 @@ if __name__ == "__main__":
             state_size=state_size, 
             action_size=action_size,
             feature_dim=50,
-            curl_latent_dim=128,
             action_upper_bound=upper_bound)
-
 
 
         # Train

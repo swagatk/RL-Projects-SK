@@ -40,9 +40,31 @@ class Encoder():
         f = self.model(obs)
         return f 
 
+    def compute_loss(self, p, z):
+        z = tf.stop_gradient(z)
+        p = tf.math.l2_normalize(p, axis=1)
+        z = tf.math.l2_normalize(z, axis=1)
+        # maximize cosine similarity
+        loss = -tf.reduce_mean(tf.reduce_sum((p * z), axis=1))
+        return loss 
+
+    def train(self, x_a, x_p):
+        # can it handle input numpy arrays
+        # x_a_tensor = tf.convert_to_tensor(x_a, dtype=np.float32)
+        # x_p_tensor = tf.convert_to_tensor(x_p, dtype=np.float32)
+        with tf.GradientTape() as tape:
+            z_a = self.model(x_a)
+            z_p = self.model(x_p)
+            loss = self.compute_loss(z_a, z_p)
+        trainable_params = self.model.trainable_variables
+        gradients = tape.gradient(loss, trainable_params)
+        self.optimizer.apply_gradients(zip(gradients, trainable_params))
+        return loss 
+
+
 
 class SiameseNetwork():
-    def __init__(self, obs_shape, z_dim, embedding_dim) -> None:
+    def __init__(self, obs_shape, z_dim)-> None:
         """
         Args:
             obs_shape: tuple of ints
@@ -50,9 +72,10 @@ class SiameseNetwork():
             embedding_dim: int (feature dim of the encoder)
         """
         assert len(obs_shape) == 3, '3D observation'      # (height, width, channels)
-        self.query_encoder = Encoder(obs_shape, embedding_dim)
-        self.key_encoder = Encoder(obs_shape, embedding_dim)
-        self.W = tf.Variable(tf.random.uniform(shape=(z_dim, z_dim), minval=-0.1, maxval=0.1))
+        self.query_encoder = Encoder(obs_shape, z_dim)
+        self.key_encoder = Encoder(obs_shape, z_dim)
+        self.W = tf.Variable(tf.random.uniform(shape=(z_dim, z_dim), 
+                                        minval=-0.1, maxval=0.1))
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
 
         # initially query and key encoders share same weights
@@ -79,14 +102,17 @@ class SiameseNetwork():
         """ train the model on the data
         data: tuple (obs & augmented obs): obs tensor of shape: (batch_size, height, width, channels) 
         """
-        x_q, x_k = data 
+        x_q, x_k = data # anchor, positives
+        x_q_tensor = tf.convert_to_tensor(x_q, dtype=tf.float32)
+        x_k_tensor = tf.convert_to_tensor(x_k, dtype=tf.float32)
         with tf.GradientTape() as tape:
-            z_q = self.query_encoder(x_q)
-            z_k = tf.stop_gradient(self.key_encoder(x_k))
-            logits, labels = self.compute_logits(z_k, z_q)
-            loss = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels)
-        gradients = tape.gradient(loss, self.W)
-        self.optimizer.apply_gradients(zip(gradients, [self.W]))
+            z_q = self.query_encoder(x_q_tensor)    # anchor 
+            z_k = tf.stop_gradient(self.key_encoder(x_k_tensor))    # positives
+            logits, labels = self.compute_logits(z_q, z_k)
+            loss = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels, axis=-1)
+            train_wts = [self.W]
+        gradients = tape.gradient(loss, train_wts)
+        self.optimizer.apply_gradients(zip(gradients, train_wts))
         return loss 
 
     def update_key_encoder_wts(self, tau=0.995):

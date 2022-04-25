@@ -102,7 +102,7 @@ class FrameStackWrapper(gym.Wrapper):
         super().__init__(env)
 
         self._k = k # number of frames to stack
-        self._frames = deque([], maxlen=k)
+        self._frames = deque([], maxlen=self._k)
         if org_shape is None:
             org_shape = env.observation_space.shape 
         
@@ -116,14 +116,20 @@ class FrameStackWrapper(gym.Wrapper):
             )
 
     def reset(self):
-        obs = self.env.reset()[:,:,:3]  # (H, W, 3) 
+        '''
+        generates stacked images as observation.
+        images are converted into normalized floating point matrices
+        '''
+        obs = self.env.reset()
+        obs_img = np.asarray(obs['observation'], dtype=np.float32) / 255.0
         for _ in range(self._k):
-            self._frames.append(obs)
+            self._frames.append(obs_img[:,:,:3])
         return self._get_obs()
 
     def step(self, action):
         obs, reward, done, info = self.env.step(action)
-        self._frames.append(obs[:,:,:3])    # store only the first 3 channels of the observation
+        obs_img = np.asarray(obs['observation'], dtype=np.float32) / 255.0
+        self._frames.append(obs_img[:,:,:3])    # store only the first 3 channels of the observation
         return self._get_obs(), reward, done, info
 
     def _get_obs(self):

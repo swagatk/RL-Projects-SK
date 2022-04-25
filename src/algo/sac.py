@@ -286,7 +286,7 @@ class SACAgent:
 
         min_q_target = tf.minimum(q1_target, q2_target)
 
-        soft_q_target = min_q_target  - self.alpha * log_pi_a  
+        soft_q_target = min_q_target  - self.alpha * tf.reduce_sum(log_pi_a, axis=1)  
 
         y = rewards + self.gamma * (1 - dones) * soft_q_target
 

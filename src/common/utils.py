@@ -97,9 +97,10 @@ def random_crop(imgs, out_h, out_w=None):
     returns:
         cropped images with size (B, H, W, C)
     """
-    n = imgs.shape[0]   # batch size
-    img_h = imgs.shape[1]  # height
-    img_w = imgs.shape[2]  # width
+    img_array = np.asarray(imgs)
+    n = img_array.shape[0]      # batch size
+    img_h = img_array.shape[1]  # height
+    img_w = img_array.shape[2]  # width
 
     if out_w is None:
         out_w = out_h
@@ -116,7 +117,7 @@ def random_crop(imgs, out_h, out_w=None):
 
     # create all sliding windows combination of size: output_size
     windows =  view_as_windows(
-        imgs, (1, out_h, out_w, 1)
+        img_array, (1, out_h, out_w, 1)
     )[..., 0, :, :, 0]
     cropped_imgs = windows[np.arange(n), h1_idx, w1_idx]
     cropped_imgs = cropped_imgs.transpose(0, 2, 3, 1)
