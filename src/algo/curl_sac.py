@@ -45,6 +45,7 @@ class curlSacAgent(SACAgent):
         # create the encoder
         self.actor_encoder = self.cont_net.key_encoder
         self.critic_encoder = self.cont_net.query_encoder
+        self.target_critic_encoder = self.cont_net.query_encoder
 
         # Actor
         self.actor = SACActor(self.obs_shape, action_size, 
@@ -58,9 +59,9 @@ class curlSacAgent(SACAgent):
 
         # create two target critics
         self.target_critic1 = SACCritic(self.obs_shape, self.action_size,
-                                 self.lr, self.gamma, self.critic_encoder)
+                                 self.lr, self.gamma, self.target_critic_encoder)
         self.target_critic2 = SACCritic(self.obs_shape, self.action_size,
-                                 self.lr, self.gamma, self.critic_encoder)
+                                 self.lr, self.gamma, self.target_critic_encoder)
 
         # alpha & buffer are defined from the parent class
 
@@ -78,8 +79,9 @@ class curlSacAgent(SACAgent):
         for _ in range(itn_max):
             obs_a, obs_p, obs_n = self.create_image_pairs()
             loss_1 = self.cont_net.train((obs_a, obs_p))
-            loss_2 = self.cont_net.query_encoder.train(obs_a, obs_p) # check
-            enc_losses.append(np.minimum(loss_1, loss_2))
+            #loss_2 = self.cont_net.query_encoder.train(obs_a, obs_p) # check
+            #enc_losses.append(np.minimum(loss_1, loss_2))
+            enc_losses.append(loss_1)
         return np.mean(enc_losses)
 
     def update_target_networks(self):
@@ -152,7 +154,8 @@ class curlSacAgent(SACAgent):
     # main training loop
     def run(self, env, max_training_steps=100000,
             eval_freq=1000, init_steps=500,
-            ac_train_freq=5, enc_train_freq=2, 
+            ac_train_freq=2, enc_train_freq=1, 
+            tgt_update_freq = 5,
             WB_LOG=False): 
         '''
         Main training loop
@@ -198,6 +201,9 @@ class curlSacAgent(SACAgent):
 
             if step > init_steps and step % enc_train_freq == 0:
                 enc_loss = self.train_encoder()
+
+            if step > init_steps and step % tgt_update_freq == 0:
+                self.update_target_networks()
 
             ep_reward += reward 
             ep_rewards.append(reward)

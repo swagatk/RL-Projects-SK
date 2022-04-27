@@ -103,16 +103,24 @@ class SiameseNetwork():
         data: tuple (obs & augmented obs): obs tensor of shape: (batch_size, height, width, channels) 
         """
         x_q, x_k = data # anchor, positives
-        x_q_tensor = tf.convert_to_tensor(x_q, dtype=tf.float32)
-        x_k_tensor = tf.convert_to_tensor(x_k, dtype=tf.float32)
-        with tf.GradientTape() as tape:
-            z_q = self.query_encoder(x_q_tensor)    # anchor 
-            z_k = tf.stop_gradient(self.key_encoder(x_k_tensor))    # positives
+        with tf.GradientTape() as tape1:
+            z_q = tf.stop_gradient(self.query_encoder(x_q))   # anchor 
+            z_k = tf.stop_gradient(self.key_encoder(x_k))    # positives
             logits, labels = self.compute_logits(z_q, z_k)
             loss = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels, axis=-1)
             train_wts = [self.W]
-        gradients = tape.gradient(loss, train_wts)
-        self.optimizer.apply_gradients(zip(gradients, train_wts))
+        gradients_1 = tape1.gradient(loss, train_wts)
+        self.optimizer.apply_gradients(zip(gradients_1, train_wts))
+
+        with tf.GradientTape() as tape2:
+            z_q = self.query_encoder(x_q)    # anchor 
+            z_k = tf.stop_gradient(self.key_encoder(x_k)) # positives
+            logits, labels = self.compute_logits(z_q, z_k)
+            loss = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels)
+            enc_wts = self.query_encoder.model.trainable_variables
+        gradients_2 = tape2.gradient(loss, enc_wts)
+        self.optimizer.apply_gradients(zip(gradients_2, enc_wts))
+
         return loss 
 
     def update_key_encoder_wts(self, tau=0.995):

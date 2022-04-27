@@ -77,7 +77,7 @@ config_dict = dict(
     image_obsvn=True
 )
 #######################
-WB_LOG = True
+WB_LOG = False
 ############################
 save_path = './log/'
 chkpt_freq = None         # wrt seasons
