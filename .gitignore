@@ -3,10 +3,11 @@
 __pycache__/
 **/logs/
 *.h5
-*.txt
 *.swp
 *.swo
 *.dat
+*.txt
+!requirements.txt
 chkpt/ 
 reload/
 results/
