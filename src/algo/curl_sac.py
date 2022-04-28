@@ -180,6 +180,12 @@ class curlSacAgent(SACAgent):
                 val_score = self.validate(env, max_eps=50)
                 val_scores.append(val_score)
 
+                if WB_LOG:
+                    wandb.log({
+                        'val_scores' : val_score,
+                        'man_val_score' : np.mean(val_scores),
+                    })
+
             # actor takes cropped_img_size
             cropped_state = center_crop_image(state, out_h=self.cropped_img_size)
 
@@ -199,8 +205,21 @@ class curlSacAgent(SACAgent):
             if step > init_steps and step % ac_train_freq == 0:
                 a_loss, c_loss, alpha_loss = self.train_actor_critic()
 
+                if WB_LOG:
+                    wandb.log({
+                        'actor_loss' : a_loss,
+                        'critic_loss': c_loss,
+                        'alpha_loss' : alpha_loss,
+                    })
+
             if step > init_steps and step % enc_train_freq == 0:
                 enc_loss = self.train_encoder()
+
+                if WB_LOG:
+                    wandb.log({
+                        'enc_loss' : enc_loss,
+                    })
+
 
             if step > init_steps and step % tgt_update_freq == 0:
                 self.update_target_networks()
@@ -213,11 +232,6 @@ class curlSacAgent(SACAgent):
                     'episodes' : episode,
                     'ep_reward' : ep_reward,
                     'mean_ep_reward' : np.mean(ep_rewards),
-                    'mean_actor_loss' : a_loss,
-                    'mean_critic_loss' : c_loss,
-                    'mean_alpha_loss' : alpha_loss,
-                    'mean_enc_loss' : enc_loss,
-                    'mean_val_score' : np.mean(val_scores),
                 })
 
             state = next_state    
