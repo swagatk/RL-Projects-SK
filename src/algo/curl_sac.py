@@ -183,7 +183,7 @@ class curlSacAgent(SACAgent):
                 if WB_LOG:
                     wandb.log({
                         'val_scores' : val_score,
-                        'man_val_score' : np.mean(val_scores),
+                        'mean_val_score' : np.mean(val_scores),
                     })
 
             # actor takes cropped_img_size
@@ -197,6 +197,9 @@ class curlSacAgent(SACAgent):
 
             # obtain rewards
             next_state, reward, done, _ = env.step(action)
+
+            # convert negative reward to positive reward
+            reward = 1 if reward == 0 else 0
 
             # record experience
             self.buffer.record([state, action, reward, next_state, done])
