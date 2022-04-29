@@ -7,7 +7,7 @@ __pycache__/
 *.swo
 *.dat
 *.txt
-!requirements.txt
+#!requirements.txt
 chkpt/ 
 reload/
 results/
