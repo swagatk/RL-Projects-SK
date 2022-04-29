@@ -141,6 +141,9 @@ class curlSacAgent(SACAgent):
                 cropped_state = center_crop_image(state, out_h=self.cropped_img_size)
                 action, _ = self.sample_action(cropped_state)
                 next_state, reward, done, _ = env.step(action)
+
+                # convert negative reward to positive reward 
+                reward = 1 if reward == 0 else 0
                 state = next_state 
                 ep_reward += reward 
                 t += 1
