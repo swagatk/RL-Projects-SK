@@ -165,17 +165,20 @@ class curlSacAgent(SACAgent):
         '''
 
         a_loss, c_loss, alpha_loss, enc_loss = 0, 0, 0, 0
-        episode, ep_reward, done = 0, 0, True
+        episode, ep_reward, done = 0, 0, False
         ep_rewards = []
         val_scores = []
-
+        actor_losses = []
+        critic_losses = []
+        encoder_losses = []
+        alpha_losses = []
         for step in range(max_training_steps):
 
             if done:
+                ep_rewards.append(reward)
                 done = False
                 ep_reward = 0
                 episode += 1 
-                ep_step = 0
                 state = env.reset() # normalized & floating point pixel obs
 
             # validation
@@ -204,44 +207,43 @@ class curlSacAgent(SACAgent):
             # convert negative reward to positive reward
             reward = 1 if reward == 0 else 0
 
+            # accumulate episodic reward
+            ep_reward += reward 
+
             # record experience
             self.buffer.record([state, action, reward, next_state, done])
 
             # train
             if step > init_steps and step % ac_train_freq == 0:
                 a_loss, c_loss, alpha_loss = self.train_actor_critic()
-
-                if WB_LOG:
-                    wandb.log({
-                        'actor_loss' : a_loss,
-                        'critic_loss': c_loss,
-                        'alpha_loss' : alpha_loss,
-                    })
+                actor_losses.append(a_loss)
+                critic_losses.append(c_loss)
+                alpha_losses.append(alpha_loss)
 
             if step > init_steps and step % enc_train_freq == 0:
                 enc_loss = self.train_encoder()
-
-                if WB_LOG:
-                    wandb.log({
-                        'enc_loss' : enc_loss,
-                    })
-
+                encoder_losses.append(enc_loss)
 
             if step > init_steps and step % tgt_update_freq == 0:
                 self.update_target_networks()
 
-            ep_reward += reward 
-            ep_rewards.append(reward)
 
+            # logging
             if WB_LOG:
                 wandb.log({
+                    'step' : step,
                     'episodes' : episode,
                     'ep_reward' : ep_reward,
                     'mean_ep_reward' : np.mean(ep_rewards),
+                    'mean_enc_loss' : np.mean(encoder_losses),
+                    'mean_actor_loss' : np.mean(actor_losses),
+                    'mean_critic_loss': np.mean(critic_losses),
+                    'mean_alpha_loss' : np.mean(alpha_losses),
+                    
                 })
 
+            # prepare for the next step
             state = next_state    
-            ep_step += 1
 
         env.close()
         print('Mean episodic score over {} episodes: {:.2f}'\
