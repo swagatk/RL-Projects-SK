@@ -165,17 +165,23 @@ class curlSacAgent(SACAgent):
         '''
 
         a_loss, c_loss, alpha_loss, enc_loss = 0, 0, 0, 0
-        episode, ep_reward, done = 0, 0, False
+        episode, ep_reward, reward, done = 0, 0, 0, True
         ep_rewards = []
         val_scores = []
         actor_losses = []
         critic_losses = []
         encoder_losses = []
         alpha_losses = []
+
         for step in range(max_training_steps):
 
             if done:
                 ep_rewards.append(reward)
+                if WB_LOG:
+                    wandb.log({
+                        'mean_ep_reward': np.mean(ep_rewards),
+                    })
+
                 done = False
                 ep_reward = 0
                 episode += 1 
@@ -220,6 +226,13 @@ class curlSacAgent(SACAgent):
                 critic_losses.append(c_loss)
                 alpha_losses.append(alpha_loss)
 
+                if WB_LOG:
+                    wandb.log({
+                        'mean_actor_loss' : np.mean(actor_losses),
+                        'mean_critic_loss' : np.mean(critic_losses),
+                        'mean_alpha_loss' : np.mean(alpha_losses),
+                    })
+
             if step > init_steps and step % enc_train_freq == 0:
                 enc_loss = self.train_encoder()
                 encoder_losses.append(enc_loss)
@@ -231,15 +244,9 @@ class curlSacAgent(SACAgent):
             # logging
             if WB_LOG:
                 wandb.log({
-                    'step' : step,
+                    'env_step' : step,
                     'episodes' : episode,
                     'ep_reward' : ep_reward,
-                    'mean_ep_reward' : np.mean(ep_rewards),
-                    'mean_enc_loss' : np.mean(encoder_losses),
-                    'mean_actor_loss' : np.mean(actor_losses),
-                    'mean_critic_loss': np.mean(critic_losses),
-                    'mean_alpha_loss' : np.mean(alpha_losses),
-                    
                 })
 
             # prepare for the next step
