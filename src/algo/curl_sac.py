@@ -176,7 +176,7 @@ class curlSacAgent(SACAgent):
         for step in range(max_training_steps):
 
             if done:
-                ep_rewards.append(reward)
+                ep_rewards.append(ep_reward)
                 if WB_LOG:
                     wandb.log({
                         'mean_ep_reward': np.mean(ep_rewards),
