@@ -165,23 +165,18 @@ class curlSacAgent(SACAgent):
         '''
 
         a_loss, c_loss, alpha_loss, enc_loss = 0, 0, 0, 0
-        episode, ep_reward, reward, done = 0, 0, 0, True
+        episode, ep_reward, reward, done = 0, 0, 0, False
         ep_rewards = []
         val_scores = []
         actor_losses = []
         critic_losses = []
         encoder_losses = []
         alpha_losses = []
-
+        state = env.reset()  # normalized floating point pixel obsvn
         for step in range(max_training_steps):
 
             if done:
                 ep_rewards.append(ep_reward)
-                if WB_LOG:
-                    wandb.log({
-                        'mean_ep_reward': np.mean(ep_rewards),
-                    })
-
                 done = False
                 ep_reward = 0
                 episode += 1 
@@ -247,6 +242,7 @@ class curlSacAgent(SACAgent):
                     'env_step' : step,
                     'episodes' : episode,
                     'ep_reward' : ep_reward,
+                    'mean_ep_reward' : np.mean(ep_rewards),
                 })
 
             # prepare for the next step
