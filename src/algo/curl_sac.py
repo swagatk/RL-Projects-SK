@@ -165,7 +165,8 @@ class curlSacAgent(SACAgent):
         '''
 
         a_loss, c_loss, alpha_loss, enc_loss = 0, 0, 0, 0
-        episode, ep_reward, reward, done = 0, 0, 0, False
+        episode, ep_reward, reward, val_score = 0, 0, 0, 0
+        done = False
         ep_rewards = []
         val_scores = []
         actor_losses = []
@@ -186,12 +187,6 @@ class curlSacAgent(SACAgent):
             if  step > init_steps & step % eval_freq == 0:
                 val_score = self.validate(env, max_eps=50)
                 val_scores.append(val_score)
-
-                if WB_LOG:
-                    wandb.log({
-                        'val_scores' : val_score,
-                        'mean_val_score' : np.mean(val_scores),
-                    })
 
             # actor takes cropped_img_size
             cropped_state = center_crop_image(state, out_h=self.cropped_img_size)
@@ -221,13 +216,6 @@ class curlSacAgent(SACAgent):
                 critic_losses.append(c_loss)
                 alpha_losses.append(alpha_loss)
 
-                if WB_LOG:
-                    wandb.log({
-                        'mean_actor_loss' : np.mean(actor_losses),
-                        'mean_critic_loss' : np.mean(critic_losses),
-                        'mean_alpha_loss' : np.mean(alpha_losses),
-                    })
-
             if step > init_steps and step % enc_train_freq == 0:
                 enc_loss = self.train_encoder()
                 encoder_losses.append(enc_loss)
@@ -243,6 +231,11 @@ class curlSacAgent(SACAgent):
                     'episodes' : episode,
                     'ep_reward' : ep_reward,
                     'mean_ep_reward' : np.mean(ep_rewards),
+                    'mean_val_score' : np.mean(val_scores),
+                    'mean_actor_loss' : np.mean(actor_losses),
+                    'mean_critic_loss' : np.mean(critic_losses),
+                    'mean_alpha_loss' : np.mean(alpha_losses),
+                    'mean_enc_loss' : np.mean(encoder_losses),
                 })
 
             # prepare for the next step
