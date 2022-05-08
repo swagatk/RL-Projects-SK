@@ -282,7 +282,8 @@ class SACAgent:
         pi_a, log_pi_a = self.actor.policy(next_states) # output: tensor
 
         q1_target = self.target_critic1(next_states, pi_a) # input: tensor
-        q2_target = self.critic2(next_states, pi_a)
+        #q2_target = self.critic2(next_states, pi_a)
+        q2_target = self.target_critic2(next_states, pi_a)
 
         min_q_target = tf.minimum(q1_target, q2_target)
 
