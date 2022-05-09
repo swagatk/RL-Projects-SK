@@ -43,9 +43,11 @@ class curlSacAgent(SACAgent):
         self.cont_net = SiameseNetwork(self.obs_shape, self.feature_dim)
 
         # create the encoder
-        self.actor_encoder = self.cont_net.key_encoder
-        self.critic_encoder = self.cont_net.query_encoder
-        self.target_critic_encoder = self.cont_net.query_encoder
+        self.actor_encoder = self.cont_net.key_encoder  # soft update
+        self.critic_encoder = self.cont_net.query_encoder   # trained
+
+        # target critic uses a different encoder (new change May 9th)
+        self.target_critic_encoder = tf.keras.models.clone_model(self.critic_encoder)
 
         # Actor
         self.actor = SACActor(self.obs_shape, action_size, 
@@ -64,6 +66,11 @@ class curlSacAgent(SACAgent):
                                  self.lr, self.gamma, self.target_critic_encoder)
 
         # alpha & buffer are defined from the parent class
+
+        # New change: May 9th 2022
+        # initially target networks share same weights as the original networks
+        self.target_critic1.model.set_weights(self.critic1.model.get_weights())
+        self.target_critic2.model.set_weights(self.critic2.model.get_weights())
 
     def create_image_pairs(self):
         # sample a minibatch from the replay buffer
