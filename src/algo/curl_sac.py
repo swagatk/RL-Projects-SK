@@ -46,8 +46,10 @@ class curlSacAgent(SACAgent):
         self.actor_encoder = self.cont_net.key_encoder  # soft update
         self.critic_encoder = self.cont_net.query_encoder   # trained
 
-        # target critic uses a different encoder (new change May 9th)
-        self.target_critic_encoder = tf.keras.models.clone_model(self.critic_encoder)
+        # create a new encoder for target that will share the same weights as the critic encoder
+        #self.target_critic_encoder = Encoder(self.obs_shape, self.feature_dim)
+        # changes made on may 11, 2022 
+        self.target_critic_encoder = self.cont_net.query_encoder
 
         # Actor
         self.actor = SACActor(self.obs_shape, action_size, 
@@ -95,7 +97,7 @@ class curlSacAgent(SACAgent):
         super().update_target_networks()
         self.cont_net.update_key_encoder_wts
             
-    def train_actor_critic(self, itn_max=20):
+    def train_actor_critic(self, itn_max=10):
 
         critic_losses, actor_losses, alpha_losses = [], [], []
         for _ in range(itn_max):
