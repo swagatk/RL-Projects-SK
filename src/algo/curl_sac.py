@@ -97,7 +97,7 @@ class curlSacAgent(SACAgent):
         super().update_target_networks()
         self.cont_net.update_key_encoder_wts
             
-    def train_actor_critic(self, itn_max=10):
+    def train_actor_critic(self, itn_max=20):
 
         critic_losses, actor_losses, alpha_losses = [], [], []
         for _ in range(itn_max):
