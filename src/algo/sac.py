@@ -288,7 +288,7 @@ class SACAgent:
 
         soft_q_target = min_q_target  - self.alpha * tf.reduce_sum(log_pi_a, axis=1)  
 
-        y = rewards + self.gamma * (1 - dones) * soft_q_target
+        y = tf.stop_gradient(rewards + self.gamma * (1 - dones) * soft_q_target)
 
         c1_loss = self.critic1.train(states, actions, y)
         c2_loss = self.critic2.train(states, actions, y)
