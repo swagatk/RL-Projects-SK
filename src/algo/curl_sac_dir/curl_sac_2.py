@@ -234,7 +234,7 @@ class CurlSacAgent:
                 cropped_img_size=84,
                 stack_size=3,   # not used
                 init_steps=500,
-                eval_freq=100,
+                eval_freq=1000,
                 ac_train_freq=2,
                 enc_train_freq=1,
                 target_update_freq=5,
