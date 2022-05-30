@@ -105,7 +105,7 @@ def random_crop(imgs, out_h, out_w=None):
     if out_w is None:
         out_w = out_h
 
-    assert img_h >= out_h and img_w >= out_w, "Image size must be greater than output size"
+    assert img_h > out_h and img_w > out_w, "Image size must be greater than output size"
 
 
     crop_max_h = img_h - out_h 

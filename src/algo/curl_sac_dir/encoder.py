@@ -1,8 +1,7 @@
 import numpy as np
 import tensorflow as tf
-from  keras.models import Model 
-from keras.layers import Input, Conv2D, MaxPooling2D, GlobalAveragePooling2D, Dense
-class Encoder():
+
+class Encoder:
     """
     A conv net that converts a given image stack into an 1-D feature vector
     """
@@ -10,7 +9,7 @@ class Encoder():
                     conv_layers=[32, 32,],
                     dense_layers=[64,], 
                     filter_size=3):
-        assert len(obs_shape) == 3 # (height, width, channels)
+        assert len(obs_shape) == 3, 'Input should be an image of shape (h, w, c)' # (height, width, channels)
         self.obs_shape = obs_shape
         self.feature_dim = feature_dim
         self.conv_layers = conv_layers
@@ -20,25 +19,25 @@ class Encoder():
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
 
     def _build_model(self):
-        inputs = Input(shape=self.obs_shape, name="input_layer")
+        inputs = tf.keras.layers.Input(shape=self.obs_shape, name="input_layer")
         x = inputs
         for i in range(len(self.conv_layers)):
-            x = Conv2D(self.conv_layers[i], 
+            x = tf.keras.layers.Conv2D(self.conv_layers[i], 
                         self.conv_filter_size,
                         strides=(1,1), activation='relu')(x)
-            x = MaxPooling2D((2, 2))(x)
-        x = GlobalAveragePooling2D()(x)
+            x = tf.keras.layers.MaxPooling2D((2, 2))(x)
+        x = tf.keras.layers.GlobalAveragePooling2D()(x)
         x = tf.keras.layers.LayerNormalization()(x)
         for j in range(len(self.dense_layers)):
-            x = Dense(self.dense_layers[j], activation='relu')(x)
-        x = Dense(self.feature_dim, activation='linear')(x)
+            x = tf.keras.layers.Dense(self.dense_layers[j], activation='relu')(x)
+        x = tf.keras.layers.Dense(self.feature_dim, activation='linear')(x)
         outputs = tf.keras.layers.LayerNormalization(name="output_layer")(x)
-        model = Model(inputs, outputs)
+        model = tf.keras.models.Model(inputs, outputs, name="encoder")
         return model
 
-    def __call__(self, obs):
+    def __call__(self, state):
         # obs: a tensor or a numpy array
-        f = self.model(obs)
+        f = self.model(state)
         return f 
 
     def compute_loss(self, p, z):

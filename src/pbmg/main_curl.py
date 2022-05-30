@@ -20,9 +20,10 @@ import sys
 current_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(current_dir)
 sys.path.append(os.path.dirname(current_dir)) # parent director
+sys.path.append('home/swagat/GIT/RL-Projects-SK/src/algo/curl_sac_dir/')
 
 # Local imports
-from algo.curl_sac import curlSacAgent
+from algo.curl_sac_dir.curl_sac_2 import CurlSacAgent
 from common.CustomGymWrapper import FrameStackWrapper
 from common.utils import set_seed_everywhere
 
@@ -58,23 +59,16 @@ if device_name != '/device:GPU:0':
     raise SystemError('GPU device not found')
 print('Found GPU at: {}'.format(device_name))
 ##############################################
-# #### Hyper-parameters for RACECAR Environment
+# #### Hyper-parameters 
 ##########################################
 config_dict = dict(
     buffer_capacity = 10000,    # 50k (racecar)  # 20K (kuka)
-    batch_size = 128,  # 512 (racecar) #   128 (kuka)
-    # use_attention = {'type': 'luong',   # type: luong, bahdanau
-    #                  'arch': 0,         # arch: 0, 1, 2, 3
-    #                  'return_scores': False},  # visualize attention maps       
+    batch_size = 128,  
     use_attention = None, 
-    algo = 'curl_sac',               # choices: ppo, sac, ipg, sac_her, ipg_her
+    algo = 'curl_sac',               
     env_name = 'pbmg',          # environment name
-    # use_her = { 'strategy': 'final',
-    #             'extract_feature' : False}, 
-    use_her = False,
-    stack_size = 3,             # input stack size
-    use_lstm = False,             # enable /disable LSTM
-    image_obsvn=True
+    image_obsvn=True,
+    stack_size=3,
 )
 #######################
 WB_LOG = True
@@ -174,11 +168,12 @@ if __name__ == "__main__":
 
     ######################################################
     if config_dict['algo'] == 'curl_sac': # curl_sac
-        agent = curlSacAgent(
+        agent = CurlSacAgent(
             state_size=state_size, 
             action_size=action_size,
-            feature_dim=50,
-            action_upper_bound=upper_bound)
+            action_upper_bound=upper_bound,
+            curl_feature_dim=50
+        )
 
 
         # Train
