@@ -13,7 +13,6 @@ from packaging import version
 import os
 import datetime
 import numpy as np
-import gym
 
 # Add the current folder to python's import path
 import sys
@@ -56,8 +55,10 @@ sess = tf.compat.v1.Session(config=config)
 # check GPU device
 device_name = tf.test.gpu_device_name()
 if device_name != '/device:GPU:0':
-    raise SystemError('GPU device not found')
-print('Found GPU at: {}'.format(device_name))
+    #raise SystemError('GPU device not found')
+    print('GPU not found. Will be using CPU')
+else:
+    print('Found GPU at: {}'.format(device_name))
 ##############################################
 # #### Hyper-parameters 
 ##########################################
@@ -71,18 +72,7 @@ config_dict = dict(
     stack_size=3,
 )
 #######################
-WB_LOG = True
-############################
-save_path = './log/'
-chkpt_freq = None         # wrt seasons
-load_path = None
-##############################################3
-save_path = save_path + config_dict['env_name'] + '/' + config_dict['algo'] + '/'
-current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-#current_time = datetime.datetime.now().strftime("%Y%m%d")
-save_path = save_path + current_time + '/'
-#logfile = config_dict['env_name'] + '_' + config_dict['algo'] + '.txt'
-logfile = None  # Don't write  into file
+WB_LOG = False
 ###########################################
 # wandb related configuration
 if WB_LOG:
@@ -129,7 +119,7 @@ if __name__ == "__main__":
             goal_image=True,
             visualize_target=True,
             camera_setup=camera_setup,
-            observation_cam_id=0,
+            observation_cam_id=[0],
             goal_cam_id=1,
             # curriculum args
             use_curriculum=True,

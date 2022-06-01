@@ -6,7 +6,7 @@ import sys
 import os
 import wandb
 
-sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/common/')
+sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/common')
 sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/algo/')
 sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 
@@ -78,11 +78,9 @@ class CurlActor:
                     -self.action_uppper_bound,
                     self.action_uppper_bound)
         
-        log_pi_a = log_pi_ - tf.reduce_sum(
-            tf.math.log(tf.keras.activations.relu(1 - action ** 2) + 1e-6),
-                            axis=-1, keepdims=True)
+        log_pi_a = log_pi_ - tf.math.log(tf.keras.activations.relu(1 - action ** 2) + 1e-6)
+                            
         return action, log_pi_a 
-
 
     def train(self):
         pass
@@ -130,10 +128,10 @@ class CurlCritic:
         state_input = tf.keras.layers.Input(shape=self.state_size)
         state_feats = self.encoder(state_input)
         action_input = tf.keras.layers.Input(shape=self.action_size)
-        #action_feats = tf.keras.layers.Dense(self.encoder_feature_dim)(action_input)
+        action_feats = tf.keras.layers.Dense(self.encoder_feature_dim)(action_input)
 
-        #combined_input = tf.keras.layers.Concatenate()([state_feats, action_feats])
-        combined_input = tf.keras.layers.Concatenate()([state_feats, action_input])
+        combined_input = tf.keras.layers.Concatenate()([state_feats, action_feats])
+        #combined_input = tf.keras.layers.Concatenate()([state_feats, action_input])
 
         x = combined_input
         for i in range(len(self.critic_dense_layers)):
@@ -169,13 +167,13 @@ class CurlCritic:
 
 #####################
 class CURL:
-    def __init__(self, obs_shape, z_dim, batch_size,
+    def __init__(self, z_dim, batch_size,
                 critic, target_critic,
                 learning_rate=1e-3) -> None:
         
         self.batch_size = batch_size
         self.lr = learning_rate
-        self.z_dim = z_dim      # feature dimension
+        self.z_dim = z_dim      # latent feature dimension
         self.encoder = critic.encoder
         self.encoder_target = target_critic.encoder 
         self.W = tf.Variable(tf.random.uniform(shape=(self.z_dim, self.z_dim),
@@ -382,7 +380,7 @@ class CurlSacAgent:
             q2 = self.critic_2(states, pi_a)
             min_q = tf.minimum(q1, q2)
             soft_q = min_q - self.alpha * log_pi_a
-            actor_loss = tf.reduce_mean(soft_q)
+            actor_loss = -tf.reduce_mean(soft_q)
         grads = tape.gradient(actor_loss, self.actor.model.trainable_variables)
         self.actor.optimizer.apply_gradients(zip(grads, self.actor.model.trainable_variables))
         return actor_loss.numpy()
