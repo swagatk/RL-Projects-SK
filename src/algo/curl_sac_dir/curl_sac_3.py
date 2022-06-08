@@ -1,3 +1,8 @@
+"""
+Main changes compared to curl_sac_2.py
+
+- We are using a common encoder for all actor/critic networks
+"""
 from unicodedata import name
 import numpy as np
 import tensorflow as tf
@@ -21,10 +26,11 @@ class CurlActor:
     def __init__(self, state_size, action_size,
         action_upper_bound,
         encoder_feature_dim,
-        encoder=None,
         learning_rate=1e-3,
         actor_dense_layers=[128, 64],
-        save_model_plot=False) -> None:
+        save_model_plot=False,
+        encoder=None) -> None:
+
         self.state_size = state_size # shape: (h, w, c)
         self.action_size = action_size
         self.lr = learning_rate
@@ -88,7 +94,6 @@ class CurlActor:
             tf.math.log(tf.keras.activations.relu(1 - action ** 2) + 1e-6),
                             axis=-1, keepdims=True)
         return action, log_pi_a 
-
 
     def train(self):
         pass
@@ -275,12 +280,17 @@ class CurlSacAgent:
 
             self.obs_shape = (self.cropped_img_size, self.cropped_img_size, self.state_size[2])
 
+            # Create a common encoder network to be shared 
+            # between the actor and the critic networks
+            self.encoder = Encoder(self.obs_shape, self.feature_dim)
+
             # Actor
             self.actor = CurlActor(
                     state_size=self.obs_shape, 
                     action_size=self.action_shape,
                     action_upper_bound=self.action_upper_bound,
-                    encoder_feature_dim=self.feature_dim
+                    encoder_feature_dim=self.feature_dim,
+                    encoder = self.encoder  # pass the encoder network
                     )
 
             # Create two Critic
@@ -288,7 +298,8 @@ class CurlSacAgent:
                     state_size=self.obs_shape,
                     action_size=self.action_shape,
                     encoder_feature_dim=self.feature_dim,
-                    learning_rate=self.lr
+                    learning_rate=self.lr,
+                    encoder = self.encoder  # encoder is shared by both critics
                     )
 
             self.critic_2 = CurlCritic(
@@ -296,7 +307,7 @@ class CurlSacAgent:
                     action_size=self.action_shape,
                     encoder_feature_dim=self.feature_dim,
                     learning_rate=self.lr,
-                    encoder=self.critic_1.encoder, 
+                    encoder=self.critic_1.encoder # shares encoder with critic_1
                     )
 
             # create two target critics
@@ -304,7 +315,7 @@ class CurlSacAgent:
                 state_size=self.obs_shape,
                 action_size=self.action_shape,
                 encoder_feature_dim=self.feature_dim,
-                learning_rate=self.lr
+                learning_rate=self.lr 
                 )
 
             self.target_critic_2 = CurlCritic(
@@ -312,8 +323,8 @@ class CurlSacAgent:
                 action_size=self.action_shape,
                 encoder_feature_dim=self.feature_dim,
                 learning_rate=self.lr,
-                encoder=self.target_critic_1.encoder,
-                )
+                encoder=self.target_critic_1.encoder    # shares encoder with target_1
+                )       
 
             # critic & target critic share weights initially
             self.target_critic_1.model.set_weights(self.critic_1.model.get_weights())
