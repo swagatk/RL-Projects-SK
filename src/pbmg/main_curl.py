@@ -22,7 +22,8 @@ sys.path.append(os.path.dirname(current_dir)) # parent director
 sys.path.append('home/swagat/GIT/RL-Projects-SK/src/algo/curl_sac_dir/')
 
 # Local imports
-from algo.curl_sac_dir.curl_sac_2 import CurlSacAgent
+#from algo.curl_sac_dir.curl_sac_2 import CurlSacAgent
+from algo.curl_sac_dir.curl_sac_3 import CurlSacAgent
 from common.CustomGymWrapper import FrameStackWrapper
 from common.utils import set_seed_everywhere
 
@@ -63,7 +64,7 @@ else:
 # #### Hyper-parameters 
 ##########################################
 config_dict = dict(
-    buffer_capacity = 10000,    # 50k (racecar)  # 20K (kuka)
+    buffer_capacity = 30000,    # 50k (racecar)  # 20K (kuka)
     batch_size = 128,  
     use_attention = None, 
     algo = 'curl_sac',               
@@ -119,7 +120,7 @@ if __name__ == "__main__":
             goal_image=True,
             visualize_target=True,
             camera_setup=camera_setup,
-            observation_cam_id=[0],
+            observation_cam_id=0,
             goal_cam_id=1,
             # curriculum args
             use_curriculum=True,
@@ -162,7 +163,9 @@ if __name__ == "__main__":
             state_size=state_size, 
             action_size=action_size,
             action_upper_bound=upper_bound,
-            curl_feature_dim=50
+            curl_feature_dim=50,
+            buffer_capacity=config_dict['buffer_capacity'],
+            batch_size=config_dict['batch_size'],
         )
 
 
