@@ -4,6 +4,7 @@ Algorithm: CURL-SAC
 
 Updates:
 14/03/2022: Work in progress
+18/06/2022: curl_sac_3: use common encoder
 
 """
 # Imports

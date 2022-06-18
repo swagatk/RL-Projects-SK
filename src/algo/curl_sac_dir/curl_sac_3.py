@@ -48,6 +48,8 @@ class CurlActor:
 
 
         self.model = self._build_net()
+        self.model.get_layer('encoder').trainable=False # freeze encoder
+        self.model.summary()
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
 
     def _build_net(self):
@@ -62,7 +64,6 @@ class CurlActor:
         mu = mu * self.action_uppper_bound
         model = tf.keras.Model(inputs=inp, outputs=[mu, log_sig],
                             name='actor')
-        model.summary()
         if self.save_model_plot:
             tf.keras.utils.plot_model(model,
                                 to_file='actor_network.png',
@@ -135,6 +136,8 @@ class CurlCritic:
             self.encoder_feature_dim = self.encoder.model.outputs[0].shape[-1]
 
         self.model = self._build_model()
+        self.model.get_layer('encoder').trainable=False # freeze encoder
+        self.model.summary()
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
 
     def _build_model(self):
@@ -152,8 +155,6 @@ class CurlCritic:
         model = tf.keras.Model(inputs=[state_input, action_input], 
                                     outputs=net_out,
                                     name='critic')
-        model.summary()
-
         if self.save_model_plot:
             tf.keras.utils.plot_model(self.model,
                                 to_file='critic_network.png',
