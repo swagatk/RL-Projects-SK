@@ -174,7 +174,7 @@ class curlSacAgent(SACAgent):
         '''
 
         a_loss, c_loss, alpha_loss, enc_loss = 0, 0, 0, 0
-        episode, ep_reward, reward, val_score = 0, 0, 0, 0
+        episode, ep_reward, val_score = 0, 0, 0
         done = False
         ep_rewards = []
         val_scores = []

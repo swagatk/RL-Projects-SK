@@ -4,7 +4,6 @@ import os
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, Conv2D, Dense, Dropout, Lambda
 from  tensorflow.keras.layers import GlobalAveragePooling2D, MaxPooling2D
-from torch import mode
 
 class Encoder():
     def __init__(self, obs_shape, feature_dim, num_layers=2,

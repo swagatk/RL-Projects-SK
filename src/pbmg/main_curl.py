@@ -4,6 +4,7 @@ Algorithm: CURL-SAC
 
 Updates:
 14/03/2022: Work in progress
+18/06/2022: curl_sac_3: use common encoder
 
 """
 # Imports
@@ -13,16 +14,17 @@ from packaging import version
 import os
 import datetime
 import numpy as np
-import gym
 
 # Add the current folder to python's import path
 import sys
 current_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(current_dir)
 sys.path.append(os.path.dirname(current_dir)) # parent director
+sys.path.append('home/swagat/GIT/RL-Projects-SK/src/algo/curl_sac_dir/')
 
 # Local imports
-from algo.curl_sac import curlSacAgent
+#from algo.curl_sac_dir.curl_sac_2 import CurlSacAgent
+from algo.curl_sac_dir.curl_sac_3 import CurlSacAgent
 from common.CustomGymWrapper import FrameStackWrapper
 from common.utils import set_seed_everywhere
 
@@ -55,40 +57,24 @@ sess = tf.compat.v1.Session(config=config)
 # check GPU device
 device_name = tf.test.gpu_device_name()
 if device_name != '/device:GPU:0':
-    raise SystemError('GPU device not found')
-print('Found GPU at: {}'.format(device_name))
+    #raise SystemError('GPU device not found')
+    print('GPU not found. Will be using CPU')
+else:
+    print('Found GPU at: {}'.format(device_name))
 ##############################################
-# #### Hyper-parameters for RACECAR Environment
+# #### Hyper-parameters 
 ##########################################
 config_dict = dict(
-    buffer_capacity = 10000,    # 50k (racecar)  # 20K (kuka)
-    batch_size = 128,  # 512 (racecar) #   128 (kuka)
-    # use_attention = {'type': 'luong',   # type: luong, bahdanau
-    #                  'arch': 0,         # arch: 0, 1, 2, 3
-    #                  'return_scores': False},  # visualize attention maps       
+    buffer_capacity = 30000,    # 50k (racecar)  # 20K (kuka)
+    batch_size = 128,  
     use_attention = None, 
-    algo = 'curl_sac',               # choices: ppo, sac, ipg, sac_her, ipg_her
+    algo = 'curl_sac',               
     env_name = 'pbmg',          # environment name
-    # use_her = { 'strategy': 'final',
-    #             'extract_feature' : False}, 
-    use_her = False,
-    stack_size = 3,             # input stack size
-    use_lstm = False,             # enable /disable LSTM
-    image_obsvn=True
+    image_obsvn=True,
+    stack_size=3,
 )
 #######################
-WB_LOG = True
-############################
-save_path = './log/'
-chkpt_freq = None         # wrt seasons
-load_path = None
-##############################################3
-save_path = save_path + config_dict['env_name'] + '/' + config_dict['algo'] + '/'
-current_time = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-#current_time = datetime.datetime.now().strftime("%Y%m%d")
-save_path = save_path + current_time + '/'
-#logfile = config_dict['env_name'] + '_' + config_dict['algo'] + '.txt'
-logfile = None  # Don't write  into file
+WB_LOG = False
 ###########################################
 # wandb related configuration
 if WB_LOG:
@@ -174,11 +160,14 @@ if __name__ == "__main__":
 
     ######################################################
     if config_dict['algo'] == 'curl_sac': # curl_sac
-        agent = curlSacAgent(
+        agent = CurlSacAgent(
             state_size=state_size, 
             action_size=action_size,
-            feature_dim=50,
-            action_upper_bound=upper_bound)
+            action_upper_bound=upper_bound,
+            curl_feature_dim=50,
+            buffer_capacity=config_dict['buffer_capacity'],
+            batch_size=config_dict['batch_size'],
+        )
 
 
         # Train
