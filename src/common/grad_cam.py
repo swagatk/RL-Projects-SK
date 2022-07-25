@@ -94,6 +94,7 @@ def save_and_display_gradcam(img_array, heatmap, cam_path="cam.jpg", alpha=0.4):
 
 
 def grad_cam2(img_array, model1, model2, conv_layer_name1, conv_layer_name2):
+    # I don't know what am I doing here. Its incomplete
     # make sure that the input image is in same format as defined in the model definition
     img_array = tf.convert_to_tensor(tf.expand_dims(img_array, axis=0))
     grad_model_1 = tf.keras.models.Model(
