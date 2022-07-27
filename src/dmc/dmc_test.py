@@ -42,6 +42,9 @@ for ep in range(3):
         action = env.action_space.sample()
         obs, reward, done, info = env.step(action)
 
+        ep_rewav.action_space.sample()
+        obs, reward, done, info = env.step(action)
+
         ep_reward += reward 
     print(f'episode: {ep}, reward: {ep_reward}')
 

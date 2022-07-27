@@ -1,3 +1,15 @@
+"""
+Main changes compared to curl_sac_2.py
+
+- We are using a common encoder for all actor/critic networks
+
+
+Updates:
+27/07/2022: 
+    - Modifying CurlCritic to return q1 & q2 together. 
+    - Incorporating reconstruction loss
+
+"""
 from unicodedata import name
 import numpy as np
 import tensorflow as tf
@@ -7,12 +19,12 @@ import os
 import wandb
 import pickle
 
-sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/common')
+sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/common/')
 sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/algo/')
 sys.path.append(os.path.dirname(os.path.realpath(__file__)))
 
 from common.buffer import Buffer
-from src.CURL_SAC.encoder import Encoder
+from encoder import Decoder, Encoder
 from common.utils import random_crop, center_crop_image, uniquify
 
 
@@ -21,10 +33,11 @@ class CurlActor:
     def __init__(self, state_size, action_size,
         action_upper_bound,
         encoder_feature_dim,
-        encoder=None,
         learning_rate=1e-3,
         actor_dense_layers=[128, 64],
-        save_model_plot=False) -> None:
+        save_model_plot=False,
+        encoder=None) -> None:
+
         self.state_size = state_size # shape: (h, w, c)
         self.action_size = action_size
         self.lr = learning_rate
@@ -42,6 +55,8 @@ class CurlActor:
 
 
         self.model = self._build_net()
+        self.model.get_layer('encoder').trainable=False # freeze encoder
+        self.model.summary()
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
 
     def _build_net(self):
@@ -56,7 +71,6 @@ class CurlActor:
         mu = mu * self.action_uppper_bound
         model = tf.keras.Model(inputs=inp, outputs=[mu, log_sig],
                             name='actor')
-        model.summary()
         if self.save_model_plot:
             tf.keras.utils.plot_model(model,
                                 to_file='actor_network.png',
@@ -84,8 +98,9 @@ class CurlActor:
                     -self.action_uppper_bound,
                     self.action_uppper_bound)
         
-        log_pi_a = log_pi_ - tf.math.log(tf.keras.activations.relu(1 - action ** 2) + 1e-6)
-                            
+        log_pi_a = log_pi_ - tf.reduce_sum(
+            tf.math.log(tf.keras.activations.relu(1 - action ** 2) + 1e-6),
+                            axis=-1, keepdims=True)
         return action, log_pi_a 
 
     def train(self):
@@ -99,6 +114,31 @@ class CurlActor:
 
 ###############33
 
+class QFunction():
+    """
+    MLP for Q Function
+    """
+    def __init__(self, feature_dim, action_dim,
+                    dense_layers=[32, 32]) -> None:
+        self.input_dim = feature_dim + action_dim
+        self.dense_layers = dense_layers
+        self.model = self._build_net()
+        
+    def _build_net(self):
+        x = tf.keras.layers.Input(shape=(self.input_dim,))
+        for i in range(len(self.dense_layers)):
+            x = tf.keras.layers.Dense(self.dense_layers[i],
+                        activation='relu')(x)
+        q = tf.keras.layers.Dense(1, activation='linear')(x)
+        model = tf.keras.Model(inputs=input, outputs=q, name='q_function')
+        model.summary()
+        return model
+    
+    def __call__(self, x):
+        q = self.model(x)
+        return q
+
+        
         
 #########3
 class CurlCritic:
@@ -116,7 +156,11 @@ class CurlCritic:
         self.lr = learning_rate
         self.gamma = gamma 
         self.critic_dense_layers=critic_dense_layers
-        self.save_model_plot = save_model_plot
+        self.save_model_plot = save_model_plot 
+        self.include_reconst_loss = include_reconst_loss
+
+        self.Q1 = QFunction(self.encoder_feature_dim, self.action_size[0])
+        self.Q2 = QFunction(self.encoder_feature_dim, self.action_size[0])
 
         if encoder is None:
             self.encoder = Encoder(
@@ -127,26 +171,24 @@ class CurlCritic:
             self.encoder = encoder
             self.encoder_feature_dim = self.encoder.model.outputs[0].shape[-1]
 
+        
         self.model = self._build_model()
+        self.model.get_layer('encoder').trainable=False # freeze encoder
+        self.model.summary()
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
 
     def _build_model(self):
         state_input = tf.keras.layers.Input(shape=self.state_size)
         state_feats = self.encoder(state_input)
         action_input = tf.keras.layers.Input(shape=self.action_size)
-        combined_input = tf.keras.layers.Concatenate()([state_feats, action_input])
+        x = tf.keras.layers.Concatenate()([state_feats, action_input])
 
-        x = combined_input
-        for i in range(len(self.critic_dense_layers)):
-            x = tf.keras.layers.Dense(self.critic_dense_layers[i],
-                                    activation='relu')(x)
-        net_out = tf.keras.layers.Dense(1)(x)
+        q1 = self.Q1(x)
+        q2 = self.Q2(x)
 
         model = tf.keras.Model(inputs=[state_input, action_input], 
-                                    outputs=net_out,
+                                    outputs=[q1, q2],
                                     name='critic')
-        model.summary()
-
         if self.save_model_plot:
             tf.keras.utils.plot_model(self.model,
                                 to_file='critic_network.png',
@@ -155,8 +197,8 @@ class CurlCritic:
         return model
 
     def __call__(self, state, action):
-        q_value = self.model([state, action])
-        return q_value
+        q1, q2 = self.model([state, action])
+        return q1, q2
 
     def train(self):
         pass
@@ -170,18 +212,31 @@ class CurlCritic:
 
 #####################
 class CURL:
-    def __init__(self, z_dim, batch_size,
+    def __init__(self, obs_shape, z_dim, batch_size,
                 critic, target_critic,
-                learning_rate=1e-3) -> None:
+                learning_rate=1e-3,
+                include_reconst_loss=False) -> None:
         
+        self.obs_shape = obs_shape
         self.batch_size = batch_size
         self.lr = learning_rate
-        self.z_dim = z_dim      # latent feature dimension
+        self.z_dim = z_dim      # feature dimension
         self.encoder = critic.encoder
         self.encoder_target = target_critic.encoder 
+        self.include_reconst_loss = include_reconst_loss
+
+        if self.z_dim != self.encoder.feature_dim:
+            self.z_dim = self.encoder.feature_dim
+
         self.W = tf.Variable(tf.random.uniform(shape=(self.z_dim, self.z_dim),
                                                 minval=-0.1, maxval=0.1))
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
+
+        if self.include_reconst_loss:
+            self.decoder = Decoder(obs_shape=self.obs_shape,
+                                feature_dim=self.z_dim)
+
+        
 
     def encode(self, x, ema=False):
         if ema:
@@ -200,8 +255,10 @@ class CURL:
 
     def train(self, x_a, x_pos):
         """ train the model on the data
-        data: tuple (obs & augmented obs): obs tensor of shape: (batch_size, height, width, channels) 
+        data: tuple (obs & augmented obs): 
+        obs tensor of shape: (batch_size, height, width, channels) 
         """
+        # update W
         with tf.GradientTape() as tape1:
             z_a = self.encode(x_a)
             z_pos = self.encode(x_pos, ema=True)
@@ -211,15 +268,35 @@ class CURL:
         gradients_1 = tape1.gradient(loss, train_wts)
         self.optimizer.apply_gradients(zip(gradients_1, train_wts))
 
-        with tf.GradientTape() as tape2:
+        # update encoder & decoder
+        with tf.GradientTape() as enc_tape, tf.GradientTape() as dec_tape:
             z_a = self.encode(x_a)
             z_pos = self.encode(x_pos, ema=True)
             logits, labels = self.compute_logits(z_a, z_pos)
-            loss = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels)
-            enc_wts = self.encoder.model.trainable_variables
-        gradients_2 = tape2.gradient(loss, enc_wts)
-        self.encoder.optimizer.apply_gradients(zip(gradients_2, enc_wts))
-        return loss.numpy()
+
+            # Contrastive loos
+            cont_loss = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels)
+
+            # reconstruction loss
+            if self.include_reconst_loss:
+                h = self.encoder(x_a)
+                rec_obs = self.decoder(h)
+                reconst_loss = tf.keras.metrics.mean_squared_error(x_a, rec_obs) 
+            else:
+                reconst_loss = 0
+
+            total_loss = 0.5 *  cont_loss + 0.5 * reconst_loss 
+
+        enc_wts = self.encoder.model.trainable_variables
+        enc_grads = enc_tape.gradient(total_loss, enc_wts)
+        self.encoder.optimizer.apply_gradients(zip(enc_grads, enc_wts))
+
+        if self.include_reconst_loss:
+            dec_wts = self.decoder.model.trainable_variables
+            dec_grads = dec_tape.gradient(total_loss, dec_wts)
+            self.decoder.optimizer.apply_gradients(zip(dec_grads, dec_wts))
+
+        return total_loss.numpy()
 
     def save_weights(self, filename):
         with open(str(filename), 'wb') as f:
@@ -256,7 +333,7 @@ class CurlSacAgent:
             self.lr = lr 
             self.buffer_capacity = buffer_capacity
             self.batch_size = batch_size
-            self.gamma = gamma 
+            self.gamma = gamma               
             self.polyak = polyak 
             self.feature_dim = curl_feature_dim
             self.cropped_img_size = cropped_img_size
@@ -273,49 +350,45 @@ class CurlSacAgent:
 
             self.obs_shape = (self.cropped_img_size, self.cropped_img_size, self.state_size[2])
 
+            # Create a common encoder network to be shared 
+            # between the actor and the critic networks
+            self.encoder = Encoder(self.obs_shape, self.feature_dim)
+            
+            # Create a decoder network 
+            self.decoder = Decoder(self.obs_shape, self.feature_dim)
+
+            # Common encoder network is used for both actor & critic
+
             # Actor
             self.actor = CurlActor(
                     state_size=self.obs_shape, 
                     action_size=self.action_shape,
                     action_upper_bound=self.action_upper_bound,
-                    encoder_feature_dim=self.feature_dim
-                    )
-
-            # Create two Critic
-            self.critic_1 = CurlCritic(
-                    state_size=self.obs_shape,
-                    action_size=self.action_shape,
                     encoder_feature_dim=self.feature_dim,
-                    learning_rate=self.lr
+                    encoder = self.encoder  # pass the encoder network
                     )
 
-            self.critic_2 = CurlCritic(
+            # Critic
+            self.critic = CurlCritic(
                     state_size=self.obs_shape,
                     action_size=self.action_shape,
                     encoder_feature_dim=self.feature_dim,
                     learning_rate=self.lr,
-                    encoder=self.critic_1.encoder, 
-                    )
+                    encoder = self.encoder  # pass the encoder network 
+            )
 
-            # create two target critics
-            self.target_critic_1 = CurlCritic(
-                state_size=self.obs_shape,
-                action_size=self.action_shape,
-                encoder_feature_dim=self.feature_dim,
-                learning_rate=self.lr
-                )
+            # target critic
+            self.target_critic = CurlCritic(
+                    state_size=self.obs_shape,
+                    action_size=self.action_shape,
+                    encoder_feature_dim=self.feature_dim,
+                    learning_rate=self.lr,
+                    encoder = self.encoder  # pass the encoder network 
+            )
 
-            self.target_critic_2 = CurlCritic(
-                state_size=self.obs_shape,
-                action_size=self.action_shape,
-                encoder_feature_dim=self.feature_dim,
-                learning_rate=self.lr,
-                encoder=self.target_critic_1.encoder,
-                )
+            # Initially critic & target critic share weights
+            self.target_critic.model.set_weights(self.critic.model.get_weights())
 
-            # critic & target critic share weights initially
-            self.target_critic_1.model.set_weights(self.critic_1.model.get_weights())
-            self.target_critic_2.model.set_weights(self.critic_2.model.get_weights())
 
             # CURL agent
             self.curl = CURL(
@@ -360,30 +433,24 @@ class CurlSacAgent:
 
     def update_critic_networks(self, states, actions, rewards, next_states, dones):
 
-        with tf.GradientTape() as tape1: 
-            q1 = self.critic_1(states, actions)
-            pi_a, log_pi_a = self.actor.policy(next_states)
-            q1_target = self.target_critic_1(next_states, pi_a)
-            q2_target = self.target_critic_2(next_states, pi_a)
-            min_q_target = tf.minimum(q1_target, q2_target)
-            soft_q_target = min_q_target - self.alpha * tf.reduce_sum(log_pi_a, axis=-1, keepdims=True) 
-            y = tf.stop_gradient(rewards + self.gamma * soft_q_target * (1 - dones))
-            critic_1_loss = tf.reduce_mean(tf.square(y - q1))
-        grads1 = tape1.gradient(critic_1_loss, self.critic_1.model.trainable_variables)
-        self.critic_1.optimizer.apply_gradients(zip(grads1, self.critic_1.model.trainable_variables))
+        with tf.GradientTape() as tape: 
+            q1, q2 = self.critic(states, actions)
 
-        with tf.GradientTape() as tape2:
-            q2 = self.critic_2(states, actions)
             pi_a, log_pi_a = self.actor.policy(next_states)
-            q1_target = self.target_critic_1(next_states, pi_a)
-            q2_target = self.target_critic_2(next_states, pi_a)
+
+            q1_target, q2_target = self.target_critic(next_states, pi_a)
+
             min_q_target = tf.minimum(q1_target, q2_target)
-            soft_q_target = min_q_target - self.alpha * tf.reduce_sum(log_pi_a, axis=-1, keepdims=True)
-            y = tf.stop_gradient(rewards + self.gamma * soft_q_target * (1 - dones))
-            critic_2_loss = tf.reduce_mean(tf.square(y - q2))
-        grads2 = tape2.gradient(critic_2_loss, self.critic_2.model.trainable_variables)
-        self.critic_2.optimizer.apply_gradients(zip(grads2, self.critic_2.model.trainable_variables))
-        return tf.minimum(critic_1_loss, critic_2_loss).numpy()
+
+            soft_q_target = min_q_target - self.alpha * tf.reduce_sum(log_pi_a, axis=-1, keepdims=True) 
+
+            y = tf.stop_gradient(rewards + self.gamma * soft_q_target * (1 - dones)) 
+
+            critic_loss = tf.reduce_mean(tf.square(y - q1)) + tf.reduce_mean(tf.square(y - q2))
+            variables = self.critic.model.trainable_variables
+        grads = tape.gradient(critic_loss, variables)
+        self.critic.optimizer.apply_gradients(zip(grads, variables))
+        return critic_loss.numpy()
 
     def update_actor_network(self, states):
         with tf.GradientTape() as tape:
@@ -392,20 +459,17 @@ class CurlSacAgent:
             q2 = self.critic_2(states, pi_a)
             min_q = tf.minimum(q1, q2)
             soft_q = min_q - self.alpha * log_pi_a
-            actor_loss = -tf.reduce_mean(soft_q)
+            actor_loss = tf.reduce_mean(soft_q)
         grads = tape.gradient(actor_loss, self.actor.model.trainable_variables)
         self.actor.optimizer.apply_gradients(zip(grads, self.actor.model.trainable_variables))
         return actor_loss.numpy()
 
     def update_target_networks(self):
-        for wt_target, wt_source in zip(self.target_critic_1.model.trainable_variables, 
-                                self.critic_1.model.trainable_variables):
+        for wt_target, wt_source in zip(self.target_critic.model.trainable_variables, 
+                                self.critic.model.trainable_variables):
             wt_target = self.polyak * wt_target + (1 - self.polyak) * wt_source
 
-        for wt_target, wt_source in zip(self.target_critic_2.model.trainable_variables, 
-                            self.critic_2.model.trainable_variables):
-            wt_target = self.polyak * wt_target + (1 - self.polyak) * wt_source
-
+        # Probably, this is redundant as encoder is getting updated in the critic network
         for wt_target, wt_source in zip(self.curl.encoder_target.model.trainable_variables,
                                     self.curl.encoder.model.trainable_variables):
             wt_target = self.polyak * wt_target + (1 - self.polyak) * wt_source
@@ -417,8 +481,7 @@ class CurlSacAgent:
             obs_p = random_crop(states, self.cropped_img_size)
             obs_n = random_crop(next_states, self.cropped_img_size)
         else:
-            print('Unknown observation method')
-            quit()
+            raise Exception('Unknown Observation Method')
         return obs_a, obs_p, obs_n
 
     def train_actor_critic(self):
@@ -459,6 +522,20 @@ class CurlSacAgent:
         curl_loss = self.curl.train(obs_a, obs_p)
 
         return  curl_loss
+
+    def train_encoder_and_decoder(self):
+        """
+        Incorporates contrastive loss (CL) as well as reconstruction loss (RL)
+        L = 0.5 * CL + 0.5 * RL
+        """
+        # sample a batch of data
+        states, _, _, next_states, _ = self.buffer.sample()
+
+        # apply data augmentation to create image pairs
+        obs_a, obs_p, _ = self.create_image_pairs(states, next_states)
+
+
+
 
     def validate(self, env, max_eps=20):
         '''

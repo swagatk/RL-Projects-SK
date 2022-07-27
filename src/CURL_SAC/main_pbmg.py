@@ -24,7 +24,7 @@ sys.path.append('home/swagat/GIT/RL-Projects-SK/src/algo/curl_sac_dir/')
 
 # Local imports
 #from algo.curl_sac_dir.curl_sac_2 import CurlSacAgent
-from algo.curl_sac_dir.curl_sac_3 import CurlSacAgent
+from src.CURL_SAC.curl_sac import CurlSacAgent
 from common.CustomGymWrapper import FrameStackWrapper
 from common.utils import set_seed_everywhere
 
