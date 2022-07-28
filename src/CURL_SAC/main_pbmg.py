@@ -71,6 +71,7 @@ config_dict = dict(
     env_name = 'pbmg',          # environment name
     image_obsvn=True,
     stack_size=3,
+    include_reconst_loss=True,
 )
 #######################
 WB_LOG = False
@@ -166,6 +167,7 @@ if __name__ == "__main__":
             curl_feature_dim=50,
             buffer_capacity=config_dict['buffer_capacity'],
             batch_size=config_dict['batch_size'],
+            include_reconst_loss=config_dict['include_reconst_loss']
         )
 
 

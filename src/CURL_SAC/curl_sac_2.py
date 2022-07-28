@@ -7,6 +7,7 @@ Main changes compared to curl_sac_2.py
 Updates:
 27/07/2022: 
     - Modifying CurlCritic to return q1 & q2 together. 
+    - This makes CurlSACAgent code more cleaner. 
     - Incorporating reconstruction loss
 
 """
@@ -330,6 +331,7 @@ class CurlSacAgent:
                 ac_train_freq=2,
                 enc_train_freq=1,
                 target_update_freq=5,
+                include_reconst_loss=False,
                 ):
             
             self.state_size = state_size
@@ -343,6 +345,7 @@ class CurlSacAgent:
             self.feature_dim = curl_feature_dim
             self.cropped_img_size = cropped_img_size
             self.stack_size = stack_size # not used
+            self.include_reconst_loss = include_reconst_loss
 
             # update frequencies
             self.ac_train_freq = ac_train_freq
@@ -402,7 +405,7 @@ class CurlSacAgent:
                 batch_size=self.batch_size,
                 critic=self.critic,
                 target_critic=self.target_critic,
-                include_reconst_loss=True   # include reconstruction loss
+                include_reconst_loss=self.include_reconst_loss
             )
 
             # entropy coefficient as a tunable parameter
