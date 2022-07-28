@@ -20,11 +20,10 @@ import sys
 current_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.append(current_dir)
 sys.path.append(os.path.dirname(current_dir)) # parent director
-sys.path.append('home/swagat/GIT/RL-Projects-SK/src/algo/curl_sac_dir/')
 
 # Local imports
 #from algo.curl_sac_dir.curl_sac_2 import CurlSacAgent
-from src.CURL_SAC.curl_sac import CurlSacAgent
+from curl_sac_2 import CurlSacAgent
 from common.CustomGymWrapper import FrameStackWrapper
 from common.utils import set_seed_everywhere
 

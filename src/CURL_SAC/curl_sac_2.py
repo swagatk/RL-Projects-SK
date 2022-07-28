@@ -19,9 +19,10 @@ import os
 import wandb
 import pickle
 
-sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/common/')
-sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/algo/')
-sys.path.append(os.path.dirname(os.path.realpath(__file__)))
+#sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/common')
+#sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/algo')
+#sys.path.append(os.path.dirname(os.path.realpath(__file__)))
+sys.path.insert(0, '/home/swagat/GIT/RL-Projects-SK/src/algo/common')
 
 from common.buffer import Buffer
 from encoder import Decoder, Encoder
@@ -125,7 +126,8 @@ class QFunction():
         self.model = self._build_net()
         
     def _build_net(self):
-        x = tf.keras.layers.Input(shape=(self.input_dim,))
+        input = tf.keras.layers.Input(shape=(self.input_dim,))
+        x = input
         for i in range(len(self.dense_layers)):
             x = tf.keras.layers.Dense(self.dense_layers[i],
                         activation='relu')(x)
@@ -157,10 +159,12 @@ class CurlCritic:
         self.gamma = gamma 
         self.critic_dense_layers=critic_dense_layers
         self.save_model_plot = save_model_plot 
-        self.include_reconst_loss = include_reconst_loss
 
         self.Q1 = QFunction(self.encoder_feature_dim, self.action_size[0])
         self.Q2 = QFunction(self.encoder_feature_dim, self.action_size[0])
+
+        self.Q1.model._name = 'q1_function'
+        self.Q2.model._name = 'q2_function'
 
         if encoder is None:
             self.encoder = Encoder(
@@ -281,7 +285,8 @@ class CURL:
             if self.include_reconst_loss:
                 h = self.encoder(x_a)
                 rec_obs = self.decoder(h)
-                reconst_loss = tf.keras.metrics.mean_squared_error(x_a, rec_obs) 
+                reconst_loss = tf.reduce_mean(tf.keras.metrics.mean_squared_error(x_a, rec_obs))
+                loss = cont_loss + reconst_loss 
             else:
                 reconst_loss = 0
 
@@ -374,7 +379,7 @@ class CurlSacAgent:
                     action_size=self.action_shape,
                     encoder_feature_dim=self.feature_dim,
                     learning_rate=self.lr,
-                    encoder = self.encoder  # pass the encoder network 
+                    encoder = self.encoder  # pass the encoder network
             )
 
             # target critic
@@ -395,8 +400,9 @@ class CurlSacAgent:
                 obs_shape=self.obs_shape,
                 z_dim = self.feature_dim,
                 batch_size=self.batch_size,
-                critic=self.critic_1,
-                target_critic=self.target_critic_1
+                critic=self.critic,
+                target_critic=self.target_critic,
+                include_reconst_loss=True   # include reconstruction loss
             )
 
             # entropy coefficient as a tunable parameter
@@ -455,8 +461,7 @@ class CurlSacAgent:
     def update_actor_network(self, states):
         with tf.GradientTape() as tape:
             pi_a, log_pi_a = self.actor.policy(states)
-            q1 = self.critic_1(states, pi_a)
-            q2 = self.critic_2(states, pi_a)
+            q1, q2 = self.critic(states, pi_a)
             min_q = tf.minimum(q1, q2)
             soft_q = min_q - self.alpha * log_pi_a
             actor_loss = tf.reduce_mean(soft_q)
@@ -522,18 +527,6 @@ class CurlSacAgent:
         curl_loss = self.curl.train(obs_a, obs_p)
 
         return  curl_loss
-
-    def train_encoder_and_decoder(self):
-        """
-        Incorporates contrastive loss (CL) as well as reconstruction loss (RL)
-        L = 0.5 * CL + 0.5 * RL
-        """
-        # sample a batch of data
-        states, _, _, next_states, _ = self.buffer.sample()
-
-        # apply data augmentation to create image pairs
-        obs_a, obs_p, _ = self.create_image_pairs(states, next_states)
-
 
 
 
@@ -656,7 +649,6 @@ def save_model(self, save_path):
     self.critic_target_2.save_weights(save_path + 'critic_target_2.h5')
     self.encoder.save_weights(save_path + 'encoder.h5')
     self.curl.save_weights(save_path + 'curl.h5')
-
 
 def load_weights(self, save_path):
     '''
