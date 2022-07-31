@@ -4,12 +4,10 @@ Algorithm: CURL-SAC
 
 Updates:
 14/03/2022: Work in progress
-18/06/2022: use common encoder for actor & critic
-29/07/2022: Incorporate Reconstruction loss in CURL
+18/06/2022: curl_sac_3: use common encoder
 
 """
 # Imports
-from xml.etree.ElementInclude import include
 import tensorflow as tf
 import pybullet_multigoal_gym as pmg
 from packaging import version
@@ -74,7 +72,6 @@ config_dict = dict(
     image_obsvn=True,
     stack_size=3,
     include_reconst_loss=True,
-    include_consistency_loss=True,
 )
 #######################
 WB_LOG = False
@@ -170,9 +167,9 @@ if __name__ == "__main__":
             curl_feature_dim=50,
             buffer_capacity=config_dict['buffer_capacity'],
             batch_size=config_dict['batch_size'],
-            include_reconst_loss=config_dict['include_reconst_loss'],
-            include_consistency_loss=config_dict['include_consistency_loss'],
+            include_reconst_loss=config_dict['include_reconst_loss']
         )
+
 
         # Train
         agent.run(env, WB_LOG=WB_LOG)

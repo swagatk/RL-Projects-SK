@@ -136,3 +136,40 @@ class Decoder:
 
     def load_model(self, path):
         self.model.load_weights(path)
+
+
+class FeaturePredictor:
+    def __init__(self, feature_dim, **kwargs) -> None:
+        self.feature_dim = feature_dim
+        self.lr = kwargs.get('lr', 1e-3)
+        self.dense_layers = kwargs.get('dense_layers', [256, 128,])
+        self.model = self._build_model()
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)
+
+    def _build_model(self):
+        inputs = tf.keras.layers.Input(shape=(self.feature_dim,), name="input_layer")
+        x = inputs
+        for i in range(len(self.dense_layers)):
+            x = tf.keras.layers.Dense(self.dense_layers[i], activation='relu')(x)
+            x = tf.keras.layers.BatchNormalization()(x)
+        outputs = tf.keras.layers.Dense(shape=(self.feature_dim, ), 
+                    activation='linear', name='output_layer')(x)
+        model = tf.keras.models.Model(inputs, outputs, name="feature_predictor")
+        return model
+
+    def __call__(self, x):
+        return self.model(x)
+
+    def train(self, x, y):
+        with tf.GradientTape() as tape:
+            y_norm = tf.math.l2_normalize(y, axis=1)
+            y_pred = self.model(x)
+            y_pred_norm = tf.math.l2_normalize(y_pred, axis=1)
+            loss = tf.reduce_mean(tf.square(y_norm - y_pred_norm))
+        trainable_params = self.model.trainable_variables
+        gradients = tape.gradient(loss, trainable_params)
+        self.optimizer.apply_gradients(zip(gradients, trainable_params))
+        return loss
+
+
+

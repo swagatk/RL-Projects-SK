@@ -9,6 +9,7 @@ Updates:
     - Modifying CurlCritic to return q1 & q2 together. 
     - This makes CurlSACAgent code more cleaner. 
     - Incorporating reconstruction loss
+    - It should supercede `curl_sac.py` file.
 
 """
 from unicodedata import name
@@ -26,7 +27,7 @@ import pickle
 sys.path.insert(0, '/home/swagat/GIT/RL-Projects-SK/src/algo/common')
 
 from common.buffer import Buffer
-from encoder import Decoder, Encoder
+from encoder import Decoder, Encoder, FeaturePredictor
 from common.utils import random_crop, center_crop_image, uniquify
 
 
@@ -220,7 +221,8 @@ class CURL:
     def __init__(self, obs_shape, z_dim, batch_size,
                 critic, target_critic,
                 learning_rate=1e-3,
-                include_reconst_loss=False) -> None:
+                include_reconst_loss=False,
+                include_consistency_loss=False) -> None:
         
         self.obs_shape = obs_shape
         self.batch_size = batch_size
@@ -229,19 +231,24 @@ class CURL:
         self.encoder = critic.encoder
         self.encoder_target = target_critic.encoder 
         self.include_reconst_loss = include_reconst_loss
+        self.include_consistency_loss = include_consistency_loss
 
         if self.z_dim != self.encoder.feature_dim:
             self.z_dim = self.encoder.feature_dim
 
+        # Required for finding cosine similarity = X^T * W * X
         self.W = tf.Variable(tf.random.uniform(shape=(self.z_dim, self.z_dim),
                                                 minval=-0.1, maxval=0.1))
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
 
+        # Required for including reconstruction loss
         if self.include_reconst_loss:
             self.decoder = Decoder(obs_shape=self.obs_shape,
                                 feature_dim=self.z_dim)
 
-        
+        # Required for including consistency loss
+        if self.include_consistency_loss:
+            self.feature_predictor = FeaturePredictor(self.z_dim)
 
     def encode(self, x, ema=False):
         if ema:
@@ -258,12 +265,49 @@ class CURL:
         labels = tf.range(logits.shape[0])
         return logits, labels 
 
-    def train(self, x_a, x_pos):
-        """ train the model on the data
-        data: tuple (obs & augmented obs): 
-        obs tensor of shape: (batch_size, height, width, channels) 
+    def train(self, obs, aug_obs):
+
+        # train encoder
+        self.train_encoder(obs, aug_obs)
+
+        # train decoder
+        if self.include_reconst_loss:
+            self.train_decoder(obs)
+
+        # train feature predictor
+        if self.include_consistency_loss:
+            self.train_feature_predictor(obs, aug_obs)
+
+    def train_decoder(self, obs):
         """
-        # update W
+        Train the decoder to reconstruct the input observations.
+        """
+        with tf.GradientTape() as tape:
+            h = tf.stop_gradient(self.encoder(obs, ema=True))
+            reconst_obs = self.decoder(h)
+            reconst_loss = tf.reduce_mean(tf.keras.metrics.mean_squared_error(obs, reconst_obs))
+        grads = tape.gradient(reconst_loss, self.decoder.trainable_variables)
+        self.decoder.optimizer.apply_gradients(zip(grads, self.decoder.trainable_variables))
+        return reconst_loss
+
+    def train_feature_predictor(self, obs, aug_obs):
+        """
+        Train the feature predictor to predict the features of the input observations.
+        """
+
+        h = tf.stop_gradient(self.encoder(obs, ema=True))       # target for predictor
+        h_aug = tf.stop_gradient(self.encoder(aug_obs, ema=True)) # input to predictor
+        
+        consy_loss = self.feature_predictor.train(h_aug, h)
+        return consy_loss
+
+    def train_encoder(self, x_a, x_pos):
+        """ train the model on the data
+        Arguments:
+        x_a: (B, H, W, C) - input images
+        x_pos: (B, H, W, C) - augmented input images
+        """
+        # update W to minimize cosine similarity between z_a and z_pos
         with tf.GradientTape() as tape1:
             z_a = self.encode(x_a)
             z_pos = self.encode(x_pos, ema=True)
@@ -273,8 +317,11 @@ class CURL:
         gradients_1 = tape1.gradient(loss, train_wts)
         self.optimizer.apply_gradients(zip(gradients_1, train_wts))
 
-        # update encoder & decoder
-        with tf.GradientTape() as enc_tape, tf.GradientTape() as dec_tape:
+        # update encoder by incorporating all the three losses:
+        # 1. reconstruction loss
+        # 2. consistency loss
+        # 3. contrastive loss
+        with tf.GradientTape() as enc_tape:
             z_a = self.encode(x_a)
             z_pos = self.encode(x_pos, ema=True)
             logits, labels = self.compute_logits(z_a, z_pos)
@@ -291,16 +338,25 @@ class CURL:
             else:
                 reconst_loss = 0
 
-            total_loss = 0.5 *  cont_loss + 0.5 * reconst_loss 
+            # consistency loss
+            if self.include_consistency_loss:
+                h = self.encoder(x_a)
+                pred_feat = self.feature_predictor(h)
+                pred_feat_norm = tf.math.l2_normalize(pred_feat, axis=1)
+
+                target_feat = tf.stop_gradient(self.encoder(x_pos, ema=True))
+                target_feat_norm = tf.math.l2_normalize(target_feat, axis=-1)
+
+                consistency_loss = tf.reduce_mean(tf.keras.metrics.mean_squared_error(target_feat_norm, pred_feat_norm))
+            else:
+                consistency_loss = 0
+
+
+            total_loss = 0.33 *  cont_loss + 0.33 * reconst_loss + 0.33 * consistency_loss
 
         enc_wts = self.encoder.model.trainable_variables
         enc_grads = enc_tape.gradient(total_loss, enc_wts)
         self.encoder.optimizer.apply_gradients(zip(enc_grads, enc_wts))
-
-        if self.include_reconst_loss:
-            dec_wts = self.decoder.model.trainable_variables
-            dec_grads = dec_tape.gradient(total_loss, dec_wts)
-            self.decoder.optimizer.apply_gradients(zip(dec_grads, dec_wts))
 
         return total_loss.numpy()
 
@@ -332,6 +388,7 @@ class CurlSacAgent:
                 enc_train_freq=1,
                 target_update_freq=5,
                 include_reconst_loss=False,
+                include_consistency_loss=False,
                 ):
             
             self.state_size = state_size
@@ -346,6 +403,7 @@ class CurlSacAgent:
             self.cropped_img_size = cropped_img_size
             self.stack_size = stack_size # not used
             self.include_reconst_loss = include_reconst_loss
+            self.include_consistency_loss = include_consistency_loss
 
             # update frequencies
             self.ac_train_freq = ac_train_freq
@@ -362,10 +420,6 @@ class CurlSacAgent:
             # between the actor and the critic networks
             self.encoder = Encoder(self.obs_shape, self.feature_dim)
             
-            # Create a decoder network 
-            self.decoder = Decoder(self.obs_shape, self.feature_dim)
-
-            # Common encoder network is used for both actor & critic
 
             # Actor
             self.actor = CurlActor(
@@ -405,7 +459,8 @@ class CurlSacAgent:
                 batch_size=self.batch_size,
                 critic=self.critic,
                 target_critic=self.target_critic,
-                include_reconst_loss=self.include_reconst_loss
+                include_reconst_loss=self.include_reconst_loss,
+                include_consistency_loss=self.include_consistency_loss
             )
 
             # entropy coefficient as a tunable parameter
@@ -531,8 +586,6 @@ class CurlSacAgent:
 
         return  curl_loss
 
-
-
     def validate(self, env, max_eps=20):
         '''
         evaluate model performance
@@ -640,30 +693,29 @@ class CurlSacAgent:
         env.close()
         print('Mean Episode Reward: {} over {} episodes'.format(np.mean(ep_rewards), episode))
 
+    def save_model(self, save_path):
+        '''
+        save model weights
+        '''
+        self.actor.save_weights(save_path + 'actor.h5')
+        self.critic_1.save_weights(save_path + 'critic_1.h5')
+        self.critic_target_1.save_weights(save_path + 'critic_target_1.h5')
+        self.critic_2.save_weights(save_path + 'critic_2.h5')
+        self.critic_target_2.save_weights(save_path + 'critic_target_2.h5')
+        self.encoder.save_weights(save_path + 'encoder.h5')
+        self.curl.save_weights(save_path + 'curl.h5')
 
-def save_model(self, save_path):
-    '''
-    save model weights
-    '''
-    self.actor.save_weights(save_path + 'actor.h5')
-    self.critic_1.save_weights(save_path + 'critic_1.h5')
-    self.critic_target_1.save_weights(save_path + 'critic_target_1.h5')
-    self.critic_2.save_weights(save_path + 'critic_2.h5')
-    self.critic_target_2.save_weights(save_path + 'critic_target_2.h5')
-    self.encoder.save_weights(save_path + 'encoder.h5')
-    self.curl.save_weights(save_path + 'curl.h5')
-
-def load_weights(self, save_path):
-    '''
-    load model weights
-    '''
-    self.actor.load_weights(save_path + 'actor.h5')
-    self.critic_1.load_weights(save_path + 'critic_1.h5')
-    self.critic_target_1.load_weights(save_path + 'critic_target_1.h5')
-    self.critic_2.load_weights(save_path + 'critic_2.h5')
-    self.critic_target_2.load_weights(save_path + 'critic_target_2.h5')
-    self.encoder.load_weights(save_path + 'encoder.h5')
-    self.curl.load_weights(save_path + 'curl.h5')
+    def load_weights(self, save_path):
+        '''
+        load model weights
+        '''
+        self.actor.load_weights(save_path + 'actor.h5')
+        self.critic_1.load_weights(save_path + 'critic_1.h5')
+        self.critic_target_1.load_weights(save_path + 'critic_target_1.h5')
+        self.critic_2.load_weights(save_path + 'critic_2.h5')
+        self.critic_target_2.load_weights(save_path + 'critic_target_2.h5')
+        self.encoder.load_weights(save_path + 'encoder.h5')
+        self.curl.load_weights(save_path + 'curl.h5')
 
 
 
