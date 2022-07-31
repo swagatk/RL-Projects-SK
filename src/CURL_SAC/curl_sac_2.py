@@ -11,8 +11,10 @@ Updates:
     - Incorporating reconstruction loss
     - It should supercede `curl_sac.py` file.
 
+31/07/2022:
+    - Incorporates consistency Loss
+
 """
-from unicodedata import name
 import numpy as np
 import tensorflow as tf
 import tensorflow_probability as tfp
@@ -265,10 +267,16 @@ class CURL:
         labels = tf.range(logits.shape[0])
         return logits, labels 
 
-    def train(self, obs, aug_obs):
+    def train(self, aug_obs_anchor, aug_obs_pos, obs):
+        """
+        Args:
+            aug_obs_anchor: (B, H, W, C) - anchor observations
+            aug_obs_pos: (B, H, W, C) - positive observations
+            obs: (B, H, W, C) - original observations before augmentation
+        """
 
-        # train encoder
-        self.train_encoder(obs, aug_obs)
+        # train encoder 
+        self.train_encoder(aug_obs_anchor, aug_obs_pos, obs)
 
         # train decoder
         if self.include_reconst_loss:
@@ -276,7 +284,7 @@ class CURL:
 
         # train feature predictor
         if self.include_consistency_loss:
-            self.train_feature_predictor(obs, aug_obs)
+            self.train_feature_predictor(obs, aug_obs_anchor)
 
     def train_decoder(self, obs):
         """
@@ -301,11 +309,12 @@ class CURL:
         consy_loss = self.feature_predictor.train(h_aug, h)
         return consy_loss
 
-    def train_encoder(self, x_a, x_pos):
+    def train_encoder(self, x_a, x_pos, obs, alpha_1=0.33, alpha_2=0.33, alpha_3=0.33):
         """ train the model on the data
         Arguments:
-        x_a: (B, H, W, C) - input images
-        x_pos: (B, H, W, C) - augmented input images
+        x_a: (B, H, W, C) - anchor observations after augmentation
+        x_pos: (B, H, W, C) - positive observations after augmentation
+        obs: (B, H, W, C) - original observations before augmentation
         """
         # update W to minimize cosine similarity between z_a and z_pos
         with tf.GradientTape() as tape1:
@@ -340,11 +349,11 @@ class CURL:
 
             # consistency loss
             if self.include_consistency_loss:
-                h = self.encoder(x_a)
+                h = self.encoder(obs)   # target for predictor
                 pred_feat = self.feature_predictor(h)
                 pred_feat_norm = tf.math.l2_normalize(pred_feat, axis=1)
 
-                target_feat = tf.stop_gradient(self.encoder(x_pos, ema=True))
+                target_feat = self.encoder(x_a, ema=True)
                 target_feat_norm = tf.math.l2_normalize(target_feat, axis=-1)
 
                 consistency_loss = tf.reduce_mean(tf.keras.metrics.mean_squared_error(target_feat_norm, pred_feat_norm))
@@ -352,7 +361,9 @@ class CURL:
                 consistency_loss = 0
 
 
-            total_loss = 0.33 *  cont_loss + 0.33 * reconst_loss + 0.33 * consistency_loss
+            total_loss = alpha_1 *  cont_loss + \
+                            alpha_2 * reconst_loss + \
+                                alpha_3  * consistency_loss
 
         enc_wts = self.encoder.model.trainable_variables
         enc_grads = enc_tape.gradient(total_loss, enc_wts)
@@ -574,7 +585,7 @@ class CurlSacAgent:
 
         return actor_loss, critic_loss, alpha_loss
 
-    def train_encoder(self):
+    def train_encoder(self): # this needs to change ....
         # sample a batch of data
         states, _, _, next_states, _ = self.buffer.sample()
 
@@ -582,7 +593,7 @@ class CurlSacAgent:
         obs_a, obs_p, _ = self.create_image_pairs(states, next_states)
 
         # update the encoder
-        curl_loss = self.curl.train(obs_a, obs_p)
+        curl_loss = self.curl.train(obs_a, obs_p, obs)
 
         return  curl_loss
 
