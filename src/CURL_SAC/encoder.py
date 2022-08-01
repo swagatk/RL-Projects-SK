@@ -131,11 +131,6 @@ class Decoder:
         f = self.model(state)
         return f
 
-    def save_model(self, path):
-        self.model.save_weights(path)
-
-    def load_model(self, path):
-        self.model.load_weights(path)
 
 
 class FeaturePredictor:
@@ -152,7 +147,7 @@ class FeaturePredictor:
         for i in range(len(self.dense_layers)):
             x = tf.keras.layers.Dense(self.dense_layers[i], activation='relu')(x)
             x = tf.keras.layers.BatchNormalization()(x)
-        outputs = tf.keras.layers.Dense(shape=(self.feature_dim, ), 
+        outputs = tf.keras.layers.Dense(self.feature_dim,
                     activation='linear', name='output_layer')(x)
         model = tf.keras.models.Model(inputs, outputs, name="feature_predictor")
         return model
@@ -161,6 +156,11 @@ class FeaturePredictor:
         return self.model(x)
 
     def train(self, x, y):
+        """
+        training minimizes the consistency loss
+        x: input feature vector coming from encoder for an augmented image
+        y: target feature vector coming from encoder for the original image
+        """
         with tf.GradientTape() as tape:
             y_norm = tf.math.l2_normalize(y, axis=1)
             y_pred = self.model(x)

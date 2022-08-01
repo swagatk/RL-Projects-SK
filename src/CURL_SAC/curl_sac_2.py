@@ -30,7 +30,8 @@ sys.path.insert(0, '/home/swagat/GIT/RL-Projects-SK/src/algo/common')
 
 from common.buffer import Buffer
 from encoder import Decoder, Encoder, FeaturePredictor
-from common.utils import random_crop, center_crop_image, uniquify
+from common.utils import uniquify
+from augmentation import random_crop, center_crop_image
 
 
 ### Actor Network
@@ -291,11 +292,11 @@ class CURL:
         Train the decoder to reconstruct the input observations.
         """
         with tf.GradientTape() as tape:
-            h = tf.stop_gradient(self.encoder(obs, ema=True))
+            h = tf.stop_gradient(self.encode(obs, ema=True))
             reconst_obs = self.decoder(h)
             reconst_loss = tf.reduce_mean(tf.keras.metrics.mean_squared_error(obs, reconst_obs))
-        grads = tape.gradient(reconst_loss, self.decoder.trainable_variables)
-        self.decoder.optimizer.apply_gradients(zip(grads, self.decoder.trainable_variables))
+        grads = tape.gradient(reconst_loss, self.decoder.model.trainable_variables)
+        self.decoder.optimizer.apply_gradients(zip(grads, self.decoder.model.trainable_variables))
         return reconst_loss
 
     def train_feature_predictor(self, obs, aug_obs):
@@ -303,8 +304,8 @@ class CURL:
         Train the feature predictor to predict the features of the input observations.
         """
 
-        h = tf.stop_gradient(self.encoder(obs, ema=True))       # target for predictor
-        h_aug = tf.stop_gradient(self.encoder(aug_obs, ema=True)) # input to predictor
+        h = tf.stop_gradient(self.encode(obs, ema=True))       # target for predictor
+        h_aug = tf.stop_gradient(self.encode(aug_obs, ema=True)) # input to predictor
         
         consy_loss = self.feature_predictor.train(h_aug, h)
         return consy_loss
@@ -340,20 +341,20 @@ class CURL:
 
             # reconstruction loss
             if self.include_reconst_loss:
-                h = self.encoder(x_a)
+                h = self.encoder(obs)
                 rec_obs = self.decoder(h)
-                reconst_loss = tf.reduce_mean(tf.keras.metrics.mean_squared_error(x_a, rec_obs))
+                reconst_loss = tf.reduce_mean(tf.keras.metrics.mean_squared_error(obs, rec_obs))
                 loss = cont_loss + reconst_loss 
             else:
                 reconst_loss = 0
 
             # consistency loss
             if self.include_consistency_loss:
-                h = self.encoder(obs)   # target for predictor
+                h = self.encode(obs)   # feature from original observation
                 pred_feat = self.feature_predictor(h)
                 pred_feat_norm = tf.math.l2_normalize(pred_feat, axis=1)
 
-                target_feat = self.encoder(x_a, ema=True)
+                target_feat = self.encode(x_a, ema=True) # feature from augmented observation
                 target_feat_norm = tf.math.l2_normalize(target_feat, axis=-1)
 
                 consistency_loss = tf.reduce_mean(tf.keras.metrics.mean_squared_error(target_feat_norm, pred_feat_norm))
@@ -592,8 +593,11 @@ class CurlSacAgent:
         # apply data augmentation to create image pairs
         obs_a, obs_p, _ = self.create_image_pairs(states, next_states)
 
+        # observations before augmentation (cropped to fit the size)
+        org_obs = center_crop_image(states, self.cropped_img_size)
+
         # update the encoder
-        curl_loss = self.curl.train(obs_a, obs_p, obs)
+        curl_loss = self.curl.train(obs_a, obs_p, org_obs)
 
         return  curl_loss
 

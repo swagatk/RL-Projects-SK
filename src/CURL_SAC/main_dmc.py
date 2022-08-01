@@ -1,10 +1,12 @@
 """ 
-Environment: PBMG
+Environment: Deep Mind Control Environment (DMC) 
 Algorithm: CURL-SAC
 
 Updates:
 14/03/2022: Work in progress
-18/06/2022: curl_sac_3: use common encoder
+18/06/2022: use common encoder for actor & critic
+29/07/2022: Incorporate Reconstruction loss in CURL
+29/07/2022: Train DMC-Cheetah environment.
 
 """
 # Imports
@@ -169,7 +171,6 @@ if __name__ == "__main__":
             batch_size=config_dict['batch_size'],
             include_reconst_loss=config_dict['include_reconst_loss']
         )
-
 
         # Train
         agent.run(env, WB_LOG=WB_LOG)
