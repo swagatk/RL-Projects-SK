@@ -277,15 +277,17 @@ class CURL:
         """
 
         # train encoder 
-        self.train_encoder(aug_obs_anchor, aug_obs_pos, obs)
+        curl_loss = self.train_encoder(aug_obs_anchor, aug_obs_pos, obs)
 
         # train decoder
         if self.include_reconst_loss:
-            self.train_decoder(obs)
+            decoder_loss = self.train_decoder(obs)
 
         # train feature predictor
         if self.include_consistency_loss:
-            self.train_feature_predictor(obs, aug_obs_anchor)
+            predictor_loss = self.train_feature_predictor(obs, aug_obs_anchor)
+
+        return curl_loss 
 
     def train_decoder(self, obs):
         """

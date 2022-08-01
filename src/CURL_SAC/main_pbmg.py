@@ -77,7 +77,7 @@ config_dict = dict(
     include_consistency_loss=True,
 )
 #######################
-WB_LOG = False
+WB_LOG = True
 ###########################################
 # wandb related configuration
 if WB_LOG:
