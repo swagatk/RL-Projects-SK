@@ -75,9 +75,10 @@ config_dict = dict(
     stack_size=3,
     include_reconst_loss=True,
     include_consistency_loss=True,
+    frozen_encoder=False,       # freeze encoder weights for RL training
 )
 #######################
-WB_LOG = True
+WB_LOG = False
 ###########################################
 # wandb related configuration
 if WB_LOG:
@@ -172,6 +173,7 @@ if __name__ == "__main__":
             batch_size=config_dict['batch_size'],
             include_reconst_loss=config_dict['include_reconst_loss'],
             include_consistency_loss=config_dict['include_consistency_loss'],
+            frozen_encoder=config_dict['frozen_encoder'],
         )
 
         # Train

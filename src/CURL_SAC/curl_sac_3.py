@@ -15,10 +15,9 @@ Updates:
     - Incorporates consistency Loss
 
 01/08/2022:
-    - BUG: Having a common encoder is problematic. Every model is trying to
-        update this encoder. If it is frozen inside a class, it becomes 
-        frozen everywhere. It is because of the fact that a reference is 
-        passed to all the models.
+    - Separate the encoder for actor & critic 
+    - Copy the actor encoder to critic encoder at regular intervals
+
 
 """
 import numpy as np
@@ -48,9 +47,7 @@ class CurlActor:
         learning_rate=1e-3,
         actor_dense_layers=[128, 64],
         save_model_plot=False,
-        model_name='actor',
-        encoder=None,
-        frozen_encoder=False) -> None:
+        encoder=None) -> None:
 
         self.state_size = state_size # shape: (h, w, c)
         self.action_size = action_size
@@ -59,8 +56,6 @@ class CurlActor:
         self.encoder_feature_dim = encoder_feature_dim
         self.actor_dense_layers = actor_dense_layers
         self.save_model_plot = save_model_plot
-        self.frozen_encoder = frozen_encoder
-        self.model_name = model_name
 
         if encoder is None:
             self.encoder = Encoder(obs_shape=self.state_size,
@@ -71,11 +66,7 @@ class CurlActor:
 
 
         self.model = self._build_net()
-
-        if self.frozen_encoder: 
-            # Freeze encoder weights during RL training
-            self.model.get_layer('encoder').trainable=False 
-
+        self.model.get_layer('encoder').trainable=False # freeze encoder
         self.model.summary()
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
 
@@ -90,7 +81,7 @@ class CurlActor:
         log_sig = tf.keras.layers.Dense(self.action_size[0])(x)
         mu = mu * self.action_uppper_bound
         model = tf.keras.Model(inputs=inp, outputs=[mu, log_sig],
-                            name=self.model_name)
+                            name='actor')
         if self.save_model_plot:
             tf.keras.utils.plot_model(model,
                                 to_file='actor_network.png',
@@ -139,11 +130,9 @@ class QFunction():
     MLP for Q Function
     """
     def __init__(self, feature_dim, action_dim,
-                    dense_layers=[32, 32],
-                    model_name='q_function') -> None:
+                    dense_layers=[32, 32]) -> None:
         self.input_dim = feature_dim + action_dim
         self.dense_layers = dense_layers
-        self.model_name = model_name
         self.model = self._build_net()
         
     def _build_net(self):
@@ -153,7 +142,7 @@ class QFunction():
             x = tf.keras.layers.Dense(self.dense_layers[i],
                         activation='relu')(x)
         q = tf.keras.layers.Dense(1, activation='linear')(x)
-        model = tf.keras.Model(inputs=input, outputs=q, name=self.model_name)
+        model = tf.keras.Model(inputs=input, outputs=q, name='q_function')
         model.summary()
         return model
     
@@ -171,9 +160,7 @@ class CurlCritic:
                 gamma=0.95,
                 critic_dense_layers=[32, 32],
                 save_model_plot=False,
-                model_name='critic',
-                encoder=None,
-                frozen_encoder=False) -> None:
+                encoder=None) -> None:
 
         self.state_size = state_size
         self.action_size = action_size
@@ -182,14 +169,12 @@ class CurlCritic:
         self.gamma = gamma 
         self.critic_dense_layers=critic_dense_layers
         self.save_model_plot = save_model_plot 
-        self.frozen_encoder = frozen_encoder
-        self.model_name = model_name
 
-        self.Q1 = QFunction(self.encoder_feature_dim, 
-                        self.action_size[0], model_name='q1_function')
-        self.Q2 = QFunction(self.encoder_feature_dim, 
-                        self.action_size[0], model_name='q2_function')
+        self.Q1 = QFunction(self.encoder_feature_dim, self.action_size[0])
+        self.Q2 = QFunction(self.encoder_feature_dim, self.action_size[0])
 
+        self.Q1.model._name = 'q1_function'
+        self.Q2.model._name = 'q2_function'
 
         if encoder is None:
             self.encoder = Encoder(
@@ -202,11 +187,7 @@ class CurlCritic:
 
         
         self.model = self._build_model()
-
-        if self.frozen_encoder:
-            # Freeze encoder weights during RL training
-            self.model.get_layer('encoder').trainable=False 
-
+        self.model.get_layer('encoder').trainable=False # freeze encoder
         self.model.summary()
         self.optimizer = tf.keras.optimizers.Adam(self.lr)
 
@@ -221,7 +202,7 @@ class CurlCritic:
 
         model = tf.keras.Model(inputs=[state_input, action_input], 
                                     outputs=[q1, q2],
-                                    name=self.model_name)
+                                    name='critic')
         if self.save_model_plot:
             tf.keras.utils.plot_model(self.model,
                                 to_file='critic_network.png',
@@ -427,7 +408,6 @@ class CurlSacAgent:
                 target_update_freq=5,
                 include_reconst_loss=False,
                 include_consistency_loss=False,
-                frozen_encoder=False,
                 ):
             
             self.state_size = state_size
@@ -443,7 +423,6 @@ class CurlSacAgent:
             self.stack_size = stack_size # not used
             self.include_reconst_loss = include_reconst_loss
             self.include_consistency_loss = include_consistency_loss
-            self.frozen_encoder = frozen_encoder
 
             # update frequencies
             self.ac_train_freq = ac_train_freq
@@ -459,8 +438,7 @@ class CurlSacAgent:
             # Create a common encoder network to be shared 
             # between the actor and the critic networks
             self.encoder = Encoder(self.obs_shape, self.feature_dim)
-
-
+            
 
             # Actor
             self.actor = CurlActor(
@@ -468,8 +446,7 @@ class CurlSacAgent:
                     action_size=self.action_shape,
                     action_upper_bound=self.action_upper_bound,
                     encoder_feature_dim=self.feature_dim,
-                    encoder=self.encoder, # pass the encoder network
-                    frozen_encoder=self.frozen_encoder
+                    encoder = self.encoder  # pass the encoder network
                     )
 
             # Critic
@@ -478,8 +455,7 @@ class CurlSacAgent:
                     action_size=self.action_shape,
                     encoder_feature_dim=self.feature_dim,
                     learning_rate=self.lr,
-                    encoder = self.encoder, # pass the encoder network
-                    frozen_encoder=self.frozen_encoder
+                    encoder = self.encoder  # pass the encoder network
             )
 
             # target critic
@@ -488,8 +464,7 @@ class CurlSacAgent:
                     action_size=self.action_shape,
                     encoder_feature_dim=self.feature_dim,
                     learning_rate=self.lr,
-                    encoder=self.encoder,  # pass the encoder network 
-                    model_name='target_critic'
+                    encoder = self.encoder  # pass the encoder network 
             )
 
             # Initially critic & target critic share weights
