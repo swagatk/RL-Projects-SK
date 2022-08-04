@@ -20,19 +20,19 @@ env = dmc2gym.make(
     seed=42,
     visualize_reward=False,
     from_pixels=True,
-    height=100,
-    width=100,
+    height=64,
+    width=64,
     frame_skip=1
 )
 if SAVE_VIDEO:
     video_dir='videos'
     video = VideoRecorder(dir_name=video_dir,
-                            height=100,
-                            width=100,
+                            height=64,
+                            width=64,
                             camera_id=0,)
     video.init()
 
-for ep in range(3):
+for ep in range(2):
     obs = env.reset()
     done = False
     ep_reward = 0

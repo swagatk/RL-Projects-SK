@@ -10,10 +10,10 @@ import os
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-from keras.layers import Conv2D, Conv2DTranspose, Input, Flatten, Dense, Lambda, Reshape
-from keras.layers import BatchNormalization
-from keras.models import Model
-from keras import backend as K
+from tensorflow.keras.layers import Conv2D, Conv2DTranspose, Input, Flatten, Dense, Lambda, Reshape
+from tensorflow.keras.layers import BatchNormalization
+from tensorflow.keras.models import Model
+from tensorflow.keras import backend as K
 import matplotlib.pyplot as plt
 from sklearn.manifold import TSNE
 
@@ -147,7 +147,7 @@ class Decoder(keras.Model):
         self.conv_shape = conv_shape
         self.latent_dim = latent_dim
         self.num_channels = self.out_shape[2]           # image shape: (h, w, c)
-        self.optimizer = tf.keras.optimizers.Adam()
+        self.optimizer = tf.keras.optimizers.Adam(lr=1e-3);
 
 
         self.conv_layers = kwargs.get('conv_layers', [32, 64,])

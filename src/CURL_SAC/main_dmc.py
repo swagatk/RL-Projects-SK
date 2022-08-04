@@ -1,15 +1,15 @@
 """ 
-Environment: PBMG
+Environment: Deep Mind Control Environment (DMC) 
 Algorithm: CURL-SAC
 
 Updates:
 14/03/2022: Work in progress
 18/06/2022: use common encoder for actor & critic
 29/07/2022: Incorporate Reconstruction loss in CURL
+29/07/2022: Train DMC-Cheetah environment.
 
 """
 # Imports
-from xml.etree.ElementInclude import include
 import tensorflow as tf
 import pybullet_multigoal_gym as pmg
 from packaging import version
@@ -74,8 +74,6 @@ config_dict = dict(
     image_obsvn=True,
     stack_size=3,
     include_reconst_loss=True,
-    include_consistency_loss=True,
-    frozen_encoder=False,       # freeze encoder weights for RL training
 )
 #######################
 WB_LOG = False
@@ -171,9 +169,7 @@ if __name__ == "__main__":
             curl_feature_dim=50,
             buffer_capacity=config_dict['buffer_capacity'],
             batch_size=config_dict['batch_size'],
-            include_reconst_loss=config_dict['include_reconst_loss'],
-            include_consistency_loss=config_dict['include_consistency_loss'],
-            frozen_encoder=config_dict['frozen_encoder'],
+            include_reconst_loss=config_dict['include_reconst_loss']
         )
 
         # Train
