@@ -15,11 +15,18 @@ Updates:
     - Incorporates consistency Loss
 
 01/08/2022:
-    - BUG: Having a common encoder is problematic. Every model is trying to
+    - Possible BUG: Having a common encoder is problematic. Every model is trying to
         update this encoder. If it is frozen inside a class, it becomes 
-        frozen everywhere. It is because of the fact that a reference is 
-        passed to all the models.
-
+        frozen everywhere. Probably, it is a better idea to have different
+        encoders for each model and share the weights betweeen them.  
+    - Its not a bug anymore. There is no other way to share weights between
+        actor & critic encoders. Note that the actor & critic encoders are getting
+        updated indepedently by the SAC algorithm. It is important to tie the 
+        encoders together. So copying at regular intervals is not a good idea as the
+        encoder learn will get lost when the weights are copied. 
+    - The target critic encoder should not be tied to critic encoder. They should
+        be separate. This is a new change here. 
+    
 """
 import numpy as np
 import tensorflow as tf
@@ -424,7 +431,7 @@ class CurlSacAgent:
                 eval_freq=1000,
                 ac_train_freq=2,
                 enc_train_freq=1,
-                target_update_freq=5,
+                target_update_freq=2,           
                 include_reconst_loss=False,
                 include_consistency_loss=False,
                 frozen_encoder=False,
@@ -483,12 +490,13 @@ class CurlSacAgent:
             )
 
             # target critic
+            # make sure, encoder for critic and target have same shape/size
             self.target_critic = CurlCritic(
                     state_size=self.obs_shape,
                     action_size=self.action_shape,
                     encoder_feature_dim=self.feature_dim,
                     learning_rate=self.lr,
-                    encoder=self.encoder,  # pass the encoder network 
+                    #encoder=self.encoder,  # pass the encoder network 
                     model_name='target_critic'
             )
 
@@ -721,15 +729,15 @@ class CurlSacAgent:
                     'step': step,
                     'episodes': episode,
                     'ep_reward': ep_reward,
-                    'mean_ep_reward': np.mean(ep_rewards[-50:]),
-                    'mean_val_score': np.mean(val_scores[-50:]),
-                    'mean_critic_loss': np.mean(critic_losses[-50:]),
-                    'mean_alpha_loss': np.mean(alpha_losses[-50:]),
-                    'mean_actor_loss': np.mean(actor_losses[-50:]),
-                    'mean_curl_loss': np.mean(curl_losses[-50:]),
+                    'mean_ep_reward': np.mean(ep_rewards),
+                    'mean_val_score': np.mean(val_scores),
+                    'mean_critic_loss': np.mean(critic_losses),
+                    'mean_alpha_loss': np.mean(alpha_losses),
+                    'mean_actor_loss': np.mean(actor_losses),
+                    'mean_curl_loss': np.mean(curl_losses),
                 })
 
-            if done:
+            if done: # end of episode
                 ep_rewards.append(ep_reward)
                 ep_reward = 0
                 state = env.reset()
