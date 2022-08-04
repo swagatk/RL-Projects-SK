@@ -28,3 +28,4 @@ wandb/
 *.csv
 *.png
 *.mp4
+!./src/CURL_SAC/images/*
