@@ -42,7 +42,7 @@ import pickle
 sys.path.insert(0, '/home/swagat/GIT/RL-Projects-SK/src/algo/common')
 
 from common.buffer import Buffer
-from encoder import Decoder, Encoder, FeaturePredictor
+from src.CURL_SAC.feature_extraction import Decoder, Encoder, FeaturePredictor
 from common.utils import uniquify
 from augmentation import random_crop, center_crop_image
 

@@ -13,9 +13,11 @@ Last updated on: July 25, 2022
 - [Pybullet multi-goal environment 1.0.0](https://github.com/IanYangChina/pybullet_multigoal_gym)
 
 # Files
+- `../common/buffer.py`
+- `../common/utils.py`
+- `../common/CustomGymWrapper.py`
 - `curl_sac.py`
-- `buffer.py`
-- `encoder.py`
+- `feature_extraction.py`
 - `main_pbmg.py`
 
 ## Some Notes about the algorithms
