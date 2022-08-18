@@ -42,7 +42,7 @@ import pickle
 sys.path.insert(0, '/home/swagat/GIT/RL-Projects-SK/src/algo/common')
 
 from common.buffer import Buffer
-from src.CURL_SAC.feature_extraction import Decoder, Encoder, FeaturePredictor
+from feature_extraction import Decoder, Encoder, FeaturePredictor
 from common.utils import uniquify
 from augmentation import random_crop, center_crop_image
 
@@ -467,9 +467,6 @@ class CurlSacAgent:
             self.include_reconst_loss = include_reconst_loss
             self.include_consistency_loss = include_consistency_loss
             self.frozen_encoder = frozen_encoder
-            self.alpha_cont = alpha_cont
-            self.alpha_reconst = alpha_reconst
-            self.alpha_consy = alpha_consy
 
             # update frequencies
             self.ac_train_freq = ac_train_freq

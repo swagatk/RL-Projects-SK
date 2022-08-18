@@ -24,8 +24,8 @@ sys.path.append(current_dir)
 sys.path.append(os.path.dirname(current_dir)) # parent director
 
 # Local imports
-from src.CURL_SAC.curl_sac import CurlSacAgent
-from common.CustomGymWrapper import FrameStackWrapper
+from curl_sac import CurlSacAgent
+from common.CustomGymWrapper import FrameStackWrapper4PBMG
 from common.utils import set_seed_everywhere
 
 ########################################
@@ -133,7 +133,7 @@ if __name__ == "__main__":
         obs_shape = env.observation_space['observation'].__getattribute__('shape')
         dtype_value = env.observation_space['observation'].dtype
         # Apply stacking wrapper to the environment
-        env = FrameStackWrapper(env, config_dict['stack_size'],
+        env = FrameStackWrapper4PBMG(env, config_dict['stack_size'],
         org_shape=obs_shape, dtype_value=dtype_value)
         #print('Observation:', env.observation_space)
 
