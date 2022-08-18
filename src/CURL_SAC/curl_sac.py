@@ -284,6 +284,24 @@ class CURL:
         if self.include_consistency_loss:
             self.feature_predictor = FeaturePredictor(self.z_dim)
 
+        # weightage for different losses 
+        if self.include_reconst_loss and not self.include_consistency_loss:
+            self.alpha_cont = 0.5  # contrastive + reconstruction losses
+            self.alpha_reconst = 0.5
+            self.alpha_consy = 0.0
+        elif not self.include_reconst_loss and self.include_consistency_loss:
+            self.alpha_cont = 0.5  # contrastive + consistency loss
+            self.alpha_reconst = 0.0
+            self.alpha_consy = 0.5
+        elif self.include_reconst_loss and self.include_consistency_loss:
+            self.alpha_cont = 0.33 # contrastive + reconstruction + consistency loss
+            self.alpha_reconst = 0.33
+            self.alpha_consy = 0.33
+        else:       # only contrastive loss 
+            self.alpha_cont = 1.0
+            self.alpha_reconst = 0.0
+            self.alpha_consy = 0.0
+
     def encode(self, x, ema=False):
         if ema:
             z_out = self.encoder_target(x)
@@ -343,7 +361,7 @@ class CURL:
         consy_loss = self.feature_predictor.train(h_aug, h)
         return consy_loss
 
-    def train_encoder(self, x_a, x_pos, obs, alpha_1=0.33, alpha_2=0.33, alpha_3=0.33):
+    def train_encoder(self, x_a, x_pos, obs):
         """ train the model on the data
         Arguments:
         x_a: (B, H, W, C) - anchor observations after augmentation
@@ -377,7 +395,6 @@ class CURL:
                 h = self.encoder(obs)
                 rec_obs = self.decoder(h)
                 reconst_loss = tf.reduce_mean(tf.keras.metrics.mean_squared_error(obs, rec_obs))
-                loss = cont_loss + reconst_loss 
             else:
                 reconst_loss = 0
 
@@ -395,9 +412,9 @@ class CURL:
                 consistency_loss = 0
 
 
-            total_loss = alpha_1 *  cont_loss + \
-                            alpha_2 * reconst_loss + \
-                                alpha_3  * consistency_loss
+            total_loss = self.alpha_cont *  cont_loss + \
+                            self.alpha_reconst * reconst_loss + \
+                                self.alpha_consy  * consistency_loss
 
         enc_wts = self.encoder.model.trainable_variables
         enc_grads = enc_tape.gradient(total_loss, enc_wts)
@@ -434,8 +451,7 @@ class CurlSacAgent:
                 target_update_freq=2,           
                 include_reconst_loss=False,
                 include_consistency_loss=False,
-                frozen_encoder=False,
-                ):
+                frozen_encoder=False):
             
             self.state_size = state_size
             self.action_shape = action_size
@@ -451,6 +467,9 @@ class CurlSacAgent:
             self.include_reconst_loss = include_reconst_loss
             self.include_consistency_loss = include_consistency_loss
             self.frozen_encoder = frozen_encoder
+            self.alpha_cont = alpha_cont
+            self.alpha_reconst = alpha_reconst
+            self.alpha_consy = alpha_consy
 
             # update frequencies
             self.ac_train_freq = ac_train_freq
@@ -466,7 +485,6 @@ class CurlSacAgent:
             # Create a common encoder network to be shared 
             # between the actor and the critic networks
             self.encoder = Encoder(self.obs_shape, self.feature_dim)
-
 
 
             # Actor

@@ -96,13 +96,14 @@ import matplotlib.pyplot as plt
 
 #####################################3
 ## frame stacking wrapper
-class FrameStackWrapper(gym.Wrapper):
+class FrameStackWrapper4PBMG(gym.Wrapper):
     def __init__(self, env, k, org_shape:tuple = None,
                     dtype_value=None) -> None:
         super().__init__(env)
 
         self._k = k # number of frames to stack
         self._frames = deque([], maxlen=self._k)
+        
         if org_shape is None:
             org_shape = env.observation_space.shape 
         
@@ -179,7 +180,7 @@ if __name__ == "__main__":
     elif TIME_LIMIT:
         env = TimeLimitWrapper(env, max_steps=20)
     elif STACK_FRAMES:
-        env = FrameStackWrapper(env, k=4)
+        env = FrameStackWrapper4PBMG(env, k=4)
     print('observation shape:', env.observation_space.shape)
 
     for ep in range(2):

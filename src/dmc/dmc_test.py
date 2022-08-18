@@ -35,6 +35,11 @@ if SAVE_VIDEO:
 
 print('\nObservation shape:', env.observation_space.shape)
 print('\nAction shape:', env.action_space.shape)
+print('\nAction upper bound:', env.action_space.high)
+print('\nObservation space dtype:', env.observation_space.dtype)
+
+env.seed(100)
+print('\nSeed:', env.seed)
 
 for ep in range(2):
     obs = env.reset()
