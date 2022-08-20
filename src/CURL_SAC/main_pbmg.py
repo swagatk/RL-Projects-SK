@@ -6,6 +6,8 @@ Updates:
 14/03/2022: Work in progress
 18/06/2022: use common encoder for actor & critic
 29/07/2022: Incorporate Reconstruction loss in CURL
+19/08/2022: Included SAC algorithm for comparison
+19/08/2022: Fixed an error related to actor loss in curl_sac
 
 """
 # Imports
@@ -25,6 +27,7 @@ sys.path.append(os.path.dirname(current_dir)) # parent director
 
 # Local imports
 from curl_sac import CurlSacAgent
+from sac import sacAgent
 from common.CustomGymWrapper import FrameStackWrapper4PBMG
 from common.utils import set_seed_everywhere
 
@@ -67,8 +70,7 @@ else:
 config_dict = dict(
     buffer_capacity = 30000,    # 50k (racecar)  # 20K (kuka)
     batch_size = 128,  
-    use_attention = None, 
-    algo = 'curl_sac',               
+    algo = 'sac',   # 'curl_sac', 'sac'              
     env_name = 'pbmg',          # environment name
     image_obsvn=True,
     stack_size=3,
@@ -77,7 +79,7 @@ config_dict = dict(
     frozen_encoder=False,       # freeze encoder weights for RL training
 )
 #######################
-WB_LOG = False
+WB_LOG = True
 ###########################################
 # wandb related configuration
 if WB_LOG:
@@ -174,9 +176,20 @@ if __name__ == "__main__":
             include_consistency_loss=config_dict['include_consistency_loss'],
             frozen_encoder=config_dict['frozen_encoder'],
         )
+    elif config_dict['algo'] == 'sac': # sac
+        agent = sacAgent(
+            state_size=state_size,
+            action_size=action_size,
+            action_upper_bound=upper_bound,
+            latent_feature_dim=50,
+            buffer_capacity=config_dict['buffer_capacity'],
+            batch_size=config_dict['batch_size'],
+        )
+    else:
+        raise NotImplementedError("Algorithm not implemented")
 
-        # Train
-        agent.run(env, WB_LOG=WB_LOG)
+    # Train
+    agent.run(env, WB_LOG=WB_LOG)
 
 
     # test

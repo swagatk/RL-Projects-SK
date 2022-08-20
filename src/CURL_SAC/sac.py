@@ -1,36 +1,8 @@
 """
-Main changes compared to curl_sac_2.py
+Soft Actor Critic Algorithm 
+- Mostly adapted from CURL_SAC algorithm
 
-- We are using a common encoder for all actor/critic networks
-
-
-Updates:
-27/07/2022: 
-    - Modifying CurlCritic to return q1 & q2 together. 
-    - This makes CurlSACAgent code more cleaner. 
-    - Incorporating reconstruction loss
-    - It should supercede `curl_sac.py` file.
-
-31/07/2022:
-    - Incorporates consistency Loss
-
-01/08/2022:
-    - Possible BUG: Having a common encoder is problematic. Every model is trying to
-        update this encoder. If it is frozen inside a class, it becomes 
-        frozen everywhere. Probably, it is a better idea to have different
-        encoders for each model and share the weights betweeen them.  
-    - Its not a bug anymore. There is no other way to share weights between
-        actor & critic encoders. Note that the actor & critic encoders are getting
-        updated indepedently by the SAC algorithm. It is important to tie the 
-        encoders together. So copying at regular intervals is not a good idea as the
-        encoder learn will get lost when the weights are copied. 
-    - The target critic encoder should not be tied to critic encoder. They should
-        be separate. This is a new change here. 
-
-19/08/2022:
-    - Just noticed that a minus sign was missing from actor loss in train_actor() function. 
-    - In target update, I remove the code for updating encoder weights separately
-    
+Date: 19/08/2022
 """
 import numpy as np
 import tensorflow as tf
@@ -46,13 +18,11 @@ import pickle
 sys.path.insert(0, '/home/swagat/GIT/RL-Projects-SK/src/algo/common')
 
 from common.buffer import Buffer
-from feature_extraction import Decoder, Encoder, FeaturePredictor
-from common.utils import uniquify
-from augmentation import random_crop, center_crop_image
+from feature_extraction import  Encoder
 
 
 ### Actor Network
-class CurlActor:
+class sacActor:
     def __init__(self, state_size, action_size,
         action_upper_bound,
         encoder_feature_dim,
@@ -175,7 +145,7 @@ class QFunction():
         
         
 #########3
-class CurlCritic:
+class sacCritic:
     def __init__(self, state_size, action_size,
                 encoder_feature_dim,
                 learning_rate = 1e-3,
@@ -254,190 +224,8 @@ class CurlCritic:
         self.model.load_weights(filename)
 
 
-#####################
-class CURL:
-    def __init__(self, obs_shape, z_dim, batch_size,
-                critic, target_critic,
-                learning_rate=1e-3,
-                include_reconst_loss=False,
-                include_consistency_loss=False) -> None:
-        
-        self.obs_shape = obs_shape
-        self.batch_size = batch_size
-        self.lr = learning_rate
-        self.z_dim = z_dim      # feature dimension
-        self.encoder = critic.encoder
-        self.encoder_target = target_critic.encoder 
-        self.include_reconst_loss = include_reconst_loss
-        self.include_consistency_loss = include_consistency_loss
-
-        if self.z_dim != self.encoder.feature_dim:
-            self.z_dim = self.encoder.feature_dim
-
-        # Required for finding cosine similarity = X^T * W * X
-        self.W = tf.Variable(tf.random.uniform(shape=(self.z_dim, self.z_dim),
-                                                minval=-0.1, maxval=0.1))
-        self.optimizer = tf.keras.optimizers.Adam(self.lr)
-
-        # Required for including reconstruction loss
-        if self.include_reconst_loss:
-            self.decoder = Decoder(obs_shape=self.obs_shape,
-                                feature_dim=self.z_dim)
-
-        # Required for including consistency loss
-        if self.include_consistency_loss:
-            self.feature_predictor = FeaturePredictor(self.z_dim)
-
-        # weightage for different losses 
-        if self.include_reconst_loss and not self.include_consistency_loss:
-            self.alpha_cont = 0.5  # contrastive + reconstruction losses
-            self.alpha_reconst = 0.5
-            self.alpha_consy = 0.0
-        elif not self.include_reconst_loss and self.include_consistency_loss:
-            self.alpha_cont = 0.5  # contrastive + consistency loss
-            self.alpha_reconst = 0.0
-            self.alpha_consy = 0.5
-        elif self.include_reconst_loss and self.include_consistency_loss:
-            self.alpha_cont = 0.33 # contrastive + reconstruction + consistency loss
-            self.alpha_reconst = 0.33
-            self.alpha_consy = 0.33
-        else:       # only contrastive loss 
-            self.alpha_cont = 1.0
-            self.alpha_reconst = 0.0
-            self.alpha_consy = 0.0
-
-    def encode(self, x, ema=False):
-        if ema:
-            z_out = self.encoder_target(x)
-        else:
-            z_out = self.encoder(x)
-
-        return z_out 
-
-    def compute_logits(self, z_a, z_pos):
-        Wz = tf.matmul(self.W, tf.transpose(z_pos)) # (z_dim, B)
-        logits = tf.matmul(z_a, Wz)     # (B, B)
-        logits = logits - tf.reduce_max(logits, axis=1)
-        labels = tf.range(logits.shape[0])
-        return logits, labels 
-
-    def train(self, aug_obs_anchor, aug_obs_pos, obs):
-        """
-        Args:
-            aug_obs_anchor: (B, H, W, C) - anchor observations
-            aug_obs_pos: (B, H, W, C) - positive observations
-            obs: (B, H, W, C) - original observations before augmentation
-        """
-
-        # train encoder 
-        curl_loss = self.train_encoder(aug_obs_anchor, aug_obs_pos, obs)
-
-        # train decoder
-        if self.include_reconst_loss:
-            decoder_loss = self.train_decoder(obs)
-
-        # train feature predictor
-        if self.include_consistency_loss:
-            predictor_loss = self.train_feature_predictor(obs, aug_obs_anchor)
-
-        return curl_loss 
-
-    def train_decoder(self, obs):
-        """
-        Train the decoder to reconstruct the input observations.
-        """
-        with tf.GradientTape() as tape:
-            h = tf.stop_gradient(self.encode(obs, ema=True))
-            reconst_obs = self.decoder(h)
-            reconst_loss = tf.reduce_mean(tf.keras.metrics.mean_squared_error(obs, reconst_obs))
-        grads = tape.gradient(reconst_loss, self.decoder.model.trainable_variables)
-        self.decoder.optimizer.apply_gradients(zip(grads, self.decoder.model.trainable_variables))
-        return reconst_loss
-
-    def train_feature_predictor(self, obs, aug_obs):
-        """
-        Train the feature predictor to predict the features of the input observations.
-        """
-
-        h = tf.stop_gradient(self.encode(obs, ema=True))       # target for predictor
-        h_aug = tf.stop_gradient(self.encode(aug_obs, ema=True)) # input to predictor
-        
-        consy_loss = self.feature_predictor.train(h_aug, h)
-        return consy_loss
-
-    def train_encoder(self, x_a, x_pos, obs):
-        """ train the model on the data
-        Arguments:
-        x_a: (B, H, W, C) - anchor observations after augmentation
-        x_pos: (B, H, W, C) - positive observations after augmentation
-        obs: (B, H, W, C) - original observations before augmentation
-        """
-        # update W to minimize cosine similarity between z_a and z_pos
-        with tf.GradientTape() as tape1:
-            z_a = self.encode(x_a)
-            z_pos = self.encode(x_pos, ema=True)
-            logits, labels = self.compute_logits(z_a, z_pos)
-            loss = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels, axis=-1)
-            train_wts = [self.W]
-        gradients_1 = tape1.gradient(loss, train_wts)
-        self.optimizer.apply_gradients(zip(gradients_1, train_wts))
-
-        # update encoder by incorporating all the three losses:
-        # 1. reconstruction loss
-        # 2. consistency loss
-        # 3. contrastive loss
-        with tf.GradientTape() as enc_tape:
-            z_a = self.encode(x_a)
-            z_pos = self.encode(x_pos, ema=True)
-            logits, labels = self.compute_logits(z_a, z_pos)
-
-            # Contrastive loos
-            cont_loss = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels)
-
-            # reconstruction loss
-            if self.include_reconst_loss:
-                h = self.encoder(obs)
-                rec_obs = self.decoder(h)
-                reconst_loss = tf.reduce_mean(tf.keras.metrics.mean_squared_error(obs, rec_obs))
-            else:
-                reconst_loss = 0
-
-            # consistency loss
-            if self.include_consistency_loss:
-                h = self.encode(obs)   # feature from original observation
-                pred_feat = self.feature_predictor(h)
-                pred_feat_norm = tf.math.l2_normalize(pred_feat, axis=1)
-
-                target_feat = self.encode(x_a, ema=True) # feature from augmented observation
-                target_feat_norm = tf.math.l2_normalize(target_feat, axis=-1)
-
-                consistency_loss = tf.reduce_mean(tf.keras.metrics.mean_squared_error(target_feat_norm, pred_feat_norm))
-            else:
-                consistency_loss = 0
-
-
-            total_loss = self.alpha_cont *  cont_loss + \
-                            self.alpha_reconst * reconst_loss + \
-                                self.alpha_consy  * consistency_loss
-
-        enc_wts = self.encoder.model.trainable_variables
-        enc_grads = enc_tape.gradient(total_loss, enc_wts)
-        self.encoder.optimizer.apply_gradients(zip(enc_grads, enc_wts))
-
-        return total_loss.numpy()
-
-    def save_weights(self, filename):
-        with open(str(filename), 'wb') as f:
-            pickle.dump(self.W, f)
-
-    def load_weights(self, filename):
-        with open(str(filename), 'rb') as f:
-            self.W = pickle.load(f)
-
-
-    
 ##############
-class CurlSacAgent:
+class sacAgent:
     def __init__(self, state_size, action_size, action_upper_bound,
                 buffer_capacity=100000,
                 batch_size=128,
@@ -445,8 +233,7 @@ class CurlSacAgent:
                 alpha=0.2,      # entropy coefficient
                 gamma=0.99,     # discount factor
                 polyak=0.995,   # soft update factor: tau
-                curl_feature_dim=128,    # latent feature dim
-                cropped_img_size=84,
+                latent_feature_dim=128,    # latent feature dim
                 stack_size=3,   # not used
                 init_steps=500,
                 eval_freq=1000,
@@ -457,7 +244,7 @@ class CurlSacAgent:
                 include_consistency_loss=False,
                 frozen_encoder=False):
             
-            self.state_size = state_size
+            self.obs_shape = state_size
             self.action_shape = action_size
             self.action_upper_bound = action_upper_bound
             self.lr = lr 
@@ -465,8 +252,7 @@ class CurlSacAgent:
             self.batch_size = batch_size
             self.gamma = gamma               
             self.polyak = polyak 
-            self.feature_dim = curl_feature_dim
-            self.cropped_img_size = cropped_img_size
+            self.feature_dim = latent_feature_dim
             self.stack_size = stack_size # not used
             self.include_reconst_loss = include_reconst_loss
             self.include_consistency_loss = include_consistency_loss
@@ -479,9 +265,8 @@ class CurlSacAgent:
             self.target_update_freq = target_update_freq
             self.init_steps = init_steps
             
-            assert len(self.state_size) == 3, 'image observation of shape (h, w, c)'
+            assert len(self.obs_shape) == 3, 'requires image observation of shape (h, w, c)'
 
-            self.obs_shape = (self.cropped_img_size, self.cropped_img_size, self.state_size[2])
 
             # Create a common encoder network to be shared 
             # between the actor and the critic networks
@@ -489,7 +274,7 @@ class CurlSacAgent:
 
 
             # Actor
-            self.actor = CurlActor(
+            self.actor = sacActor(
                     state_size=self.obs_shape, 
                     action_size=self.action_shape,
                     action_upper_bound=self.action_upper_bound,
@@ -499,7 +284,7 @@ class CurlSacAgent:
                     )
 
             # Critic
-            self.critic = CurlCritic(
+            self.critic = sacCritic(
                     state_size=self.obs_shape,
                     action_size=self.action_shape,
                     encoder_feature_dim=self.feature_dim,
@@ -510,7 +295,7 @@ class CurlSacAgent:
 
             # target critic
             # make sure, encoder for critic and target have same shape/size
-            self.target_critic = CurlCritic(
+            self.target_critic = sacCritic(
                     state_size=self.obs_shape,
                     action_size=self.action_shape,
                     encoder_feature_dim=self.feature_dim,
@@ -522,17 +307,6 @@ class CurlSacAgent:
             # Initially critic & target critic share weights
             self.target_critic.model.set_weights(self.critic.model.get_weights())
 
-
-            # CURL agent
-            self.curl = CURL(
-                obs_shape=self.obs_shape,
-                z_dim = self.feature_dim,
-                batch_size=self.batch_size,
-                critic=self.critic,
-                target_critic=self.target_critic,
-                include_reconst_loss=self.include_reconst_loss,
-                include_consistency_loss=self.include_consistency_loss
-            )
 
             # entropy coefficient as a tunable parameter
             self.alpha = tf.Variable(alpha, dtype=tf.float32)
@@ -593,7 +367,7 @@ class CurlSacAgent:
             q1, q2 = self.critic(states, pi_a)
             min_q = tf.minimum(q1, q2)
             soft_q = min_q - self.alpha * log_pi_a
-            actor_loss = -tf.reduce_mean(soft_q) # corrected on 19/08/2020
+            actor_loss = -tf.reduce_mean(soft_q) # corrected on 19/08/2022
         grads = tape.gradient(actor_loss, self.actor.model.trainable_variables)
         self.actor.optimizer.apply_gradients(zip(grads, self.actor.model.trainable_variables))
         return actor_loss.numpy()
@@ -603,28 +377,9 @@ class CurlSacAgent:
                                 self.critic.model.trainable_variables):
             wt_target = self.polyak * wt_target + (1 - self.polyak) * wt_source
 
-        # Probably, this is redundant as encoder is getting updated in the critic network
-        # for wt_target, wt_source in zip(self.curl.encoder_target.model.trainable_variables,
-        #                             self.curl.encoder.model.trainable_variables):
-        #     wt_target = self.polyak * wt_target + (1 - self.polyak) * wt_source
-
-    def create_image_pairs(self, states, next_states, aug_method='crop'):
-
-        if aug_method == 'crop':
-            obs_a = random_crop(states, self.cropped_img_size)
-            obs_p = random_crop(states, self.cropped_img_size)
-            obs_n = random_crop(next_states, self.cropped_img_size)
-        else:
-            raise Exception('Unknown Observation Method')
-        return obs_a, obs_p, obs_n
-
     def train_actor_critic(self):
         # sample a batch of data
         states, actions, rewards, next_states, dones = self.buffer.sample()
-
-        states = random_crop(states, self.cropped_img_size)
-        next_states = random_crop(next_states, self.cropped_img_size)
-
 
         # convert to tensors
         states = tf.convert_to_tensor(states, dtype=tf.float32)
@@ -645,21 +400,6 @@ class CurlSacAgent:
 
         return actor_loss, critic_loss, alpha_loss
 
-    def train_encoder(self): # this needs to change ....
-        # sample a batch of data
-        states, _, _, next_states, _ = self.buffer.sample()
-
-        # apply data augmentation to create image pairs
-        obs_a, obs_p, _ = self.create_image_pairs(states, next_states)
-
-        # observations before augmentation (cropped to fit the size)
-        org_obs = center_crop_image(states, self.cropped_img_size)
-
-        # update the encoder
-        curl_loss = self.curl.train(obs_a, obs_p, org_obs)
-
-        return  curl_loss
-
     def validate(self, env, max_eps=20):
         '''
         evaluate model performance
@@ -670,8 +410,7 @@ class CurlSacAgent:
             t = 0
             ep_reward = 0
             while True:
-                cropped_state = center_crop_image(state, out_h=self.cropped_img_size)
-                action, _ = self.sample_action(cropped_state)
+                action, _ = self.sample_action(state)
                 next_state, reward, done, _ = env.step(action)
 
                 # convert negative reward to positive reward 
@@ -689,23 +428,20 @@ class CurlSacAgent:
     def run(self, env, max_train_steps=100000, WB_LOG=False):
         """ Main Training Loop"""
 
-        actor_loss, critic_loss, alpha_loss, curl_loss = [], [], [], []
+        actor_loss, critic_loss, alpha_loss = [], [], []
         episode, ep_reward, val_score, done = 0, 0, 0, False 
-        ep_rewards, val_scores, alpha_losses, curl_losses = [], [], [], []
+        ep_rewards, val_scores, alpha_losses = [], [], []
         actor_losses, critic_losses = [], []
 
         # initial state
         state = env.reset() # normalized floating point pixel obsvn
         for step in range(max_train_steps):
 
-            # process the state 
-            cropped_state = center_crop_image(state, out_h=self.cropped_img_size)
-
             # sample action
             if step < self.init_steps:
                 action = env.action_space.sample()
             else:
-                action, _ = self.sample_action(cropped_state)
+                action, _ = self.sample_action(state)
 
             # take action
             next_state, reward, done, _ = env.step(action)
@@ -723,11 +459,6 @@ class CurlSacAgent:
                 actor_losses.append(actor_loss)
                 critic_losses.append(critic_loss)
                 alpha_losses.append(alpha_loss)
-
-            # train encoder using contrastive learning
-            if step > self.init_steps and step % self.enc_train_freq == 0:
-                curl_loss = self.train_encoder()
-                curl_losses.append(curl_loss)
 
             # update target networks
             if step > self.init_steps and step % self.target_update_freq == 0:
@@ -753,7 +484,6 @@ class CurlSacAgent:
                     'mean_critic_loss': np.mean(critic_losses),
                     'mean_alpha_loss': np.mean(alpha_losses),
                     'mean_actor_loss': np.mean(actor_losses),
-                    'mean_curl_loss': np.mean(curl_losses),
                 })
 
             if done: # end of episode
@@ -774,7 +504,6 @@ class CurlSacAgent:
         self.actor.save_weights(save_path + 'actor.h5')
         self.critic.save_weights(save_path + 'critic.h5')
         self.target_critic.save_weights(save_path + 'target_critic.h5')
-        self.curl.save_weights(save_path + 'curl.h5')
 
     def load_weights(self, save_path):
         '''
@@ -782,8 +511,7 @@ class CurlSacAgent:
         '''
         self.actor.load_weights(save_path + 'actor.h5')
         self.critic.load_weights(save_path + 'critic.h5')
-        self.target_critic.load_weights(save_path + 'target_critic.h5')
-        self.curl.load_weights(save_path + 'curl.h5')
+        self.target_critics.load_weights(save_path + 'target_critic.h5')
 
 
 
