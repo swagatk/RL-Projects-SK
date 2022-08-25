@@ -367,7 +367,7 @@ class sacAgent:
             q1, q2 = self.critic(states, pi_a)
             min_q = tf.minimum(q1, q2)
             soft_q = min_q - self.alpha * log_pi_a
-            actor_loss = -tf.reduce_mean(soft_q) # corrected on 19/08/2022
+            actor_loss = -tf.reduce_mean(soft_q) # corrected on 19/08/2022 (maximize the loss)
         grads = tape.gradient(actor_loss, self.actor.model.trainable_variables)
         self.actor.optimizer.apply_gradients(zip(grads, self.actor.model.trainable_variables))
         return actor_loss.numpy()
@@ -479,8 +479,8 @@ class sacAgent:
                     'step': step,
                     'episodes': episode,
                     'ep_reward': ep_reward,
-                    'mean_ep_reward': np.mean(ep_rewards),
-                    'mean_val_score': np.mean(val_scores),
+                    'mean_ep_reward': np.mean(ep_rewards[-50:]),
+                    'mean_val_score': np.mean(val_scores[-10:]),
                     'mean_critic_loss': np.mean(critic_losses),
                     'mean_alpha_loss': np.mean(alpha_losses),
                     'mean_actor_loss': np.mean(actor_losses),

@@ -7,7 +7,7 @@ Utility functions
 '''
 import os
 import signal
-import time
+import random 
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
@@ -86,6 +86,7 @@ def visualize_stacked_images(stacked_img, save_fig=False, fig_name='stacked_img.
 def set_seed_everywhere(seed=42, env=None) -> None:
     tf.random.set_seed = seed 
     np.random.seed(seed)
+    random.seed(seed)
     if env is not None:
         env.seed(seed)
 

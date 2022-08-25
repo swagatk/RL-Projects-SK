@@ -48,6 +48,7 @@ if gpus:
     try:
         for gpu in gpus:
             print(gpu)
+            tf.config.experimental.set_visible_devices(gpu[1], 'GPU')
             tf.config.experimental.set_memory_growth(gpu, True)
     except RuntimeError as e:
         print(e)
@@ -70,14 +71,14 @@ else:
 config_dict = dict(
     buffer_capacity = 30000,    
     batch_size = 128,  
-    algo = 'curl_sac',   # 'curl_sac', 'sac'              
+    algo = 'sac',   # 'curl_sac', 'sac'              
     env_name = 'pbmg',          # environment name
     image_obsvn=True,
     stack_size=3,
     include_reconst_loss=True,
     include_consistency_loss=True,
     frozen_encoder=False,       # freeze encoder weights for RL training
-    org_img_size=100,        # original image size before augmentation
+    org_img_size=84,        # original image size before augmentation
 )
 #######################
 WB_LOG = True
