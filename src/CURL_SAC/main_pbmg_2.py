@@ -53,18 +53,18 @@ if gpus:
     except RuntimeError as e:
         print(e)
 
-config = tf.compat.v1.ConfigProto()
-config.gpu_options.allow_growth = True
-config.log_device_placement = True
-sess = tf.compat.v1.Session(config=config)
-################################################
-# check GPU device
-device_name = tf.test.gpu_device_name()
-if device_name != '/device:GPU:0':
-    #raise SystemError('GPU device not found')
-    print('GPU not found. Will be using CPU')
-else:
-    print('Found GPU at: {}'.format(device_name))
+# config = tf.compat.v1.ConfigProto()
+# config.gpu_options.allow_growth = True
+# config.log_device_placement = True
+# sess = tf.compat.v1.Session(config=config)
+# ################################################
+# # check GPU device
+# device_name = tf.test.gpu_device_name()
+# if device_name != '/device:GPU:0':
+#     #raise SystemError('GPU device not found')
+#     print('GPU not found. Will be using CPU')
+# else:
+#     print('Found GPU at: {}'.format(device_name))
 ##############################################
 # #### Hyper-parameters 
 ##########################################
