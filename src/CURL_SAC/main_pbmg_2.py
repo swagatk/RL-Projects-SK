@@ -46,9 +46,9 @@ assert version.parse(tf.__version__).release[0] >= 2, \
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     try:
+        tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
         for gpu in gpus:
             print(gpu)
-            tf.config.experimental.set_visible_devices(gpu[1], 'GPU')
             tf.config.experimental.set_memory_growth(gpu, True)
     except RuntimeError as e:
         print(e)
@@ -81,7 +81,7 @@ config_dict = dict(
     org_img_size=84,        # original image size before augmentation
 )
 #######################
-WB_LOG = True
+WB_LOG = False
 ###########################################
 # wandb related configuration
 if WB_LOG:
@@ -190,6 +190,7 @@ if __name__ == "__main__":
             latent_feature_dim=50,
             buffer_capacity=config_dict['buffer_capacity'],
             batch_size=config_dict['batch_size'],
+            frozen_encoder=config_dict['frozen_encoder'],
         )
     else:
         raise NotImplementedError("Algorithm not implemented")

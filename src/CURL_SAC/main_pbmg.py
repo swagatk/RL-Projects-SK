@@ -46,9 +46,9 @@ assert version.parse(tf.__version__).release[0] >= 2, \
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     try:
+        #tf.config.experimental.set_visible_devices(gpus[1], 'GPU')
         for gpu in gpus:
             print(gpu)
-            tf.config.experimental.set_visible_devices(gpu[1], 'GPU')
             tf.config.experimental.set_memory_growth(gpu, True)
     except RuntimeError as e:
         print(e)
@@ -75,13 +75,13 @@ config_dict = dict(
     env_name = 'pbmg',          # environment name
     image_obsvn=True,
     stack_size=3,
-    include_reconst_loss=True,
+    include_reconst_loss=False,
     include_consistency_loss=True,
     frozen_encoder=False,       # freeze encoder weights for RL training
     org_img_size=100,        # original image size before augmentation
 )
 #######################
-WB_LOG = True
+WB_LOG = False
 ###########################################
 # wandb related configuration
 if WB_LOG:

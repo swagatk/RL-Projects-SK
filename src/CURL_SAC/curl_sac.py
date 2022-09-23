@@ -306,6 +306,12 @@ class CURL:
             self.alpha_reconst = 0.0
             self.alpha_consy = 0.0
 
+        
+        print('alpha_cont :', self.alpha_cont)
+        print('alpha_reconst :', self.alpha_reconst)
+        print('alpha_consy :', self.alpha_consy)
+        print('Check these values')
+
     def encode(self, x, ema=False):
         if ema:
             z_out = self.encoder_target(x)
@@ -603,11 +609,6 @@ class CurlSacAgent:
                                 self.critic.model.trainable_variables):
             wt_target = self.polyak * wt_target + (1 - self.polyak) * wt_source
 
-        # Probably, this is redundant as encoder is getting updated in the critic network
-        # for wt_target, wt_source in zip(self.curl.encoder_target.model.trainable_variables,
-        #                             self.curl.encoder.model.trainable_variables):
-        #     wt_target = self.polyak * wt_target + (1 - self.polyak) * wt_source
-
     def create_image_pairs(self, states, next_states, aug_method='crop'):
 
         if aug_method == 'crop':
@@ -748,8 +749,8 @@ class CurlSacAgent:
                     'step': step,
                     'episodes': episode,
                     'ep_reward': ep_reward,
-                    'mean_ep_reward': np.mean(ep_rewards[-50:]),
-                    'mean_val_score': np.mean(val_scores[-10:]),
+                    'mean_ep_reward': np.mean(ep_rewards),
+                    'mean_val_score': np.mean(val_scores),
                     'mean_critic_loss': np.mean(critic_losses),
                     'mean_alpha_loss': np.mean(alpha_losses),
                     'mean_actor_loss': np.mean(actor_losses),
