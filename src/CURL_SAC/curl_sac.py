@@ -15,21 +15,15 @@ Updates:
     - Incorporates consistency Loss
 
 01/08/2022:
-    - Possible BUG: Having a common encoder is problematic. Every model is trying to
-        update this encoder. If it is frozen inside a class, it becomes 
-        frozen everywhere. Probably, it is a better idea to have different
-        encoders for each model and share the weights betweeen them.  
-    - Its not a bug anymore. There is no other way to share weights between
-        actor & critic encoders. Note that the actor & critic encoders are getting
-        updated indepedently by the SAC algorithm. It is important to tie the 
-        encoders together. So copying at regular intervals is not a good idea as the
-        encoder learn will get lost when the weights are copied. 
-    - The target critic encoder should not be tied to critic encoder. They should
-        be separate. This is a new change here. 
+    - Common encoder for actor & critic network
 
 19/08/2022:
     - Just noticed that a minus sign was missing from actor loss in train_actor() function. 
     - In target update, I remove the code for updating encoder weights separately
+
+22/09/2022:
+    - In CURL, the loss coefficients are passed by the user.
+    - It should supercede curl_sac.py
     
 """
 import numpy as np
@@ -259,6 +253,9 @@ class CURL:
     def __init__(self, obs_shape, z_dim, batch_size,
                 critic, target_critic,
                 learning_rate=1e-3,
+                alpha_c=1.0,
+                alpha_r=0.0,
+                alpha_cy=0.0,
                 include_reconst_loss=False,
                 include_consistency_loss=False) -> None:
         
@@ -270,6 +267,9 @@ class CURL:
         self.encoder_target = target_critic.encoder 
         self.include_reconst_loss = include_reconst_loss
         self.include_consistency_loss = include_consistency_loss
+        self.alpha_consy = alpha_cy
+        self.alpha_cont = alpha_c
+        self.alpha_reconst = alpha_r 
 
         if self.z_dim != self.encoder.feature_dim:
             self.z_dim = self.encoder.feature_dim
@@ -288,23 +288,23 @@ class CURL:
         if self.include_consistency_loss:
             self.feature_predictor = FeaturePredictor(self.z_dim)
 
-        # weightage for different losses 
-        if self.include_reconst_loss and not self.include_consistency_loss:
-            self.alpha_cont = 0.5  # contrastive + reconstruction losses
-            self.alpha_reconst = 0.5
-            self.alpha_consy = 0.0
-        elif not self.include_reconst_loss and self.include_consistency_loss:
-            self.alpha_cont = 0.5  # contrastive + consistency loss
-            self.alpha_reconst = 0.0
-            self.alpha_consy = 0.5
-        elif self.include_reconst_loss and self.include_consistency_loss:
-            self.alpha_cont = 0.33 # contrastive + reconstruction + consistency loss
-            self.alpha_reconst = 0.33
-            self.alpha_consy = 0.33
-        else:       # only contrastive loss 
-            self.alpha_cont = 1.0
-            self.alpha_reconst = 0.0
-            self.alpha_consy = 0.0
+        # # weightage for different losses 
+        # if self.include_reconst_loss and not self.include_consistency_loss:
+        #     self.alpha_cont = 0.5  # contrastive + reconstruction losses
+        #     self.alpha_reconst = 0.5
+        #     self.alpha_consy = 0.0
+        # elif not self.include_reconst_loss and self.include_consistency_loss:
+        #     self.alpha_cont = 0.5  # contrastive + consistency loss
+        #     self.alpha_reconst = 0.0
+        #     self.alpha_consy = 0.5
+        # elif self.include_reconst_loss and self.include_consistency_loss:
+        #     self.alpha_cont = 0.33 # contrastive + reconstruction + consistency loss
+        #     self.alpha_reconst = 0.33
+        #     self.alpha_consy = 0.33
+        # else:       # only contrastive loss 
+        #     self.alpha_cont = 1.0
+        #     self.alpha_reconst = 0.0
+        #     self.alpha_consy = 0.0
 
         
         print('alpha_cont :', self.alpha_cont)
@@ -451,14 +451,18 @@ class CurlSacAgent:
                 alpha=0.2,      # entropy coefficient
                 gamma=0.99,     # discount factor
                 polyak=0.995,   # soft update factor: tau
-                curl_feature_dim=128,    # latent feature dim
+                latent_feature_dim=128,    # latent feature dim
                 cropped_img_size=84,
                 stack_size=3,   # not used
-                init_steps=500,
+                init_steps=1000,
                 eval_freq=1000,
+                eval_episodes=10,
                 ac_train_freq=2,
                 enc_train_freq=1,
                 target_update_freq=2,           
+                alpha_r=0.0,       # coeff for reconstruction loss
+                alpha_c=1.0,       # coeff for contrastive loss
+                alpha_cy=0.0,      # coeff for consistency loss
                 include_reconst_loss=False,
                 include_consistency_loss=False,
                 frozen_encoder=False):
@@ -471,12 +475,15 @@ class CurlSacAgent:
             self.batch_size = batch_size
             self.gamma = gamma               
             self.polyak = polyak 
-            self.feature_dim = curl_feature_dim
+            self.feature_dim = latent_feature_dim
             self.cropped_img_size = cropped_img_size
             self.stack_size = stack_size # not used
             self.include_reconst_loss = include_reconst_loss
             self.include_consistency_loss = include_consistency_loss
             self.frozen_encoder = frozen_encoder
+            self.alpha_c = alpha_c
+            self.alpha_r = alpha_r 
+            self.alpha_cy = alpha_cy 
 
             # update frequencies
             self.ac_train_freq = ac_train_freq
@@ -484,6 +491,7 @@ class CurlSacAgent:
             self.eval_freq = eval_freq
             self.target_update_freq = target_update_freq
             self.init_steps = init_steps
+            self.eval_episodes = eval_episodes
             
             assert len(self.state_size) == 3, 'image observation of shape (h, w, c)'
 
@@ -537,7 +545,10 @@ class CurlSacAgent:
                 critic=self.critic,
                 target_critic=self.target_critic,
                 include_reconst_loss=self.include_reconst_loss,
-                include_consistency_loss=self.include_consistency_loss
+                include_consistency_loss=self.include_consistency_loss,
+                alpha_c=self.alpha_c,
+                alpha_r=self.alpha_r,
+                alpha_cy=self.alpha_cy
             )
 
             # entropy coefficient as a tunable parameter
@@ -661,12 +672,12 @@ class CurlSacAgent:
 
         return  curl_loss
 
-    def validate(self, env, max_eps=20):
+    def validate(self, env):
         '''
         evaluate model performance
         '''
         ep_reward_list = []
-        for _ in range(max_eps):
+        for _ in range(self.eval_episodes):
             state = env.reset()  # normalized floating point pixel obsvn
             t = 0
             ep_reward = 0
