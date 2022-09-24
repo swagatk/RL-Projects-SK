@@ -30,7 +30,7 @@ sys.path.append(os.path.dirname(current_dir)) # parent director
 
 # Local imports
 #from  b.curl_sac_dir.curl_sac_2 import CurlSacAgent
-from curl_sac_dmc import CurlSacAgent
+from CURL_SAC.curl_sac import CurlSacAgent
 from common.utils import check_gpu_availability, set_seed_everywhere
 from curl_utils import FrameStackWrapper4DMC
 ########################################
@@ -61,8 +61,8 @@ config = dict(
     include_reconst_loss=False,
     include_constcy_loss=False,
     seed=-1,
-    pre_transform_image_size=100,
-    aug_image_size=84,
+    pre_transform_image_size=84,
+    aug_image_size=64,
     latent_feature_dim=50,
     alpha_c=1.0,
     alpha_r=0.0,

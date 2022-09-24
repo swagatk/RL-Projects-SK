@@ -288,24 +288,6 @@ class CURL:
         if self.include_consistency_loss:
             self.feature_predictor = FeaturePredictor(self.z_dim)
 
-        # # weightage for different losses 
-        # if self.include_reconst_loss and not self.include_consistency_loss:
-        #     self.alpha_cont = 0.5  # contrastive + reconstruction losses
-        #     self.alpha_reconst = 0.5
-        #     self.alpha_consy = 0.0
-        # elif not self.include_reconst_loss and self.include_consistency_loss:
-        #     self.alpha_cont = 0.5  # contrastive + consistency loss
-        #     self.alpha_reconst = 0.0
-        #     self.alpha_consy = 0.5
-        # elif self.include_reconst_loss and self.include_consistency_loss:
-        #     self.alpha_cont = 0.33 # contrastive + reconstruction + consistency loss
-        #     self.alpha_reconst = 0.33
-        #     self.alpha_consy = 0.33
-        # else:       # only contrastive loss 
-        #     self.alpha_cont = 1.0
-        #     self.alpha_reconst = 0.0
-        #     self.alpha_consy = 0.0
-
         
         print('alpha_cont :', self.alpha_cont)
         print('alpha_reconst :', self.alpha_reconst)
