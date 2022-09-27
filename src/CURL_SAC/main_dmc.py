@@ -17,7 +17,6 @@ from packaging import version
 import os
 import datetime
 import numpy as np
-from rich.console import Console
 
 # Add the current folder to python's import path
 import sys
@@ -39,7 +38,8 @@ print("Tensorflow Version: ", tf.__version__)
 assert version.parse(tf.__version__).release[0] >= 2, \
     "This program requires Tensorflow 2.0 or above"
 #######################################
-# Random seed
+# Solution for GLFW Initialization Error on Remote Server
+os.environ['MUJOCO_GL'] = "egl"
 #######################################################
 gpu_status = check_gpu_availability()
 if gpu_status == False:
@@ -48,10 +48,9 @@ if gpu_status == False:
 # Configurations & Hyper-parameters
 # 
 ##########################################
-console = Console()
 config = dict(
     buffer_capacity = 50000,    # 50k (racecar)  # 20K (kuka)
-    batch_size = 256,  
+    batch_size = 128,  
     use_attention = None, 
     algo = 'curl_sac',               
     env_name = 'cheetah',          # environment name
@@ -63,13 +62,15 @@ config = dict(
     seed=-1,
     pre_transform_image_size=84,
     aug_image_size=64,
-    latent_feature_dim=50,
+    latent_feature_dim=128,
+    actor_dense_layers=[1024, 1024],
+    critic_dense_layers=[1024, 1024],
     alpha_c=1.0,
     alpha_r=0.0,
     alpha_cy=0.0,
 )
 #######################
-WB_LOG = True
+WB_LOG = False
 ###########################################
 # wandb related configuration
 if WB_LOG:
@@ -83,7 +84,7 @@ if __name__ == "__main__":
 
     if config["seed"] == -1:
         config["seed"] = np.random.randint(0, 100000)
-        console.log("random seed value: ", config['seed'])
+        print("random seed value: ", config['seed'])
         set_seed_everywhere(config['seed'])
 
     env = dmc2gym.make(
@@ -96,9 +97,8 @@ if __name__ == "__main__":
         width=config['pre_transform_image_size'],
         frame_skip=8
     )
-    org_obs_shape = env.observation_space.shape # channel first format
 
-     # Apply stacking wrapper to the environment
+    # Apply stacking wrapper to the environment
     env = FrameStackWrapper4DMC(env, config['stack_size'])
 
     state_size = env.observation_space.shape
@@ -131,6 +131,8 @@ if __name__ == "__main__":
             alpha_r=config['alpha_r'],
             alpha_c=config['alpha_c'],
             alpha_cy=config['alpha_cy'], 
+            actor_dense_layers=config['actor_dense_layers'],
+            critic_dense_layers=config['critic_dense_layers'],
         )
 
         # Train

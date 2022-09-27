@@ -191,9 +191,13 @@ class CurlCritic:
         self.model_name = model_name
 
         self.Q1 = QFunction(self.encoder_feature_dim, 
-                        self.action_size[0], model_name='q1_function')
+                        self.action_size[0], 
+                        dense_layers=critic_dense_layers,
+                        model_name='q1_function')
         self.Q2 = QFunction(self.encoder_feature_dim, 
-                        self.action_size[0], model_name='q2_function')
+                        self.action_size[0], 
+                        dense_layers=critic_dense_layers,
+                        model_name='q2_function')
 
 
         if encoder is None:
@@ -445,6 +449,8 @@ class CurlSacAgent:
                 alpha_r=0.0,       # coeff for reconstruction loss
                 alpha_c=1.0,       # coeff for contrastive loss
                 alpha_cy=0.0,      # coeff for consistency loss
+                actor_dense_layers=[1024, 1024],
+                critic_dense_layers=[1024, 1024],
                 include_reconst_loss=False,
                 include_consistency_loss=False,
                 frozen_encoder=False):
@@ -460,6 +466,8 @@ class CurlSacAgent:
             self.feature_dim = latent_feature_dim
             self.cropped_img_size = cropped_img_size
             self.stack_size = stack_size # not used
+            self.actor_dense_layers = actor_dense_layers
+            self.critic_dense_layers = critic_dense_layers
             self.include_reconst_loss = include_reconst_loss
             self.include_consistency_loss = include_consistency_loss
             self.frozen_encoder = frozen_encoder
@@ -490,6 +498,7 @@ class CurlSacAgent:
                     action_size=self.action_shape,
                     action_upper_bound=self.action_upper_bound,
                     encoder_feature_dim=self.feature_dim,
+                    actor_dense_layers=self.actor_dense_layers,
                     encoder=self.encoder, # pass the encoder network
                     frozen_encoder=self.frozen_encoder
                     )
@@ -500,6 +509,7 @@ class CurlSacAgent:
                     action_size=self.action_shape,
                     encoder_feature_dim=self.feature_dim,
                     learning_rate=self.lr,
+                    critic_dense_layers=self.critic_dense_layers,
                     encoder = self.encoder, # pass the encoder network
                     frozen_encoder=self.frozen_encoder
             )
@@ -511,6 +521,7 @@ class CurlSacAgent:
                     action_size=self.action_shape,
                     encoder_feature_dim=self.feature_dim,
                     learning_rate=self.lr,
+                    critic_dense_layers=self.critic_dense_layers,
                     #encoder=self.encoder,  # pass the encoder network 
                     model_name='target_critic'
             )
@@ -577,6 +588,7 @@ class CurlSacAgent:
             min_q_target = tf.minimum(q1_target, q2_target)
 
             soft_q_target = min_q_target - self.alpha * tf.reduce_sum(log_pi_a, axis=-1, keepdims=True) 
+            #soft_q_target = min_q_target - self.alpha * log_pi_a # does not work
 
             y = tf.stop_gradient(rewards + self.gamma * soft_q_target * (1 - dones)) 
 
@@ -591,16 +603,28 @@ class CurlSacAgent:
             pi_a, log_pi_a = self.actor.policy(states)
             q1, q2 = self.critic(states, pi_a)
             min_q = tf.minimum(q1, q2)
-            soft_q = min_q - self.alpha * log_pi_a
+            soft_q = min_q - self.alpha * tf.reduce_sum(log_pi_a, axis=-1)
             actor_loss = -tf.reduce_mean(soft_q) # corrected on 19/08/2020
         grads = tape.gradient(actor_loss, self.actor.model.trainable_variables)
         self.actor.optimizer.apply_gradients(zip(grads, self.actor.model.trainable_variables))
         return actor_loss.numpy()
 
     def update_target_networks(self):
-        for wt_target, wt_source in zip(self.target_critic.model.trainable_variables, 
-                                self.critic.model.trainable_variables):
+        # for wt_target, wt_source in zip(self.target_critic.model.trainable_variables, 
+        #                         self.critic.model.trainable_variables):
+        #     wt_target = self.polyak * wt_target + (1 - self.polyak) * wt_source
+        for wt_target, wt_source in zip(self.target_critic.Q1.model.trainable_variables, 
+                        self.critic.Q1.model.trainable_variables):
             wt_target = self.polyak * wt_target + (1 - self.polyak) * wt_source
+
+        for wt_target, wt_source in zip(self.target_critic.Q2.model.trainable_variables, 
+                        self.critic.Q2.model.trainable_variables):
+            wt_target = self.polyak * wt_target + (1 - self.polyak) * wt_source
+
+        for wt_target, wt_source in zip(self.target_critic.encoder.model.trainable_variables, 
+                        self.critic.encoder.model.trainable_variables):
+            wt_target = self.polyak * wt_target + (1 - self.polyak) * wt_source
+
 
     def create_image_pairs(self, states, next_states, aug_method='crop'):
 
