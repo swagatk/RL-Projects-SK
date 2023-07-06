@@ -22,4 +22,7 @@ Reinforcement Learning Projects
 - Mujoco Environments
    - FetchReach-v1
 
+- CURL_SAC (Tensorflow)
+- CRC_RL (Pytorch) 
+
 

@@ -10,20 +10,28 @@ class Encoder:
         conv_layers: list of convolutional layers
         dense_layers: list of dense layers
     """
-    def __init__(self, obs_shape, feature_dim, **kwargs):
+    def __init__(self, obs_shape, feature_dim,
+                    conv_layers=[32, 32,],
+                    dense_layers=[64,],
+                    filter_size=3,
+                    strides=1,
+                    padding='same',
+                    pooling_size=2,
+                    learning_rate=1e-3):
         assert len(obs_shape) == 3, 'Input should be an image of shape (h, w, c)' # (height, width, channels)
         self.obs_shape = obs_shape
         self.feature_dim = feature_dim
-        self.conv_layers = kwargs.get('conv_layers', [32, 32,])
-        self.dense_layers = kwargs.get('dense_layers', [64,])
-        self.conv_filter_size = kwargs.get('filter_size', 3)
-        self.strides = kwargs.get('strides', (1,1))
-        self.padding = kwargs.get('padding', 'same')
-        self.pooling_size = kwargs.get('pooling_size', (2,2))
+        self.conv_layers = conv_layers
+        self.dense_layers = dense_layers
+        self.conv_filter_size = filter_size
+        self.strides = strides
+        self.padding = padding 
+        self.pooling_size = pooling_size
+        self.lr = learning_rate 
 
         # Create the model
         self.model = self._build_model()
-        self.optimizer = tf.keras.optimizers.Adam(learning_rate=0.001)
+        self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)
 
     def _build_model(self):
         inputs = tf.keras.layers.Input(shape=self.obs_shape, name="input_layer")
@@ -40,6 +48,7 @@ class Encoder:
         x = tf.keras.layers.Dense(self.feature_dim, activation='linear')(x)
         outputs = tf.keras.layers.LayerNormalization(name="output_layer")(x)
         model = tf.keras.models.Model(inputs, outputs, name="encoder")
+        model.summary()
         return model
 
     def __call__(self, state):
@@ -79,19 +88,25 @@ class Decoder:
 
         images are stacked along the depth channel. 
     """
-    def __init__(self, obs_shape, feature_dim, **kwargs):
+    def __init__(self, obs_shape, feature_dim,
+                    filter_size=3,
+                    conv_layers=[32, 32,],
+                    dense_layers=[64, ],
+                    strides=1,
+                    padding='same',
+                    pooling_size=2,
+                    learning_rate=1e-3):
         assert len(obs_shape) == 3, 'Input should be an image stack of shape (h, w, c)' # (height, width, channels)
         self.obs_shape = obs_shape
         self.feature_dim = feature_dim
         self.num_channels = obs_shape[2]    # image shape: (height, width, channels)
-
-        self.kernel_size = kwargs.get('kernel_size', 3)
-        self.conv_layers = kwargs.get('conv_layers', [32, 32,])
-        self.dense_layers = kwargs.get('dense_layers', [64,])
-        self.conv_filter_size = kwargs.get('filter_size', 3)
-        self.strides = kwargs.get('strides', (1,1))
-        self.padding = kwargs.get('padding', 'same')
-        self.lr = kwargs.get('lr', 1e-3)
+        self.conv_layers = conv_layers
+        self.dense_layers = dense_layers
+        self.conv_filter_size = filter_size
+        self.strides = strides
+        self.padding = padding
+        self.pooling_size = pooling_size
+        self.lr = learning_rate 
 
         # Create the model
         self.model = self._build_model()
@@ -111,19 +126,20 @@ class Decoder:
         for i in range(len(self.conv_layers)):
             x = tf.keras.layers.Conv2DTranspose(
                                     filters=self.conv_layers[i],
-                                    kernel_size=self.kernel_size,
+                                    kernel_size=self.filter_size,
                                     strides=self.strides,
                                     padding=self.padding,
                                     activation='relu')(x)
             x = tf.keras.layers.BatchNormalization()(x)
         outputs = tf.keras.layers.Conv2DTranspose(
                                     filters=self.num_channels,
-                                    kernel_size=self.kernel_size,
+                                    kernel_size=self.filter_size,
                                     padding=self.padding,
                                     strides=self.strides,
                                     activation='sigmoid',
                                     name='decoder_output')(x)
         model = tf.keras.models.Model(inputs, outputs, name="decoder")
+        model.summary()
         return model
 
     def __call__(self, state):
@@ -134,10 +150,12 @@ class Decoder:
 
 
 class FeaturePredictor:
-    def __init__(self, feature_dim, **kwargs) -> None:
+    def __init__(self, feature_dim,
+                    dense_layers=[256, 128, ],
+                    learning_rate=1e-3) -> None:
         self.feature_dim = feature_dim
-        self.lr = kwargs.get('lr', 1e-3)
-        self.dense_layers = kwargs.get('dense_layers', [256, 128,])
+        self.lr = learning_rate 
+        self.dense_layers = dense_layers
         self.model = self._build_model()
         self.optimizer = tf.keras.optimizers.Adam(learning_rate=self.lr)
 
@@ -150,6 +168,7 @@ class FeaturePredictor:
         outputs = tf.keras.layers.Dense(self.feature_dim,
                     activation='linear', name='output_layer')(x)
         model = tf.keras.models.Model(inputs, outputs, name="feature_predictor")
+        model.summary()
         return model
 
     def __call__(self, x):

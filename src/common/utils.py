@@ -81,6 +81,7 @@ def visualize_stacked_images(stacked_img, save_fig=False, fig_name='stacked_img.
     plt.show()
     if save_fig:
         plt.savefig(uniquify(fig_name))
+    plt.close(fig)
 
 ###################################33
 def set_seed_everywhere(seed=42, env=None) -> None:

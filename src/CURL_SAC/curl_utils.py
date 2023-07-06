@@ -7,6 +7,7 @@ import gym
 from collections import deque
 import numpy as np
 import json
+import sys
 
 ###############################
 # FrameStackWrapper
@@ -67,6 +68,65 @@ class FrameStackWrapper4DMC(gym.Wrapper):
             stacked_frame = np.concatenate(self._frames, axis=2) # H, W, C*k
         return stacked_frame
 
+#######################################
+class Config:
+    """
+    Config class which contains data, train and model hyperparameters
+    Used for processing JSON files
+    
+    """
+
+
+    def __init__(
+        self,
+        env,
+        replay_buffer,
+        train,
+        eval,
+        critic,
+        actor,
+        encoder,
+        decoder,
+        predictor,
+        sac,
+        params,
+    ):
+        self.env = env
+        self.replay_buffer = replay_buffer
+        self.train = train
+        self.eval = eval
+        self.critic = critic
+        self.actor = actor
+        self.encoder = encoder
+        self.decoder = decoder
+        self.predictor = predictor
+        self.sac = sac
+        self.params = params
+
+    @classmethod
+    def from_json(cls, cfg):
+        """Creates config from json"""
+        params = json.loads(json.dumps(cfg), object_hook=HelperObject)
+        return cls(
+            params.env,
+            params.replay_buffer,
+            params.train,
+            params.eval,
+            params.critic,
+            params.actor,
+            params.encoder,
+            params.decoder,
+            params.predictor,
+            params.sac,
+            params.params,
+        )
+
+
+class HelperObject(object):
+    """Helper class to convert json into Python object"""
+
+    def __init__(self, dict_):
+        self.__dict__.update(dict_)
 ###############################
 if __name__ == '__main__':
 
