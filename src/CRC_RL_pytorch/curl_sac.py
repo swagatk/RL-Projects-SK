@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import wandb
 from rich.console import Console
-from feature_extractor_2 import Encoder, Decoder, Predictor
+from feature_extractor import Encoder, Decoder, Predictor
 import augmentations
 import utils
 from torchsummary import summary
