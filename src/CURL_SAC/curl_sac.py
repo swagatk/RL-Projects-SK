@@ -15,6 +15,7 @@ Updates:
     - Incorporates consistency Loss
 
 01/08/2022:
+<<<<<<< HEAD
     - Possible BUG: Having a common encoder is problematic. Every model is trying to
         update this encoder. If it is frozen inside a class, it becomes 
         frozen everywhere. Probably, it is a better idea to have different
@@ -28,7 +29,22 @@ Updates:
         be separate. This is a new change here. 
     
 """
+=======
+    - Common encoder for actor & critic network
+
+19/08/2022:
+    - Just noticed that a minus sign was missing from actor loss in train_actor() function. 
+    - In target update, I remove the code for updating encoder weights separately
+
+22/09/2022:
+    - In CURL, the loss coefficients are passed by the user.
+    - It should supercede curl_sac.py
+    
+"""
+from attr import frozen
+>>>>>>> curl_sac
 import numpy as np
+from sklearn.model_selection import learning_curve
 import tensorflow as tf
 import tensorflow_probability as tfp
 import sys
@@ -39,11 +55,19 @@ import pickle
 #sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/common')
 #sys.path.append('/home/swagat/GIT/RL-Projects-SK/src/algo')
 #sys.path.append(os.path.dirname(os.path.realpath(__file__)))
+<<<<<<< HEAD
 sys.path.insert(0, '/home/swagat/GIT/RL-Projects-SK/src/algo/common')
 
 from common.buffer import Buffer
 from encoder import Decoder, Encoder, FeaturePredictor
 from common.utils import uniquify
+=======
+sys.path.insert(0, '/home/swagat/GIT/RL-Projects-SK/src/common')
+
+from common.buffer import Buffer
+from feature_extraction import Decoder, Encoder, FeaturePredictor
+from common.utils import visualize_stacked_images
+>>>>>>> curl_sac
 from augmentation import random_crop, center_crop_image
 
 
@@ -53,25 +77,45 @@ class CurlActor:
         action_upper_bound,
         encoder_feature_dim,
         learning_rate=1e-3,
-        actor_dense_layers=[128, 64],
+        actor_dense_layers=[128, 64, ],
+        enc_dense_layers=[128, 64,],
+        enc_conv_layers=[32, 32, ],
+        encoder=None, 
+        model_name='actor',
         save_model_plot=False,
+<<<<<<< HEAD
         model_name='actor',
         encoder=None,
+=======
+>>>>>>> curl_sac
         frozen_encoder=False) -> None:
 
         self.state_size = state_size # shape: (h, w, c)
         self.action_size = action_size
-        self.lr = learning_rate
         self.action_uppper_bound = action_upper_bound
         self.encoder_feature_dim = encoder_feature_dim
+<<<<<<< HEAD
         self.actor_dense_layers = actor_dense_layers
         self.save_model_plot = save_model_plot
         self.frozen_encoder = frozen_encoder
         self.model_name = model_name
+=======
+        self.model_name = model_name
+        self.frozen_encoder = frozen_encoder 
+        self.save_model_plot = save_model_plot 
+        self.lr = learning_rate
+        self.actor_dense_layers = actor_dense_layers 
+        self.enc_dense_layers = enc_dense_layers
+        self.enc_conv_layers = enc_conv_layers
+
+>>>>>>> curl_sac
 
         if encoder is None:
             self.encoder = Encoder(obs_shape=self.state_size,
-                                feature_dim=self.encoder_feature_dim)
+                                feature_dim=self.encoder_feature_dim,
+                                conv_layers=self.enc_conv_layers,
+                                dense_layers=self.enc_dense_layers,
+                                )
         else:
             self.encoder = encoder
             self.encoder_feature_dim = self.encoder.model.outputs[0].shape[-1]
@@ -146,11 +190,19 @@ class QFunction():
     MLP for Q Function
     """
     def __init__(self, feature_dim, action_dim,
+<<<<<<< HEAD
                     dense_layers=[32, 32],
                     model_name='q_function') -> None:
         self.input_dim = feature_dim + action_dim
         self.dense_layers = dense_layers
         self.model_name = model_name
+=======
+                dense_layers=[32, 32],
+                model_name='q_function') -> None:
+        self.input_dim = feature_dim + action_dim
+        self.model_name = model_name
+        self.dense_layers = dense_layers 
+>>>>>>> curl_sac
         self.model = self._build_net()
         
     def _build_net(self):
@@ -174,17 +226,25 @@ class QFunction():
 class CurlCritic:
     def __init__(self, state_size, action_size,
                 encoder_feature_dim,
-                learning_rate = 1e-3,
+                learning_rate=1e-3,
                 gamma=0.95,
-                critic_dense_layers=[32, 32],
+                critic_dense_layers=[128, 64, ],
+                enc_dense_layers=[32, 32, ],
+                enc_conv_layers=[64, 64, ],
                 save_model_plot=False,
                 model_name='critic',
                 encoder=None,
+<<<<<<< HEAD
                 frozen_encoder=False) -> None:
+=======
+                frozen_encoder=False,
+                ) -> None:
+>>>>>>> curl_sac
 
         self.state_size = state_size
         self.action_size = action_size
         self.encoder_feature_dim = encoder_feature_dim
+<<<<<<< HEAD
         self.lr = learning_rate
         self.gamma = gamma 
         self.critic_dense_layers=critic_dense_layers
@@ -196,12 +256,34 @@ class CurlCritic:
                         self.action_size[0], model_name='q1_function')
         self.Q2 = QFunction(self.encoder_feature_dim, 
                         self.action_size[0], model_name='q2_function')
+=======
+        self.save_model_plot = save_model_plot 
+        self.frozen_encoder = frozen_encoder
+        self.model_name = model_name
+        self.lr = learning_rate 
+        self.gamma = gamma
+        self.critic_dense_layers = critic_dense_layers 
+        self.enc_dense_layers = enc_dense_layers
+        self.enc_conv_layers = enc_conv_layers
+
+        self.Q1 = QFunction(self.encoder_feature_dim, 
+                        self.action_size[0], 
+                        dense_layers=self.critic_dense_layers,
+                        model_name='q1_function')
+
+        self.Q2 = QFunction(self.encoder_feature_dim, 
+                        self.action_size[0], 
+                        dense_layers=self.critic_dense_layers,
+                        model_name='q2_function')
+>>>>>>> curl_sac
 
 
         if encoder is None:
             self.encoder = Encoder(
                             obs_shape=self.state_size,
-                            feature_dim=self.encoder_feature_dim
+                            feature_dim=self.encoder_feature_dim,
+                            dense_layers=self.enc_dense_layers,
+                            conv_layers=self.enc_conv_layers,
                             )
         else:
             self.encoder = encoder
@@ -255,6 +337,12 @@ class CURL:
     def __init__(self, obs_shape, z_dim, batch_size,
                 critic, target_critic,
                 learning_rate=1e-3,
+<<<<<<< HEAD
+=======
+                alpha_c=1.0,
+                alpha_r=0.0,
+                alpha_cy=0.0,
+>>>>>>> curl_sac
                 include_reconst_loss=False,
                 include_consistency_loss=False) -> None:
         
@@ -266,6 +354,12 @@ class CURL:
         self.encoder_target = target_critic.encoder 
         self.include_reconst_loss = include_reconst_loss
         self.include_consistency_loss = include_consistency_loss
+<<<<<<< HEAD
+=======
+        self.alpha_consy = alpha_cy
+        self.alpha_cont = alpha_c
+        self.alpha_reconst = alpha_r 
+>>>>>>> curl_sac
 
         if self.z_dim != self.encoder.feature_dim:
             self.z_dim = self.encoder.feature_dim
@@ -284,6 +378,15 @@ class CURL:
         if self.include_consistency_loss:
             self.feature_predictor = FeaturePredictor(self.z_dim)
 
+<<<<<<< HEAD
+=======
+        
+        print('alpha_cont :', self.alpha_cont)
+        print('alpha_reconst :', self.alpha_reconst)
+        print('alpha_consy :', self.alpha_consy)
+        print('Check these values')
+
+>>>>>>> curl_sac
     def encode(self, x, ema=False):
         if ema:
             z_out = self.encoder_target(x)
@@ -343,7 +446,11 @@ class CURL:
         consy_loss = self.feature_predictor.train(h_aug, h)
         return consy_loss
 
+<<<<<<< HEAD
     def train_encoder(self, x_a, x_pos, obs, alpha_1=0.33, alpha_2=0.33, alpha_3=0.33):
+=======
+    def train_encoder(self, x_a, x_pos, obs):
+>>>>>>> curl_sac
         """ train the model on the data
         Arguments:
         x_a: (B, H, W, C) - anchor observations after augmentation
@@ -370,14 +477,21 @@ class CURL:
             logits, labels = self.compute_logits(z_a, z_pos)
 
             # Contrastive loos
+<<<<<<< HEAD
             cont_loss = tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels)
+=======
+            cont_loss = tf.math.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(logits=logits, labels=labels))
+>>>>>>> curl_sac
 
             # reconstruction loss
             if self.include_reconst_loss:
                 h = self.encoder(obs)
                 rec_obs = self.decoder(h)
                 reconst_loss = tf.reduce_mean(tf.keras.metrics.mean_squared_error(obs, rec_obs))
+<<<<<<< HEAD
                 loss = cont_loss + reconst_loss 
+=======
+>>>>>>> curl_sac
             else:
                 reconst_loss = 0
 
@@ -395,9 +509,15 @@ class CURL:
                 consistency_loss = 0
 
 
+<<<<<<< HEAD
             total_loss = alpha_1 *  cont_loss + \
                             alpha_2 * reconst_loss + \
                                 alpha_3  * consistency_loss
+=======
+            total_loss = self.alpha_cont *  cont_loss + \
+                            self.alpha_reconst * reconst_loss + \
+                                self.alpha_consy  * consistency_loss
+>>>>>>> curl_sac
 
         enc_wts = self.encoder.model.trainable_variables
         enc_grads = enc_tape.gradient(total_loss, enc_wts)
@@ -424,18 +544,33 @@ class CurlSacAgent:
                 alpha=0.2,      # entropy coefficient
                 gamma=0.99,     # discount factor
                 polyak=0.995,   # soft update factor: tau
-                curl_feature_dim=128,    # latent feature dim
+                latent_feature_dim=128,    # latent feature dim
                 cropped_img_size=84,
                 stack_size=3,   # not used
-                init_steps=500,
+                init_steps=1000,
+                max_training_steps=100000,
                 eval_freq=1000,
+                eval_episodes=10,
                 ac_train_freq=2,
                 enc_train_freq=1,
                 target_update_freq=2,           
+<<<<<<< HEAD
                 include_reconst_loss=False,
                 include_consistency_loss=False,
                 frozen_encoder=False,
                 ):
+=======
+                alpha_r=0.0,       # coeff for reconstruction loss
+                alpha_c=1.0,       # coeff for contrastive loss
+                alpha_cy=0.0,      # coeff for consistency loss
+                actor_dense_layers=[256, 256],
+                critic_dense_layers=[256, 256],
+                enc_conv_layers=[32, 32,],
+                enc_dense_layers=[64, ],
+                include_reconst_loss=False,
+                include_consistency_loss=False,
+                frozen_encoder=False):
+>>>>>>> curl_sac
             
             self.state_size = state_size
             self.action_shape = action_size
@@ -445,12 +580,26 @@ class CurlSacAgent:
             self.batch_size = batch_size
             self.gamma = gamma               
             self.polyak = polyak 
-            self.feature_dim = curl_feature_dim
+            self.feature_dim = latent_feature_dim
             self.cropped_img_size = cropped_img_size
             self.stack_size = stack_size # not used
+<<<<<<< HEAD
             self.include_reconst_loss = include_reconst_loss
             self.include_consistency_loss = include_consistency_loss
             self.frozen_encoder = frozen_encoder
+=======
+            self.actor_dense_layers = actor_dense_layers
+            self.critic_dense_layers = critic_dense_layers
+            self.enc_conv_layers = enc_conv_layers
+            self.enc_dense_layers = enc_dense_layers
+            self.include_reconst_loss = include_reconst_loss
+            self.include_consistency_loss = include_consistency_loss
+            self.frozen_encoder = frozen_encoder
+            self.alpha_c = alpha_c
+            self.alpha_r = alpha_r 
+            self.alpha_cy = alpha_cy 
+            self.max_training_steps = max_training_steps
+>>>>>>> curl_sac
 
             # update frequencies
             self.ac_train_freq = ac_train_freq
@@ -458,6 +607,7 @@ class CurlSacAgent:
             self.eval_freq = eval_freq
             self.target_update_freq = target_update_freq
             self.init_steps = init_steps
+            self.eval_episodes = eval_episodes
             
             assert len(self.state_size) == 3, 'image observation of shape (h, w, c)'
 
@@ -465,7 +615,11 @@ class CurlSacAgent:
 
             # Create a common encoder network to be shared 
             # between the actor and the critic networks
-            self.encoder = Encoder(self.obs_shape, self.feature_dim)
+            self.encoder = Encoder(self.obs_shape, self.feature_dim,
+                            conv_layers=self.enc_conv_layers,
+                            dense_layers=self.enc_dense_layers,
+                            )
+
 
 
 
@@ -475,6 +629,11 @@ class CurlSacAgent:
                     action_size=self.action_shape,
                     action_upper_bound=self.action_upper_bound,
                     encoder_feature_dim=self.feature_dim,
+<<<<<<< HEAD
+=======
+                    learning_rate=self.lr,
+                    actor_dense_layers=self.actor_dense_layers,
+>>>>>>> curl_sac
                     encoder=self.encoder, # pass the encoder network
                     frozen_encoder=self.frozen_encoder
                     )
@@ -485,6 +644,11 @@ class CurlSacAgent:
                     action_size=self.action_shape,
                     encoder_feature_dim=self.feature_dim,
                     learning_rate=self.lr,
+<<<<<<< HEAD
+=======
+                    gamma=self.gamma,
+                    critic_dense_layers=self.critic_dense_layers,
+>>>>>>> curl_sac
                     encoder = self.encoder, # pass the encoder network
                     frozen_encoder=self.frozen_encoder
             )
@@ -496,7 +660,14 @@ class CurlSacAgent:
                     action_size=self.action_shape,
                     encoder_feature_dim=self.feature_dim,
                     learning_rate=self.lr,
+<<<<<<< HEAD
                     #encoder=self.encoder,  # pass the encoder network 
+=======
+                    gamma=self.gamma,
+                    critic_dense_layers=self.critic_dense_layers,
+                    enc_dense_layers=self.enc_dense_layers,
+                    enc_conv_layers=self.enc_conv_layers, # new encoder is created
+>>>>>>> curl_sac
                     model_name='target_critic'
             )
 
@@ -512,7 +683,14 @@ class CurlSacAgent:
                 critic=self.critic,
                 target_critic=self.target_critic,
                 include_reconst_loss=self.include_reconst_loss,
+<<<<<<< HEAD
                 include_consistency_loss=self.include_consistency_loss
+=======
+                include_consistency_loss=self.include_consistency_loss,
+                alpha_c=self.alpha_c,
+                alpha_r=self.alpha_r,
+                alpha_cy=self.alpha_cy
+>>>>>>> curl_sac
             )
 
             # entropy coefficient as a tunable parameter
@@ -559,6 +737,10 @@ class CurlSacAgent:
             min_q_target = tf.minimum(q1_target, q2_target)
 
             soft_q_target = min_q_target - self.alpha * tf.reduce_sum(log_pi_a, axis=-1, keepdims=True) 
+<<<<<<< HEAD
+=======
+            #soft_q_target = min_q_target - self.alpha * log_pi_a # does not work
+>>>>>>> curl_sac
 
             y = tf.stop_gradient(rewards + self.gamma * soft_q_target * (1 - dones)) 
 
@@ -573,13 +755,14 @@ class CurlSacAgent:
             pi_a, log_pi_a = self.actor.policy(states)
             q1, q2 = self.critic(states, pi_a)
             min_q = tf.minimum(q1, q2)
-            soft_q = min_q - self.alpha * log_pi_a
-            actor_loss = tf.reduce_mean(soft_q)
+            soft_q = min_q - self.alpha * tf.reduce_sum(log_pi_a, axis=-1)
+            actor_loss = -tf.reduce_mean(soft_q) # corrected on 19/08/2020
         grads = tape.gradient(actor_loss, self.actor.model.trainable_variables)
         self.actor.optimizer.apply_gradients(zip(grads, self.actor.model.trainable_variables))
         return actor_loss.numpy()
 
     def update_target_networks(self):
+<<<<<<< HEAD
         for wt_target, wt_source in zip(self.target_critic.model.trainable_variables, 
                                 self.critic.model.trainable_variables):
             wt_target = self.polyak * wt_target + (1 - self.polyak) * wt_source
@@ -587,7 +770,23 @@ class CurlSacAgent:
         # Probably, this is redundant as encoder is getting updated in the critic network
         for wt_target, wt_source in zip(self.curl.encoder_target.model.trainable_variables,
                                     self.curl.encoder.model.trainable_variables):
+=======
+        # for wt_target, wt_source in zip(self.target_critic.model.trainable_variables, 
+        #                         self.critic.model.trainable_variables):
+        #     wt_target = self.polyak * wt_target + (1 - self.polyak) * wt_source
+        for wt_target, wt_source in zip(self.target_critic.Q1.model.trainable_variables, 
+                        self.critic.Q1.model.trainable_variables):
             wt_target = self.polyak * wt_target + (1 - self.polyak) * wt_source
+
+        for wt_target, wt_source in zip(self.target_critic.Q2.model.trainable_variables, 
+                        self.critic.Q2.model.trainable_variables):
+            wt_target = self.polyak * wt_target + (1 - self.polyak) * wt_source
+
+        for wt_target, wt_source in zip(self.target_critic.encoder.model.trainable_variables, 
+                        self.critic.encoder.model.trainable_variables):
+>>>>>>> curl_sac
+            wt_target = self.polyak * wt_target + (1 - self.polyak) * wt_source
+
 
     def create_image_pairs(self, states, next_states, aug_method='crop'):
 
@@ -641,12 +840,12 @@ class CurlSacAgent:
 
         return  curl_loss
 
-    def validate(self, env, max_eps=20):
+    def validate(self, env):
         '''
         evaluate model performance
         '''
         ep_reward_list = []
-        for _ in range(max_eps):
+        for _ in range(self.eval_episodes):
             state = env.reset()  # normalized floating point pixel obsvn
             t = 0
             ep_reward = 0
@@ -656,7 +855,7 @@ class CurlSacAgent:
                 next_state, reward, done, _ = env.step(action)
 
                 # convert negative reward to positive reward 
-                reward = 1 if reward == 0 else 0
+                # reward = 1 if reward == 0 else 0      # positive rewards
                 state = next_state 
                 ep_reward += reward 
                 t += 1
@@ -667,7 +866,7 @@ class CurlSacAgent:
         mean_ep_reward = np.mean(ep_reward_list)
         return mean_ep_reward
 
-    def run(self, env, max_train_steps=100000, WB_LOG=False):
+    def run(self, env, WB_LOG=False):
         """ Main Training Loop"""
 
         actor_loss, critic_loss, alpha_loss, curl_loss = [], [], [], []
@@ -677,7 +876,8 @@ class CurlSacAgent:
 
         # initial state
         state = env.reset() # normalized floating point pixel obsvn
-        for step in range(max_train_steps):
+        
+        for step in range(self.max_training_steps):
 
             # process the state 
             cropped_state = center_crop_image(state, out_h=self.cropped_img_size)
@@ -689,10 +889,16 @@ class CurlSacAgent:
                 action, _ = self.sample_action(cropped_state)
 
             # take action
+            #try:
             next_state, reward, done, _ = env.step(action)
+            # except:
+            #     print('action: ', action)
+            #     print('shape of action:', np.shape(action))
+            #     visualize_stacked_images(next_state, save_fig=True)
+            #     sys.exit('Error in the run function')
 
             # convert negative reward to positive reward 
-            reward = 1 if reward == 0 else 0
+            # reward = 1 if reward == 0 else 0
             ep_reward += reward
 
             # store transition in buffer
@@ -737,6 +943,12 @@ class CurlSacAgent:
                     'mean_curl_loss': np.mean(curl_losses),
                 })
 
+<<<<<<< HEAD
+=======
+            if step % 1000 == 0:
+                print('step: ', step, 'mean_ep_rewards: ', np.mean(ep_rewards))
+
+>>>>>>> curl_sac
             if done: # end of episode
                 ep_rewards.append(ep_reward)
                 ep_reward = 0
@@ -753,11 +965,16 @@ class CurlSacAgent:
         save model weights
         '''
         self.actor.save_weights(save_path + 'actor.h5')
+<<<<<<< HEAD
         self.critic_1.save_weights(save_path + 'critic_1.h5')
         self.critic_target_1.save_weights(save_path + 'critic_target_1.h5')
         self.critic_2.save_weights(save_path + 'critic_2.h5')
         self.critic_target_2.save_weights(save_path + 'critic_target_2.h5')
         self.encoder.save_weights(save_path + 'encoder.h5')
+=======
+        self.critic.save_weights(save_path + 'critic.h5')
+        self.target_critic.save_weights(save_path + 'target_critic.h5')
+>>>>>>> curl_sac
         self.curl.save_weights(save_path + 'curl.h5')
 
     def load_weights(self, save_path):
@@ -765,12 +982,54 @@ class CurlSacAgent:
         load model weights
         '''
         self.actor.load_weights(save_path + 'actor.h5')
+<<<<<<< HEAD
         self.critic_1.load_weights(save_path + 'critic_1.h5')
         self.critic_target_1.load_weights(save_path + 'critic_target_1.h5')
         self.critic_2.load_weights(save_path + 'critic_2.h5')
         self.critic_target_2.load_weights(save_path + 'critic_target_2.h5')
         self.encoder.load_weights(save_path + 'encoder.h5')
         self.curl.load_weights(save_path + 'curl.h5')
+=======
+        self.critic.load_weights(save_path + 'critic.h5')
+        self.target_critic.load_weights(save_path + 'target_critic.h5')
+        self.curl.load_weights(save_path + 'curl.h5')
+
+    def __str__(self) -> str:
+        msg = f'''
+            \n\n################################\n
+            State size: {self.state_size},\n 
+            Action size: {self.action_shape}, \n 
+            Action upper_bound: {self.action_upper_bound},\n 
+            Learning rate: {self.lr}, \n
+            Buffer capacity: {self.buffer_capacity}, \n
+            Batch size: {self.batch_size}, \n
+            Discount factor: {self.gamma}, \n
+            Polyak averaging factor (tau): {self.polyak}, \n
+            Latent feature Dimension: {self.feature_dim}, \n
+            Cropped image Size: {self.cropped_img_size}, \n
+            Stack size: {self.stack_size}, \n
+            Actor dense layers: {self.actor_dense_layers}, \n
+            Critic dense layers: {self.critic_dense_layers},\n
+            Encoder convolution layers: {self.enc_conv_layers}, \n
+            Encoder dense layers: {self.enc_dense_layers}, \n
+            Include reconstruction loss flag: {self.include_reconst_loss}, \n
+            Include consistency loss flag: {self.include_consistency_loss}, \n
+            Frozen encoder flag: {self.frozen_encoder}, \n
+            Weight for contrastive loss: {self.alpha_c}, \n
+            Weight for reconstruction loss: {self.alpha_r}, \n
+            Weight for consistency loss: {self.alpha_cy}, \n
+            Maximum training steps: {self.max_training_steps}, \n
+            Actor-critic update frequency: {self.ac_train_freq},\n
+            Encoder update frequency: {self.enc_train_freq}, \n
+            Evaluation frequency: {self.eval_freq}, \n
+            Target critic update frequency: {self.target_update_freq}, \n
+            Training start step: {self.init_steps}, \n
+            Number of evaluation episodes: {self.eval_episodes},\n
+            ################################\n
+        '''
+        return msg 
+
+>>>>>>> curl_sac
 
 
 

@@ -46,7 +46,7 @@ assert version.parse(tf.__version__).release[0] >= 2, \
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     try:
-        #tf.config.experimental.set_visible_devices(gpus[1], 'GPU')
+        tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
         for gpu in gpus:
             print(gpu)
             tf.config.experimental.set_memory_growth(gpu, True)
@@ -57,8 +57,8 @@ if gpus:
 # config.gpu_options.allow_growth = True
 # config.log_device_placement = True
 # sess = tf.compat.v1.Session(config=config)
-################################################
-# check GPU device
+# ################################################
+# # check GPU device
 # device_name = tf.test.gpu_device_name()
 # if device_name != '/device:GPU:0':
 #     #raise SystemError('GPU device not found')
@@ -71,14 +71,14 @@ if gpus:
 config_dict = dict(
     buffer_capacity = 30000,    
     batch_size = 128,  
-    algo = 'curl_sac',   # 'curl_sac', 'sac'              
+    algo = 'sac',   # 'curl_sac', 'sac'              
     env_name = 'pbmg',          # environment name
     image_obsvn=True,
     stack_size=3,
-    include_reconst_loss=False,
+    include_reconst_loss=True,
     include_consistency_loss=True,
     frozen_encoder=False,       # freeze encoder weights for RL training
-    org_img_size=100,        # original image size before augmentation
+    org_img_size=84,        # original image size before augmentation
 )
 #######################
 WB_LOG = False
@@ -190,6 +190,7 @@ if __name__ == "__main__":
             latent_feature_dim=50,
             buffer_capacity=config_dict['buffer_capacity'],
             batch_size=config_dict['batch_size'],
+            frozen_encoder=config_dict['frozen_encoder'],
         )
     else:
         raise NotImplementedError("Algorithm not implemented")

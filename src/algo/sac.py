@@ -102,7 +102,7 @@ class SACActor:
             q2 = critic2(states, actions)
             min_q = tf.minimum(q1, q2)
             soft_q = min_q - alpha * log_pi_a
-            actor_loss = -tf.reduce_mean(soft_q)
+            actor_loss = -tf.reduce_mean(soft_q) # maximize this loss 
             actor_wts = self.model.trainable_variables
         # outside gradient tape block
         actor_grads = tape.gradient(actor_loss, actor_wts)

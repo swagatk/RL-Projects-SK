@@ -1,4 +1,4 @@
-# Original CURL Algorithm implementation in Tensorflow
+# CURL Algorithm implementation in Tensorflow
 Last updated on: July 25, 2022
 
 ## Credits
@@ -13,9 +13,11 @@ Last updated on: July 25, 2022
 - [Pybullet multi-goal environment 1.0.0](https://github.com/IanYangChina/pybullet_multigoal_gym)
 
 # Files
+- `../common/buffer.py`
+- `../common/utils.py`
+- `../common/CustomGymWrapper.py`
 - `curl_sac.py`
-- `buffer.py`
-- `encoder.py`
+- `feature_extraction.py`
 - `main_pbmg.py`
 
 ## Some Notes about the algorithms
@@ -25,6 +27,8 @@ Last updated on: July 25, 2022
     - buffer capacity: 30,000
     - batch_size: 128
     - stack_size: 3 (3 frames are stacked together)
+
+- Inclusion of Reconstruction & Consistency Losses
 
 ## Results
 - The algorithm achieves the maximum mean episodic reward (over last 50 episodes) in about 40K training steps. 

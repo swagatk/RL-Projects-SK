@@ -11,7 +11,7 @@ sys.path.append(current_dir)
 sys.path.append(os.path.dirname(current_dir)) # parent director
 from common.video import VideoRecorder
 
-SAVE_VIDEO=True
+SAVE_VIDEO=False
 
 
 env = dmc2gym.make(
@@ -22,7 +22,7 @@ env = dmc2gym.make(
     from_pixels=True,
     height=64,
     width=64,
-    frame_skip=1
+    frame_skip=10
 )
 if SAVE_VIDEO:
     video_dir='videos'
@@ -32,10 +32,18 @@ if SAVE_VIDEO:
                             camera_id=0,)
     video.init()
 
+
+print('\nObservation shape:', env.observation_space.shape)
+print('\nAction shape:', env.action_space.shape)
+print('\nAction upper bound:', env.action_space.high)
+print('\nObservation space dtype:', env.observation_space.dtype)
+
+
 for ep in range(2):
     obs = env.reset()
     done = False
     ep_reward = 0
+    step_count = 0
     while not done:
         if SAVE_VIDEO: 
             video.record(env)
@@ -43,7 +51,8 @@ for ep in range(2):
         obs, reward, done, info = env.step(action)
 
         ep_reward += reward 
-    print(f'episode: {ep}, reward: {ep_reward}')
+        step_count += 1
+    print(f'\nepisode: {ep}, steps: {step_count}, reward: {ep_reward}')
 
 if SAVE_VIDEO:
     video.save('eval.mp4')

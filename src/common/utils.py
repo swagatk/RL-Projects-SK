@@ -7,7 +7,7 @@ Utility functions
 '''
 import os
 import signal
-import time
+import random 
 import numpy as np
 import matplotlib.pyplot as plt
 import tensorflow as tf
@@ -81,27 +81,27 @@ def visualize_stacked_images(stacked_img, save_fig=False, fig_name='stacked_img.
     plt.show()
     if save_fig:
         plt.savefig(uniquify(fig_name))
+    plt.close(fig)
 
 ###################################33
 def set_seed_everywhere(seed=42, env=None) -> None:
     tf.random.set_seed = seed 
     np.random.seed(seed)
+    random.seed(seed)
     if env is not None:
         env.seed(seed)
 
 def check_gpu_availability() -> bool:
-    if tf.test.is_gpu_available():
-        print('GPU is available')
-        device_name = tf.test.gpu_device_name()
-        print('Default GPU Device: {}'.format(device_name))
-        
-
-        # set these flags to avoid memory errors
         gpus = tf.config.list_physical_devices('GPU')
-        for gpu in gpus:
-            tf.config.experimental.set_memory_growth(gpu, True)
-        return True
-    else:
-        print('GPU is not available')
-        return False
+        if gpus:
+            try:
+                # set these flags to avoid memory errors
+                for gpu in gpus:
+                    tf.config.experimental.set_memory_growth(gpu, True)
+            except RuntimeError as e:
+                print(e)
+            return True
+        else:
+            print('GPU is not available')
+            return False
     
