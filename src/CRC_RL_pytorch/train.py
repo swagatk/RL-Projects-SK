@@ -12,6 +12,11 @@ from augmentations import center_crop_image, random_crop, random_overlay, random
 from collections import Counter 
 from wrappers import make_env 
 
+EHU = False
+if EHU:
+    os.environ['MUJOCO_GL'] = "egl"
+
+
 config = Config.from_json(CFG)
 WB_LOG = True 
 console = Console()

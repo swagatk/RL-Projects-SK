@@ -31,7 +31,8 @@ def soft_update_params(net, target_net, tau):
 
 
 def load_config(key=None):
-    path = os.path.join('/home/swagat/GIT/CRC_RL', 'data.cfg')
+    #path = os.path.join('/home/swagat/GIT/CRC_RL', 'data.cfg')
+    path = os.path.join('.', 'data.cfg')
     with open(path) as f:
         data = json.load(f)
     return data[key] if key is not None else data

@@ -444,7 +444,7 @@ class CurlSacAgent(object):
         actor_Q = torch.min(actor_Q1, actor_Q2)
         actor_loss = (self.alpha.detach() * log_pi - actor_Q).mean()
 
-        entropy = 0.5 * log_std[1] * (1.0 + np.log(2 * np.pi)) + log_std.sum(dim=-1)
+        entropy = 0.5 * log_std.shape[1] * (1.0 + np.log(2 * np.pi)) + log_std.sum(dim=-1)
 
 
         # train the actor

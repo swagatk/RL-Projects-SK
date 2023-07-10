@@ -2,8 +2,8 @@
 
 CFG = {
     "env": {
-        "domain_name":"cartpole",
-        "task_name": "swingup",
+        "domain_name":"walker",
+        "task_name": "walk",
         "pre_transform_image_size": 100,
         "eval_pre_transform_image_size": 100,
         "image_size": 84,
@@ -26,7 +26,7 @@ CFG = {
     "eval": {
         "eval_freq": 1000, 
         "num_eval_episodes": 10, 
-        "mode": "video_easy", # mode in {"video_easy", "color_hard", "color_easy", "video_hard", "train"}
+        "mode": "color_hard", # mode in {"video_easy", "color_hard", "color_easy", "video_hard", "train"}
     },
     "critic": {
         "lr": 1e-3, 
