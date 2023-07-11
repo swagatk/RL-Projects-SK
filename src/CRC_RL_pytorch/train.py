@@ -16,9 +16,17 @@ EHU = False
 if EHU:
     os.environ['MUJOCO_GL'] = "egl"
 
+GPU_SELECT = False 
+if GPU_SELECT:
+    num_gpus = torch.cuda.device_count()
+    # for i in range(num_gpus):
+    #     print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+    torch.cuda.set_device(0)        # choose the second device
+
+
 
 config = Config.from_json(CFG)
-WB_LOG = True 
+WB_LOG = False 
 console = Console()
 
 transforms = {

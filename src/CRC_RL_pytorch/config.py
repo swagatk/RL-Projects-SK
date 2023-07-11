@@ -33,7 +33,7 @@ CFG = {
         "beta": 0.9, 
         "tau": 0.01, 
         "target_update_freq": 2,
-        "dense_layers" : [128, 64,],
+        "dense_layers" : [256, 128, 64,],
     },
     "actor": {
         "lr": 1e-3,
@@ -41,14 +41,14 @@ CFG = {
         "log_std_min": -10,
         "log_std_max": 2,
         "update_freq": 2,
-        "dense_layers": [128, 64, ],
+        "dense_layers": [256, 128, 64, ],
     },
     "encoder": {
         "feature_dim": 50,
         "lr": 1e-3,
         "tau": 0.05,
         "conv_layers" : [32, 32, 32],
-        "dense_layers": [128, 128, 64],
+        "dense_layers": [128, 64],
     },
     "decoder": {
         "type": "pixel",
@@ -57,7 +57,7 @@ CFG = {
         "weight_lambda": 1e-7,
     },
     "predictor": {
-        "dense_layers": [128, 128, ],
+        "dense_layers": [512, 256, 128, ],
     },
     "sac": {
         "discount": 0.99, 

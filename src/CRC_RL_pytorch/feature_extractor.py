@@ -142,7 +142,7 @@ class MLP(nn.Module):
         self.output_dim = output_dim
         self.mlp = nn.Sequential()
 
-        for i in range(len(dense_layers)-1):
+        for i in range(len(dense_layers)):
             if i == 0: # input layers
                 self.mlp.append(nn.Linear(input_dim, dense_layers[i]))
             else: # hidden layers
