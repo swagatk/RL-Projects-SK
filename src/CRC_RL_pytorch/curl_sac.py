@@ -14,7 +14,6 @@ def gaussian_logprob(noise, log_std):
     residual = (-0.5 * noise.pow(2) - log_std).sum(-1, keepdim=True)
     return residual - 0.5 * np.log(2 * np.pi) * noise.size(-1)
 
-
 def squash(mu, pi, log_pi):
     """Apply squashing function.
     See appendix C from https://arxiv.org/pdf/1812.05905.pdf.
@@ -26,12 +25,29 @@ def squash(mu, pi, log_pi):
         log_pi -= torch.log(F.relu(1 - pi.pow(2)) + 1e-6).sum(-1, keepdim=True)
     return mu, pi, log_pi
 
+def weight_init(m):
+    """ 
+    Custom weight initialization for Conv2D and Linear Layers
+    """
+    if isinstance(m, nn.Linear):
+        nn.init.orthogonal_(m.weight.data)
+        m.bias.data.fill_(0.0)
+    elif isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
+        # delta-orthogonal init from https://arxiv.org/pdf/1806.05393.pdf
+        assert m.weight.size(2) == m.weight.size(3)  # why? square filters, H=W ??
+        m.weight.data.fill_(0.0)
+        m.bias.data.fill_(0.0)
+        mid = m.weight.size(2) // 2
+        gain = nn.init.calculate_gain("relu")
+        nn.init.orthogonal_(m.weight.data[:, :, mid, mid], gain)
+
 
 class Actor(nn.Module):
     """
     MLP Actor Network
     """
-    def __init__(self, obs_shape, 
+    def __init__(self, 
+                 obs_shape, 
                  action_shape, 
                  encoder_feature_dim,
                  log_std_min,
@@ -40,7 +56,6 @@ class Actor(nn.Module):
                  actor_dense_layers=[128, 64, ],
                  enc_dense_layers=[128, 64, ],
                  enc_conv_layers=[32, 32],
-                 frozen_encoder=False
                  ) -> None:
         super().__init__()
 
@@ -51,7 +66,6 @@ class Actor(nn.Module):
         self.enc_conv_layers = enc_conv_layers
         self.enc_dense_layers = enc_dense_layers
         self.actor_dense_layers = actor_dense_layers
-        self.frozen_encoder = frozen_encoder 
         self.log_std_min = log_std_min
         self.log_std_max = log_std_max
 
@@ -70,7 +84,8 @@ class Actor(nn.Module):
                 self.mlp_layers.append(nn.ReLU())
         self.mlp_layers.append(nn.Linear(self.actor_dense_layers[-1], 2 * self.action_shape[0]))
 
-
+        # Apply custom weight initialization
+        self.apply(weight_init)
 
     def forward(self, obs, compute_pi=True, 
                 compute_log_pi=True, 
@@ -112,7 +127,6 @@ class QFunction(nn.Module):
             self.q_func.append(nn.ReLU())   # inner layers have relu activation
         self.q_func.append(nn.Linear(self.dense_layers[-1], 1)) # last layer is linear
 
-
     def forward(self, obs, action):
         assert obs.size(0) == action.size(0), "obs & action should have same number of rows"
         obs_action = torch.cat([obs, action], dim=1)
@@ -143,7 +157,11 @@ class Critic(nn.Module):
         self.Q2 = QFunction(self.encoder.feature_dim, action_shape[0],
                             critic_dense_layers)
 
+        # apply custom weight initialization to parameters
+        self.apply(weight_init)
+
     def forward(self, obs, action, detach_encoder=False):
+        # detach_encoder allows to stop gradient propagation to the encoder
         obs = self.encoder(obs, detach=detach_encoder)
 
         q1 = self.Q1(obs, action)
@@ -157,7 +175,8 @@ class Critic(nn.Module):
 ## CURL 
 ##############
 class CURL(nn.Module):
-    def __init__(self, z_dim,  
+    def __init__(self, 
+                 z_dim,  
                  critic,
                  target_critic,
                  learning_rate=1e-3,) -> None:
@@ -172,6 +191,7 @@ class CURL(nn.Module):
         '''
         Encoder: z_t = enc(x_t)
         :param x: input observation
+        : return z_t
         '''
         if ema: #exponential moving average
             with torch.no_grad():
@@ -185,8 +205,15 @@ class CURL(nn.Module):
         return z_out
     
     def compute_logits(self, z_a, z_pos):
-        Wz = torch.matmul(self.W, z_pos.T)
-        logits = torch.matmul(z_a, Wz)
+        """
+        Uses logits trick for CURL
+        - Compute (B, B) matrix = z_a * W_z * z_pos.T
+        - positives are diagonal elements
+        - negatives are all other elements
+        - to compute loss, use multi-class cross-entropy with identity matrix for labels
+        """
+        Wz = torch.matmul(self.W, z_pos.T)  # (z_dim , B)
+        logits = torch.matmul(z_a, Wz)      # (B, B)
         logits = logits - torch.max(logits, 1)[0][:, None] 
         return logits 
     
@@ -218,11 +245,10 @@ class CurlSacAgent(object):
                  decoder_lr=1e-3,
                  encoder_tau=0.005,
                  curl_encoder_update_freq=1,
-                 curl_latent_dim=128, ### THis is not required.
                  alpha_lr=1e-3,
                  alpha_beta=0.9,
                  decoder_weight_lambda=1e-7,
-                 decoder_latent_lambda=1e-6,    # not used ...
+                 decoder_latent_lambda=1e-6,
                  detach_encoder=False,
                  predictor_dense_layers=[64, 64, ],
                  c1=0.33,
@@ -237,8 +263,8 @@ class CurlSacAgent(object):
         self.actor_update_freq = actor_update_freq
         self.target_critic_update_freq = critic_target_update_freq
         self.curl_encoder_update_freq = curl_encoder_update_freq
+        self.decoder_latent_lambda = decoder_latent_lambda
         self.image_size = obs_shape[-1]  # h of (c, w, h); assume w=h
-        self.curl_latent_dim = curl_latent_dim
         self.detach_encoder = detach_encoder
         self.log_interval = log_interval
         self.c1 = c1    # weightage for contrastive loss
@@ -500,7 +526,7 @@ class CurlSacAgent(object):
         consis_loss = F.mse_loss(h0, h1)
 
         # CRC loss 
-        loss = self.c1 * curl_loss + self.c2 * rec_loss + self.c3 * consis_loss 
+        loss = self.c1 * curl_loss + self.c2 * rec_loss + self.c3 * consis_loss + self.decoder_latent_lambda * latent_loss 
 
 
         # update encoder & decoder parameters

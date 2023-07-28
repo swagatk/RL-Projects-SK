@@ -26,14 +26,14 @@ CFG = {
     "eval": {
         "eval_freq": 1000, 
         "num_eval_episodes": 10, 
-        "mode": "color_hard", # mode in {"video_easy", "color_hard", "color_easy", "video_hard", "train"}
+        "mode": "color_hard", # mode in {"video_easy", "color_hard", "color_easy", "video_hard", "train" or None}
     },
     "critic": {
         "lr": 1e-3, 
         "beta": 0.9, 
         "tau": 0.01, 
         "target_update_freq": 2,
-        "dense_layers" : [256, 128, 64,],
+        "dense_layers" : [512, 256, 128,],
     },
     "actor": {
         "lr": 1e-3,
@@ -41,7 +41,7 @@ CFG = {
         "log_std_min": -10,
         "log_std_max": 2,
         "update_freq": 2,
-        "dense_layers": [256, 128, 64, ],
+        "dense_layers": [512, 256, 128, ],
     },
     "encoder": {
         "feature_dim": 50,
@@ -73,6 +73,9 @@ CFG = {
         "save_video": False,
         "save_model": False,
         "detach_encoder": False,
+        "headless": False,
+        "gpu_select": False,
+        "wb_log": False,
         "log_interval": 100,
         "num_cls": 4,
         "c1": 0.33,         # contrastive loss weight

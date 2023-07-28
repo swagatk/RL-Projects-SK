@@ -6,6 +6,8 @@ from torchsummary import summary
 import numpy as np
 
 
+def get_output_shape(model, image_dim):
+    return model(torch.rand(*(image_dim))).data.shape
 
 def copy_weights(src, trg):
     assert type(src) == type(trg)
@@ -44,11 +46,16 @@ class Encoder(nn.Module):
             self.convs.append(nn.ReLU())
             self.convs.append(nn.MaxPool2d(kernel_size=2))
 
+        conv_out_shape = get_output_shape(self.convs, self.obs_shape)
+        fc_input_dim = np.prod(list(conv_out_shape))
+        #print('Conv output size: ', conv_out_shape)
+        #print('fc_input size:', fc_input_dim)
 
         self.fcs = nn.Sequential()
         for i in range(len(self.dense_layers)):
             if i == 0:
-                self.fcs.append(nn.LazyLinear(self.dense_layers[i]))
+                # self.fcs.append(nn.LazyLinear(self.dense_layers[i]))  # causes initialization problem
+                self.fcs.append(nn.Linear(fc_input_dim, self.dense_layers[i]))
             else:
                 self.fcs.append(nn.Linear(self.dense_layers[i-1], self.dense_layers[i]))
             self.fcs.append(nn.ReLU())
@@ -67,7 +74,7 @@ class Encoder(nn.Module):
         obs = obs / 255.0
 
         out = self.convs(obs)
-        out = out.view(obs.shape[0], -1)
+        out = torch.flatten(out, start_dim=1)
         out = self.fcs(out)
 
         if detach:

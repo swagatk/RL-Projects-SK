@@ -12,23 +12,27 @@ from augmentations import center_crop_image, random_crop, random_overlay, random
 from collections import Counter 
 from wrappers import make_env 
 
-EHU = False
-if EHU:
-    os.environ['MUJOCO_GL'] = "egl"
-
-GPU_SELECT = False 
-if GPU_SELECT:
-    num_gpus = torch.cuda.device_count()
-    # for i in range(num_gpus):
-    #     print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
-    torch.cuda.set_device(0)        # choose the second device
 
 
-
+# Load the config parameters
 config = Config.from_json(CFG)
-WB_LOG = False 
 console = Console()
 
+# Enable/Disable WandB logging
+WB_LOG = config.params.wb_log 
+
+# You need to set this flag for a headless server (Server without GUI)
+if config.params.headless:
+    os.environ['MUJOCO_GL'] = "egl"
+
+# If you have multiple GPUs, you can select a particular GPU for execution
+if config.params.gpu_select:
+    num_gpus = torch.cuda.device_count()
+    for i in range(num_gpus):
+        print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
+    torch.cuda.set_device(0)        # choose the second device
+
+# Following data augmentation techniques are supported 
 transforms = {
     "random_crop": random_crop,
     "random_conv": random_conv,
@@ -36,12 +40,14 @@ transforms = {
     "random_overlay": random_overlay,
 }
 
+# Fix the seed 
 if config.params.seed == -1:
     config.params.__dict__["seed"] = np.random.randint(1, 1000000)
     console.log("random seed value", config.params.seed)
 utils.set_seed_everywhere(config.params.seed)
 
 
+# Create agent for training
 def make_agent(obs_shape, action_shape, config, device, WB_LOG):
     if config.train.agent == "curl_sac":
         return CurlSacAgent(
@@ -69,8 +75,8 @@ def make_agent(obs_shape, action_shape, config, device, WB_LOG):
             enc_conv_layers=config.encoder.conv_layers,
             enc_dense_layers=config.encoder.dense_layers,
             decoder_lr=config.decoder.lr,
-            decoder_latent_lambda=config.decoder.latent_lambda, ## what is this?
-            decoder_weight_lambda=config.decoder.weight_lambda,  ## ??
+            decoder_latent_lambda=config.decoder.latent_lambda, ## what is this? TBR
+            decoder_weight_lambda=config.decoder.weight_lambda,  ## TBR
             log_interval=config.params.log_interval,
             detach_encoder=config.params.detach_encoder,
             predictor_dense_layers=config.predictor.dense_layers,
@@ -83,8 +89,8 @@ def make_agent(obs_shape, action_shape, config, device, WB_LOG):
 
 
 def evaluate(env_val, agent, num_episodes, step, device):
-    all_ep_rewards = []
     def run_eval_loop(sample_stochastically=True):
+        all_ep_rewards = []
         for i in range(num_episodes):
             obs = env_val.reset()
             done = False
@@ -97,16 +103,15 @@ def evaluate(env_val, agent, num_episodes, step, device):
                         action = agent.sample_action(obs)
                     else:
                         action = agent.select_action(obs)
-                
                 obs, reward, done, _ = env_val.step(action)
                 episode_reward += reward
-        
             all_ep_rewards.append(episode_reward)
         mean_ep_reward = np.mean(all_ep_rewards)
-
+        best_ep_reward = np.max(all_ep_rewards)
         if WB_LOG:
             wandb.log({"eval/mean_episode_reward": mean_ep_reward, "step": step})
-
+            wandb.log({"eval/best_episode_reward": best_ep_reward, "step":step})
+        console.log(f"Eval | Step - {step}, Mean episode reward - {mean_ep_reward:.4f}, Best episode Reward - {best_ep_reward:.4f}")
     run_eval_loop(sample_stochastically=False)
 
 
@@ -137,6 +142,7 @@ def train(env, env_val, agent, replay_buffer, device):
             done = False
             ep_reward = 0
             episode += 1
+            episode_step = 0        # steps / episode
             start_time = time.time()
 
 
@@ -144,12 +150,12 @@ def train(env, env_val, agent, replay_buffer, device):
         if step < config.train.init_steps:
             action = env.action_space.sample()
         else:
-            with utils.eval_mode(agent):
+            with utils.eval_mode(agent):        # frozen model
                 action = agent.sample_action(obs)
 
         next_obs, reward, done, _ = env.step(action)
 
-        done_bool = 0 if episode + 1 == env._max_episode_steps else float(done)
+        done_bool = 0 if episode_step + 1 == env._max_episode_steps else float(done)
         ep_reward += reward 
         replay_buffer.add(obs, action, reward, next_obs, done_bool)
 
@@ -160,10 +166,12 @@ def train(env, env_val, agent, replay_buffer, device):
 
         # prepare for next iteration
         obs = next_obs
+        episode_step += 1
 
 def main():
 
     if WB_LOG:
+        print("WandB version:", wandb.__version__)
         wandb.login()
         wandb.init(project=config.env.domain_name, config=CFG)
 
@@ -172,6 +180,7 @@ def main():
     else:
         pre_transform_image_size = config.env.pre_transform_image_size
 
+    # agent for training
     env = make_env(
         domain_name=config.env.domain_name, 
         task_name=config.env.task_name,
@@ -184,6 +193,7 @@ def main():
     )
     env.seed(config.params.seed)
 
+    # agent for testing
     test_env = make_env(
         domain_name=config.env.domain_name,
         task_name=config.env.task_name,
@@ -206,8 +216,8 @@ def main():
 
     pre_aug_obs_shape = (
         3 * config.env.frame_stack,
-        config.env.pre_transform_image_size,
-        config.env.pre_transform_image_size
+        pre_transform_image_size,
+        pre_transform_image_size
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

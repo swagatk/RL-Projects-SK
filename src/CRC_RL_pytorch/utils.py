@@ -51,6 +51,7 @@ class eval_mode(object):
     def __exit__(self, *args):
         for model, state in zip(self.models, self.prev_states):
             model.train(state)      # restore the original state
+        return False  # not really required. 
 
 class ReplayBuffer(Dataset):
     "Buffer to store environment transitions"
