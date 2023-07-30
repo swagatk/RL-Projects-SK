@@ -323,10 +323,13 @@ class CurlSacAgent(object):
 
         self.target_entropy = -np.prod(action_shape)
 
+        enc_conv_out_shape = self.actor.encoder.get_conv_out_shape()
+
         self.decoder = Decoder(obs_shape, 
                                encoder_feature_dim,
                                enc_conv_layers[::-1],
-                               enc_dense_layers[::-1]
+                               enc_dense_layers[::-1],
+                               enc_conv_out_shape
         ).to(device)
 
         print("Decoder Model:")
@@ -509,7 +512,12 @@ class CurlSacAgent(object):
             target_obs = utils.preprocess_obs(target_obs)
 
         rec_obs = self.decoder(h)
-        rec_loss = F.mse_loss(target_obs, rec_obs)
+
+        if target_obs.size() == rec_obs.size():
+            rec_loss = F.mse_loss(target_obs, rec_obs)
+        else:
+            print("The shape of reconstructed observation must match with that of original observation for computing reconstruction loss.")
+            exit(1)
 
 
         # add L2 penalty on latent representation

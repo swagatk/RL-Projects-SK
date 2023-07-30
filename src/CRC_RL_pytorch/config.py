@@ -48,7 +48,7 @@ CFG = {
         "lr": 1e-3,
         "tau": 0.05,
         "conv_layers" : [32, 32, 32],
-        "dense_layers": [128, 64],
+        "dense_layers": [1028],
     },
     "decoder": {
         "type": "pixel",

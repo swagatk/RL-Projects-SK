@@ -24,6 +24,19 @@ def set_seed_everywhere(seed):
     np.random.seed(seed)
     random.seed(seed)
 
+def assert_match_tuples(tuple1, tuple2):
+    """Assert that two tuples match.
+
+    Args:
+        tuple1 (tuple): The first tuple.
+        tuple2 (tuple): The second tuple.
+
+    Raises:
+        AssertionError: If the two tuples do not match.
+    """
+    assert len(tuple1) == len(tuple2), "The two tuples must have the same length."
+    for i in range(len(tuple1)):
+        assert tuple1[i] == tuple2[i], "The two tuples do not match at index {}.".format(i)
 
 def soft_update_params(net, target_net, tau):
     for param, target_param in zip(net.parameters(), target_net.parameters()):

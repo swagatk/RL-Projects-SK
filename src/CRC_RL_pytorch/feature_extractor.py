@@ -37,18 +37,18 @@ class Encoder(nn.Module):
 
         self.convs = nn.Sequential()
         for i in range(len(self.conv_layers)):
-            if i == 0:
+            if i == 0: 
                 self.convs.append(nn.Conv2d(self.obs_shape[0], self.conv_layers[i], 
-                                                 kernel_size=3, stride=1))
+                                                 kernel_size=3, stride=1, padding=1))
             else:
                 self.convs.append(nn.Conv2d(self.conv_layers[i-1], self.conv_layers[i],
-                                                 kernel_size=3, stride=1))
+                                                 kernel_size=3, stride=1, padding=1))
             self.convs.append(nn.ReLU())
             self.convs.append(nn.MaxPool2d(kernel_size=2))
 
-        conv_out_shape = get_output_shape(self.convs, self.obs_shape)
-        fc_input_dim = np.prod(list(conv_out_shape))
-        #print('Conv output size: ', conv_out_shape)
+        self.conv_out_shape = get_output_shape(self.convs, self.obs_shape)  # output of conv module
+        fc_input_dim = np.prod(list(self.conv_out_shape)) # input dimension to FC module
+        #print('Conv output size: ', self.conv_out_shape)
         #print('fc_input size:', fc_input_dim)
 
         self.fcs = nn.Sequential()
@@ -61,6 +61,10 @@ class Encoder(nn.Module):
             self.fcs.append(nn.ReLU())
         self.fcs.append(nn.Linear(self.dense_layers[-1], self.feature_dim))
 
+
+
+    def get_conv_out_shape(self):
+        return self.conv_out_shape
 
         
 
@@ -94,14 +98,17 @@ class Encoder(nn.Module):
 #####################
 class Decoder(nn.Module):
     def __init__(self, obs_shape, feature_dim, 
-                 conv_layers=[32, 32, 64], 
-                 dense_layers=[256, 512, 1028]) -> None:
+                 conv_layers,       # inverse of conv layers list in encoder
+                 dense_layers,      # inverse of dense layers list in encoder
+                 conv_input_shape, # this is self.conv_out_shape from encoder,
+                 ) -> None:
         super().__init__()
 
         self.obs_shape = obs_shape
         self.conv_layers = conv_layers
         self.dense_layers = dense_layers
         self.feature_dim = feature_dim
+        self.conv_input_shape = conv_input_shape
 
         self.fcs = nn.Sequential()
 
@@ -112,28 +119,25 @@ class Decoder(nn.Module):
             else:
                 self.fcs.append(nn.Linear(self.dense_layers[i-1], self.dense_layers[i]))
             self.fcs.append(nn.ReLU())
-        self.fcs.append(nn.Linear(self.dense_layers[-1], np.prod(self.obs_shape)))
+        self.fcs.append(nn.Linear(self.dense_layers[-1], np.prod(self.conv_input_shape)))
         self.fcs.append(nn.ReLU())
-
-        # Unflatten layer
-        #self.model.append(nn.Unflatten(self.obs_shape))
 
         self.deconvs = nn.Sequential()
         # Deconvolution
         for i in range(len(self.conv_layers)):
-            if i == 0:
-                self.deconvs.append(nn.ConvTranspose2d(self.obs_shape[0], self.conv_layers[i], 
-                                                       kernel_size=3, stride=1, padding=1))
+            if i == 0: 
+                self.deconvs.append(nn.ConvTranspose2d(self.conv_input_shape[0], self.conv_layers[i], 
+                                                       kernel_size=2, stride=2))
             elif i < len(self.conv_layers) - 1:
                 self.deconvs.append(nn.ConvTranspose2d(self.conv_layers[i-1], self.conv_layers[i], 
-                                                       kernel_size=3, stride=1, padding=1))
+                                                       kernel_size=3, stride=2))
             else:   # last layer
                 self.deconvs.append(nn.ConvTranspose2d(self.conv_layers[i], self.obs_shape[0], 
-                                                       kernel_size=3, stride=1, padding=1))
+                                                       kernel_size=3, stride=2, output_padding=1))
 
     def forward(self, x):
         x = self.fcs(x)
-        x = x.view((-1,) + self.obs_shape)
+        x = x.view((-1,) + self.conv_input_shape)
         x = self.deconvs(x)
 
         return x
