@@ -107,7 +107,7 @@ class Actor(nn.Module):
 
         mu, pi, log_pi = squash(mu, pi, log_pi)
 
-        return mu, pi, log_pi, log_std, std 
+        return mu, pi, log_pi, log_std, obs 
 
 
 class QFunction(nn.Module):
@@ -323,6 +323,7 @@ class CurlSacAgent(object):
 
         self.target_entropy = -np.prod(action_shape)
 
+        # shape of conv layer output in the encoder
         enc_conv_out_shape = self.actor.encoder.get_conv_out_shape()
 
         self.decoder = Decoder(obs_shape, 

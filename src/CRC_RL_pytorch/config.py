@@ -33,7 +33,7 @@ CFG = {
         "beta": 0.9, 
         "tau": 0.01, 
         "target_update_freq": 2,
-        "dense_layers" : [512, 256, 128,],
+        "dense_layers" : [1028, 512, 256,],
     },
     "actor": {
         "lr": 1e-3,
