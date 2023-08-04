@@ -29,3 +29,4 @@ wandb/
 *.png
 *.mp4
 !src/CURL_SAC/images/*.png
+!src/CRC_RL_pytorch/data/**/*.mp4
