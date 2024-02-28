@@ -82,7 +82,7 @@ class SumTree(object):
         return self.tree[0] # Returns the root node 
 
 
-class Memory(object):  
+class STBuffer(object):  
     # stored as ( state, action, reward, next_state ) in SumTree
     PER_e = 0.01  # Hyperparameter that we use to avoid some experiences to have 0 probability of being taken
     PER_a = 0.6  # Hyperparameter that we use to make a tradeoff between taking only exp with high priority and sampling randomly

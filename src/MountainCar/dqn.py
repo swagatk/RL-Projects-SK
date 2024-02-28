@@ -9,7 +9,10 @@ from collections import deque
 from keras.layers import Dense
 from keras.optimizers import Adam
 from keras.models import Sequential
-from buffer import ReplayBuffer
+from common.buffer import ReplayBuffer
+
+sys.path.append('../common/')
+from sumtree import STBuffer
 
 class DQNAgent:
   def __init__(self, obs_shape: tuple, n_actions: int,
@@ -35,7 +38,6 @@ class DQNAgent:
 
 
     # create replay memory using deque
-    #self.memory = deque(maxlen=self.buffer_size)
     self.memory = ReplayBuffer(self.obs_shape,
                                (1, ),
                                self.buffer_size)
@@ -107,7 +109,6 @@ class DQNAgent:
 
   # save sample <s, a, r, s'>. into replay memory
   def store_experience(self, state, action, reward, next_state, done):
-    #self.memory.append((state,action,reward,next_state,done))
     self.memory.add(state, action, reward, next_state, done)
 
 
@@ -215,7 +216,7 @@ class DQNAgent:
     # decay epsilon over time
     self.update_epsilon()
 
-  def experience_replay_4(self):
+  def experience_replay(self):
     # uses new replay buffer
     # computationally efficient
     # v3 & v4 are identical
@@ -260,3 +261,58 @@ class DQNAgent:
 
   def load_model(self, filename: str):
     self.model.load_weights(filename)
+
+
+class DQNPERAgent(DQNAgent):
+
+    def __init__(self, obs_shape: tuple, n_actions: int,
+                        buffer_size=2000, batch_size=24,
+                        grad_tape=False, model=None):
+        super().__init__(obs_shape, n_actions, buffer_size, 
+                        batch_size, grad_tape, model)
+
+        # uses a sumtree Buffer
+        self.memory = STBuffer(capacity=buffer_size)
+
+
+    def store_experience(self, state, action, reward, next_state, done):
+        self.memory.store((state, action, reward, next_state, done))
+
+    def experience_replay(self):
+        tree_idx, mini_batch = self.memory.sample(self.batch_size)
+
+        states = mini_batch[:, 0] 
+        actions = mini_batch[:,1]
+        rewards = mini_batch[:, 2]
+        next_states = mini_batch[:, 3]
+        dones  = mini_batch[:, 4]
+
+        q_values_cs = self.model.predict(states)
+        q_values_cs_old = np.array(q_value_cs).copy() # deep copy 
+        max_q_value_ns = self.get_target_q_value_2(next_states)
+
+
+        for i in range(len(q_values_cs)):
+            action = actions[i].astype(int)[0] # check
+            done = dones[i].astype(bool)[0] # check
+            reward = rewards[i][0] # check
+            if done:
+                q_values_cs[i][action] = reward
+            else:
+                q_values_cs[i][action] = reward + self.gamma * max_q_values_ns[i]
+
+        # update experience priorities
+        indices = np.arange(self.batch_size, dtype=np.int32)
+        absolute_errors np.abs(q_values_cs_old[indices, actions] - \
+                                q_values_cs[indices, actions])
+        self.memory.batch_update(tree_idx, absolute_errors)
+
+        # train the Q network
+        self.model.fit(np.array(states),
+                    np.array(q_values_cs),
+                    batch_size = batch_size,
+                    epochs = 1,
+                    verbose = 0)
+
+        # decay epsilon over time
+        self.update_epsilon()
