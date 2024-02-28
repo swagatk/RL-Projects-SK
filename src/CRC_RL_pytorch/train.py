@@ -30,7 +30,7 @@ if config.params.gpu_select:
     num_gpus = torch.cuda.device_count()
     for i in range(num_gpus):
         print(f"GPU {i}: {torch.cuda.get_device_name(i)}")
-    torch.cuda.set_device(0)        # choose the second device
+    torch.cuda.set_device(1)        # choose the second device
 
 # Following data augmentation techniques are supported 
 transforms = {

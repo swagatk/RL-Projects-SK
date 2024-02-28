@@ -14,12 +14,12 @@ CFG = {
         "transform2": "random_overlay",
     },
     "replay_buffer": {
-        "capacity": 50000
+        "capacity": 100000
         },
     "train": {
         "agent": "curl_sac",
         "init_steps": 1000,
-        "num_train_steps": 100000,
+        "num_train_steps": 500000,
         "num_updates": 1,
         "batch_size": 128, #512
     },
@@ -73,9 +73,9 @@ CFG = {
         "save_video": False,
         "save_model": False,
         "detach_encoder": False,
-        "headless": False,
-        "gpu_select": False,
-        "wb_log": False,
+        "headless": True,
+        "gpu_select": True,
+        "wb_log": True,
         "log_interval": 100,
         "num_cls": 4,
         "c1": 0.33,         # contrastive loss weight

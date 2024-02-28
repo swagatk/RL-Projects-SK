@@ -123,7 +123,7 @@ places_dataloader = None
 places_iter = None
 
 
-def _load_places(batch_size=128, image_size=84, num_workers=1, use_val=False):
+def _load_places(batch_size=128, image_size=84, num_workers=8, use_val=False):
 	global places_dataloader, places_iter
 	partition = 'val' if use_val else 'train'
 	print(f'Loading {partition} partition of places365_standard...')
