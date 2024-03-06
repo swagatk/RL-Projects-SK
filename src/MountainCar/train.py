@@ -9,8 +9,9 @@ import matplotlib.pyplot as plt
 import gymnasium as gym 
 import keras 
 from dqn import DQNAgent, DQNPERAgent
-import datetime
 import gymnasium as gym
+import random
+import argparse
 
 ##################
 
@@ -90,7 +91,7 @@ def train(env, agent, max_episodes=300,
         scores.append(ep_reward)
         avg_scores.append(np.mean(scores))
         epsilon = agent.get_epsilon()
-        file.write(f'{e}\t{ep_reward:.2f}\t{np.mean(scores):.2f}\t{max_pos:.2f}\t{t}\t{epsilon}\n' )
+        file.write(f'{e}\t{ep_reward:.2f}\t{np.mean(scores):.2f}\t{max_pos:.2f}\t{t}\t{epsilon:.2f}\n' )
         print(f'\re:{e}, episodic reward: {ep_reward:.2f}, avg ep reward: {np.mean(scores):.2f}, epsilon: {epsilon:.2f}', end="")
         sys.stdout.flush()
     print('End of training')
@@ -118,7 +119,7 @@ def validate(env, agent, wt_file: None):
             step += 1
             frame = env.render()
             frames.append(_label_with_episode_number(frame, i, step))
-            action = agent.get_action(state)
+            action = agent.get_action(state, epsilon=0.0001)
             next_state, reward, done, _, _ = env.step(action)
             next_state = np.expand_dims(next_state, axis=0)
             state = next_state
@@ -133,8 +134,37 @@ def validate(env, agent, wt_file: None):
     imageio.mimwrite(os.path.join('./', 'dqn_mc.gif'), frames, duration=1000/60)
     print('\nAverage episodic score: ', np.mean(scores))
 
+def generate_plot(filename):
+    import pandas as pd
+    df = pd.read_csv(filename, sep='\t')
+    df.columns=['episode', 'ep_reward', 'avg_reward', 'car_position', 'ep_steps', 'epsilon'] 
+    fig, axes = plt.subplots(3)
+    df.plot(x='episode', y='ep_reward', ax=axes[0])
+    df.plot(x='episode', y='avg_reward', ax=axes[0])
+    axes[0].legend(loc='best')
+    axes[0].grid()
+    axes[0].set_ylabel('rewards')
+    # plot car positions separately
+    df.plot(x='episode', y='car_position', ax=axes[1])
+    axes[1].set_ylabel('car positions')
+    axes[1].grid()
+    df.plot(x='episode', y='ep_steps', ax=axes[2])
+    axes[2].set_ylabel('Steps per episode')
+    axes[2].grid()
+    plt.savefig('mc_dqn.png')
+
+
 #########################
 if __name__ == '__main__':
+
+
+
+    # for reproducibility
+    keras.utils.set_random_seed(42)  # sets seeds for base-python, numpy and tf
+    tf.config.experimental.enable_op_determinism()
+    tf.random.set_seed(42)
+    np.random.seed(42)
+    random.seed(42)
 
     # create a gym environment
     env = gym.make('MountainCar-v0', render_mode='rgb_array')
@@ -162,10 +192,20 @@ if __name__ == '__main__':
                     batch_size=64,
                     model=model)
 
+    # agent = DQNAgent(obs_shape, n_actions,
+    #                 buffer_size=20000,
+    #                 batch_size=64,
+    #                 model=model)
+
     # train the model
-    train(env, agent, max_episodes=100, copy_freq=100)
-
-
+    #train(env, agent, max_episodes=100, copy_freq=100)
+    
     # use the best model to create animation
-    #validate(env, agent, wt_file='best_model_14.weights.h5')
+    #validate(env, agent, wt_file='best_model_99.weights.h5')
+
+    # generate plot
+    generate_plot('mc_dqn.txt')
+
+
+
 

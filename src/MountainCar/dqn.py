@@ -27,7 +27,7 @@ class DQNAgent:
         self.ddqn = ddqn_flag     # choose between DQN & DDQN  
         self.gamma =  0.9         # discount factor
         self.epsilon = 1.0        # explore rate
-        self.epsilon_decay = 0.99
+        self.epsilon_decay = 0.99999
         self.epsilon_min = 0.001
         self.batch_size = batch_size
         self.buffer_size = buffer_size  # replay buffer size
@@ -75,8 +75,10 @@ class DQNAgent:
             new_weights.append(new_w)
         self.target_model.set_weights(new_weights)
     # get action from the main model using epsilon-greedy policy
-    def get_action(self, state):
-        if np.random.rand() <= self.epsilon: # explore
+    def get_action(self, state, epsilon=None):
+        if epsilon is None:
+            epsilon = self.epsilon
+        if np.random.rand() <= epsilon: # explore
             return random.randrange(self.action_size)
         else:
             q_value = self.model.predict(state, verbose=0)  # exploit
