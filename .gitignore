@@ -30,5 +30,5 @@ wandb/
 *.mp4
 !src/CURL_SAC/images/*.png
 !src/CRC_RL_pytorch/data/**/*.mp4
-!src/MountainCar/images/*.png 
-!src/MountainCar/images/*.gif
+!src/MountainCar/image/*.png 
+!src/MountainCar/image/*.gif
