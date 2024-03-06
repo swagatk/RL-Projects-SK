@@ -35,8 +35,11 @@ e:13, episodic reward: 47.55, avg ep reward: 27.01, epsilon: 0.00
  Successfully solved the problem in 14 epsisodes,                                 max_pos: 0.52, steps: 157
 
 ```
+*Animation of a Trained Model*
+![GIF Animation](./image/dqn_mc.gif)
 
-![GIF Animation](../../dqn_mc.gif)
+*Training Plot* 
+![Training Plot](./image/mc_dqn.png)
 ## Execution 
 
 `$python3 train.py`
