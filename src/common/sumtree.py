@@ -3,12 +3,13 @@ import numpy as np
 # SumTree Definition
 
 class SumTree(object):
-    data_pointer = 0
 
     # Here we initialize the tree with all nodes = 0, and initialize the data with all values = 0
     def __init__(self, capacity):
         # Number of leaf nodes (final nodes) that contains experiences
         self.capacity = capacity
+        self.data_pointer = 0
+        self.full = False
 
         # Generate the tree with all nodes values = 0
         # To understand this calculation (2 * capacity - 1) look at the schema below
@@ -19,6 +20,17 @@ class SumTree(object):
 
         # Contains the experiences (so the size of data is capacity)
         self.data = np.zeros(capacity, dtype=object)
+
+    def __len__(self):
+        return self.capacity if self.full else self.data_pointer
+
+    def __getitem__(self, index):
+        # return data & its priority
+        if index >= 0 and index < self.capacity if self.full else self.data_pointer:
+            tree_idx = index + self.capacity - 1
+            return self.data[index], self.tree[tree_idx]
+        else:
+            raise ValueError('Index out of range')
 
     def add(self, priority, data):
         # Look at what index we want to put the experience
@@ -138,4 +150,10 @@ class STBuffer(object):
 
         for ti, p in zip(tree_idx, ps):
             self.tree.update(ti, p)    
+
+    def __len__(self):
+        return len(self.tree)
+    
+    def __getitem__(self, index):
+        return self.tree[index] # return data & priority together
 

@@ -8,8 +8,9 @@ import PIL.ImageDraw as ImageDraw
 import matplotlib.pyplot as plt
 import gymnasium as gym 
 import keras 
-from dqn import DQNAgent
+from dqn import DQNAgent, DQNPERAgent
 import datetime
+import gymnasium as gym
 
 ##################
 
@@ -26,21 +27,19 @@ def _label_with_episode_number(frame, episode_num, step_num):
     return im
 
 ############################
+# training function
 def train(env, agent, max_episodes=300,
-          train_freq=1, copy_freq=1,
-          file_writer=None):
+          train_freq=1, copy_freq=10):
 
     file = open('mc_dqn.txt', 'w')
-    file.write('episode\tepisodic_reward\tcar_position\tavg_score\n')
+
     if copy_freq < 10:
         tau = 0.1
     else:
         tau = 1.0
 
-    best_score = 0
-    car_positions = []
-    scores = []
-    avg_scores, avg100_scores = [], []
+    max_steps = 200
+    scores, avg_scores = [], []
     global_step_cnt = 0
     for e in range(max_episodes):
         state = env.reset()[0]
@@ -48,68 +47,74 @@ def train(env, agent, max_episodes=300,
         done = False
         ep_reward = 0
         t = 0
+        max_pos = -99
         while not done:
             global_step_cnt += 1
+            # take action
             action = agent.get_action(state)
+            # receive rewards
             next_state, reward, done, _, _ = env.step(action)
-            # if terminal_reward_penalty[0]:
-            #   reward = reward if not done else terminal_reward_penalty[1]
+            next_state = np.expand_dims(next_state, axis=0)
+            # engineer rewards for better learning
+            if next_state[0][0] >=0.5:
+                reward += 20
+            else:
+                reward = 5 * abs(next_state[0][0] - state[0][0]) + 3 * abs(state[0][1])
+            # track maximum position achieved
+            if next_state[0][0] > max_pos:
+                max_pos = next_state[0][0]
 
-            if next_state[0] >=0.5:
-                reward += 20   
-
-            next_state = np.expand_dims(next_state, axis=0) # (-1, 4)
+            # store experiences
             agent.store_experience(state, action, reward, next_state, done)
             state = next_state
             ep_reward += reward
             t += 1
-            # print(f'\r{t}', end="")
-            # sys.stdout.flush()
 
             # train
             if global_step_cnt % train_freq == 0:
-                agent.experience_replay_4()
+                agent.experience_replay()
 
             # update target model
             if global_step_cnt % copy_freq == 0:
                 agent.update_target_model(tau=tau)
 
-            if t >= 200:
-                break
-            # episode ends here
+            if done and t < max_steps: # success
+                print('\n Successfully solved the problem in {} epsisodes, \
+                                max_pos: {:.2f}, steps: {}\n'.format(e, max_pos, t))
+                agent.save_model('best_model_{}.weights.h5'.format(e))
 
-        if ep_reward > best_score:
-            best_score = ep_reward
-            agent.save_model('best_model.h5')
-        car_positions.append(state[0][0])
+            if t >= max_steps: # failure
+                break
+        # episode ends here
+
         scores.append(ep_reward)
         avg_scores.append(np.mean(scores))
-        avg100_scores.append(np.mean(scores[-100:]))
-        file.write(f'{e}\t{ep_reward}\t{state[0][0]}\t{np.mean(scores)}\n' )
-        if file_writer is not None:
-            tf.summary.scalar('episodic_reward', data=ep_reward, step=e)
-            tf.summary.scalar('avg_ep_reward', data=np.mean(scores), step=e)
-            tf.summary.scalar('car_position',data=np.mean(state[0][0]), step=e)
-            file_writer.flush()
-        print(f'\re:{e}, episodic reward: {ep_reward}, avg ep reward: {np.mean(scores)}', end="")
+        epsilon = agent.get_epsilon()
+        file.write(f'{e}\t{ep_reward:.2f}\t{np.mean(scores):.2f}\t{max_pos:.2f}\t{t}\t{epsilon}\n' )
+        print(f'\re:{e}, episodic reward: {ep_reward:.2f}, avg ep reward: {np.mean(scores):.2f}, epsilon: {epsilon:.2f}', end="")
         sys.stdout.flush()
     print('End of training')
     file.close()
 
-
-#############
+###########################
+# generates gif animation file    
 def validate(env, agent, wt_file: None):
+
     if wt_file is not None:
         agent.load_model(wt_file)
+
+    max_steps = 200
     frames = []
     scores = []
     for i in range(10):
+        #ipdb.set_trace()
         print('\r episode: ', i, end="")
         sys.stdout.flush()
         state = env.reset()[0]
         state = np.expand_dims(state, axis=0)
         step = 0
-        while True:
+        ep_reward = 0
+        while step < max_steps: 
             step += 1
             frame = env.render()
             frames.append(_label_with_episode_number(frame, i, step))
@@ -117,20 +122,22 @@ def validate(env, agent, wt_file: None):
             next_state, reward, done, _, _ = env.step(action)
             next_state = np.expand_dims(next_state, axis=0)
             state = next_state
+            ep_reward += reward
             if done:
-                scores.append(step)
                 frame = env.render()
                 frames.append(_label_with_episode_number(frame, i, step))
                 break
+        # end of episode
+        scores.append(ep_reward)
     # for-loop ends here
     imageio.mimwrite(os.path.join('./', 'dqn_mc.gif'), frames, duration=1000/60)
     print('\nAverage episodic score: ', np.mean(scores))
 
-########
-  
+#########################
 if __name__ == '__main__':
-  
-    env = gym.make('MountainCar-v0')
+
+    # create a gym environment
+    env = gym.make('MountainCar-v0', render_mode='rgb_array')
     obs_shape = env.observation_space.shape
     action_shape = env.action_space.shape
     n_actions = env.action_space.n
@@ -139,25 +146,26 @@ if __name__ == '__main__':
     print('Action size: ', n_actions)
     print('Max episodic steps: ', env.spec.max_episode_steps)
 
-    # tensorboard logging
-    logdir = os.path.join("logs", datetime.datetime.now().strftime("%Y%m%d-%H%M%S"))
-    file_writer = tf.summary.create_file_writer(logdir + "/metrics")
-    file_writer.set_as_default()
-
     # create a model
     model = keras.Sequential([
-        keras.layers.Dense(30, input_shape=obs_shape, activation='relu'),
-        keras.layers.Dense(60, activation='relu'),
-        keras.layers.Dense(n_actions, activation='linear')
+        keras.layers.Dense(30, input_shape=obs_shape, activation='relu',
+                        kernel_initializer='he_uniform'),
+        keras.layers.Dense(60, activation='relu', kernel_initializer='he_uniform'),
+        keras.layers.Dense(n_actions, activation='linear',
+                        kernel_initializer='he_uniform')
     ])
-    model.compile(loss='mse', optimizer='adam')
-    
-    # create DQN Agent
-    agent = DQNAgent(obs_shape, n_actions,
-                 buffer_size=20000, 
-                 batch_size=64,
-                 model=model)
-    
-    # train
-    train(env, agent, max_episodes=1000, copy_freq=1, 
-          file_writer=file_writer)
+    model.compile(loss='mse', optimizer=keras.optimizers.Adam())
+
+    # create a DQN agent
+    agent = DQNPERAgent(obs_shape, n_actions,
+                    buffer_size=20000,
+                    batch_size=64,
+                    model=model)
+
+    # train the model
+    train(env, agent, max_episodes=100, copy_freq=100)
+
+
+    # use the best model to create animation
+    #validate(env, agent, wt_file='best_model_14.weights.h5')
+
