@@ -8,11 +8,11 @@ import PIL.ImageDraw as ImageDraw
 import matplotlib.pyplot as plt
 import gymnasium as gym 
 import keras 
-from dqn import DQNAgent, DQNPERAgent
 import gymnasium as gym
 import random
-import argparse
 
+sys.path.append('/home/kumars/RL-Projects-SK/src')
+from algo.dqn import DQNAgent, DQNPERAgent
 ##################
 
 def _label_with_episode_number(frame, episode_num, step_num):
@@ -31,15 +31,10 @@ def _label_with_episode_number(frame, episode_num, step_num):
 # training function
 def train(env, agent, max_episodes=300,
           train_freq=1, copy_freq=10):
-
     file = open('mc_dqn.txt', 'w')
-
-    if copy_freq < 10:
-        tau = 0.1
-    else:
-        tau = 1.0
-
+    tau = 0.1 if copy_freq < 10 else 1.0
     max_steps = 200
+    car_positions = []
     scores, avg_scores = [], []
     global_step_cnt = 0
     for e in range(max_episodes):
@@ -48,7 +43,7 @@ def train(env, agent, max_episodes=300,
         done = False
         ep_reward = 0
         t = 0
-        max_pos = -99
+        max_pos = -99.0
         while not done:
             global_step_cnt += 1
             # take action
@@ -58,7 +53,7 @@ def train(env, agent, max_episodes=300,
             next_state = np.expand_dims(next_state, axis=0)
             # engineer rewards for better learning
             if next_state[0][0] >=0.5:
-                reward += 20
+                reward += 200
             else:
                 reward = 5 * abs(next_state[0][0] - state[0][0]) + 3 * abs(state[0][1])
             # track maximum position achieved
@@ -73,6 +68,7 @@ def train(env, agent, max_episodes=300,
 
             # train
             if global_step_cnt % train_freq == 0:
+                #agent.experience_replay()
                 agent.experience_replay()
 
             # update target model
@@ -87,12 +83,12 @@ def train(env, agent, max_episodes=300,
             if t >= max_steps: # failure
                 break
         # episode ends here
-
+        car_positions.append(state[0][0])
         scores.append(ep_reward)
         avg_scores.append(np.mean(scores))
         epsilon = agent.get_epsilon()
         file.write(f'{e}\t{ep_reward:.2f}\t{np.mean(scores):.2f}\t{max_pos:.2f}\t{t}\t{epsilon:.2f}\n' )
-        print(f'\re:{e}, episodic reward: {ep_reward:.2f}, avg ep reward: {np.mean(scores):.2f}, epsilon: {epsilon:.2f}', end="")
+        print(f'\re:{e}, ep_reward: {ep_reward:.2f}, avg ep reward: {np.mean(scores):.2f}, ep_steps: {t}, max_pos: {max_pos:.2f}, epsilon: {epsilon:.2f}', end="")
         sys.stdout.flush()
     print('End of training')
     file.close()
@@ -100,7 +96,6 @@ def train(env, agent, max_episodes=300,
 ###########################
 # generates gif animation file    
 def validate(env, agent, wt_file: None):
-
     if wt_file is not None:
         agent.load_model(wt_file)
 
@@ -157,14 +152,12 @@ def generate_plot(filename):
 #########################
 if __name__ == '__main__':
 
-
-
     # for reproducibility
-    keras.utils.set_random_seed(42)  # sets seeds for base-python, numpy and tf
-    tf.config.experimental.enable_op_determinism()
-    tf.random.set_seed(42)
-    np.random.seed(42)
-    random.seed(42)
+    # keras.utils.set_random_seed(42)  # sets seeds for base-python, numpy and tf
+    # tf.config.experimental.enable_op_determinism()
+    # tf.random.set_seed(42)
+    # np.random.seed(42)
+    # random.seed(42)
 
     # create a gym environment
     env = gym.make('MountainCar-v0', render_mode='rgb_array')
@@ -198,13 +191,13 @@ if __name__ == '__main__':
     #                 model=model)
 
     # train the model
-    #train(env, agent, max_episodes=100, copy_freq=100)
+    train(env, agent, max_episodes=100, copy_freq=100)
     
     # use the best model to create animation
     #validate(env, agent, wt_file='best_model_99.weights.h5')
 
     # generate plot
-    generate_plot('mc_dqn.txt')
+    #generate_plot('mc_dqn.txt')
 
 
 

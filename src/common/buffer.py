@@ -132,7 +132,7 @@ class HERBuffer:
 # does not make use of collections.deque()
 #####################################
 
-class ReplayBuffer():
+class ReplayBuffer_2(): # old one - to be removed
     "Buffer to store environment transitions"
     def __init__(self,
                  obs_shape,
@@ -191,4 +191,33 @@ class ReplayBuffer():
         return self.capacity if self.full else self.idx
 
 
+import numpy as np
+class ReplayBuffer():
+    "Buffer to store environment transitions"
+    def __init__(self,capacity) -> None:
+        self.capacity = capacity
+        self.buffer = np.zeros(self.capacity, dtype=object)
+        self.idx = 0
+        self.last_save = 0
+        self.full = False
 
+    def add(self, experience:tuple):
+        self.buffer[self.idx] = experience
+        self.idx = (self.idx + 1) % self.capacity
+        self.full = self.full or self.idx == 0
+
+
+    def sample(self, batch_size=24):    
+        indices = np.random.randint(0, self.capacity if self.full else self.idx,
+                                size=batch_size)
+        batch = self.buffer[indices]
+        return batch
+
+    def __getitem__(self, index):
+        if index >= 0 and index < self.capacity if self.full else self.idx:
+            return self.buffer[index]
+        else:
+            raise ValueError('Index is out of range')
+
+    def __len__(self):
+        return self.capacity if self.full else self.idx

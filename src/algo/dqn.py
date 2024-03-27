@@ -9,11 +9,11 @@ from collections import deque
 from keras.layers import Dense
 from keras.optimizers import Adam
 from keras.models import Sequential
-import imp 
+import gymnasium as gym 
 
 sys.path.append("/home/kumars/RL-Projects-SK/src/")
 from common.sumtree import STBuffer
-from common.buffer import ReplayBuffer
+from common.buffer import ReplayBuffer, ReplayBuffer_2
 
 class DQNAgent:
     def __init__(self, obs_shape: tuple, n_actions: int,
@@ -34,10 +34,7 @@ class DQNAgent:
         self.train_start = 1000     # minimum buffer size to start training
         self.learning_rate = 0.001
 
-
-        # create replay memory buffer
-        self.memory = ReplayBuffer(self.obs_shape,
-                                    (1, ), self.buffer_size)
+        self.memory = ReplayBuffer(self.buffer_size)
 
         # create main model and target model
         if model is None:
@@ -86,7 +83,7 @@ class DQNAgent:
 
     # save sample <s, a, r, s'>. into replay memory
     def store_experience(self, state, action, reward, next_state, done):
-        self.memory.add(state, action, reward, next_state, done)
+        self.memory.add((state, action, reward, next_state, done))
         
     def get_target_q_value(self, next_states): # batch_input
         q_values_ns = self.model.predict(next_states, verbose=0)
@@ -98,18 +95,29 @@ class DQNAgent:
             max_q_values = np.amax(q_values_ns, axis=1)
         return max_q_values
 
-    # train the model 
-    def experience_replay(self):
+    def experience_replay(self): # uses ReplayBuffer_2
         if len(self.memory) < self.train_start:
             return
-        
+        # sample experiences from replay buffer
         batch_size = min(self.batch_size, len(self.memory))
-        mini_batch = self.memory.sample(batch_size) # uses replay buffer
-
-        states, actions, rewards, next_states, dones = mini_batch
+        mini_batch = self.memory.sample(self.batch_size)
+        
+        states = np.zeros((self.batch_size, *self.obs_shape))
+        next_states = np.zeros((self.batch_size, *self.obs_shape))
+        actions = np.zeros((self.batch_size, 1))
+        rewards = np.zeros((self.batch_size, 1))
+        dones = np.zeros((self.batch_size, 1))
+        
+        for i in range(len(mini_batch)):
+            states[i] = mini_batch[i][0]
+            actions[i] = mini_batch[i][1]
+            rewards[i] = mini_batch[i][2]
+            next_states[i] = mini_batch[i][3]
+            dones[i]  = mini_batch[i][4]
+        
         q_values_cs = self.model.predict(states, verbose=0)
         max_q_values_ns = self.get_target_q_value(next_states)
-
+        
         for i in range(len(q_values_cs)):
             action = actions[i].astype(int)[0] # check
             done = dones[i].astype(bool)[0] # check
@@ -118,16 +126,15 @@ class DQNAgent:
                 q_values_cs[i][action] = reward
             else:
                 q_values_cs[i][action] = reward + self.gamma * max_q_values_ns[i]
-
+                
         # train the Q network
         self.model.fit(np.array(states),
-                        np.array(q_values_cs),
-                        batch_size = batch_size,
-                        epochs = 1,
-                        verbose = 0)
-        
+                       np.array(q_values_cs),
+                       batch_size = batch_size,
+                       epochs = 1,
+                       verbose = 0)
         # decay epsilon over time
-        self.update_epsilon()
+        self.update_epsilon()    
 
     # decrease exploration, increase exploitation
     def update_epsilon(self):
@@ -142,6 +149,8 @@ class DQNAgent:
 
     def get_epsilon(self):
         return self.epsilon
+    
+        
 
 # end of class definitions.
 class DQNPERAgent(DQNAgent):
@@ -153,10 +162,6 @@ class DQNPERAgent(DQNAgent):
 
         # uses a sumtree Buffer
         self.memory = STBuffer(capacity=buffer_size)
-
-    # overrides parent function
-    def store_experience(self, state, action, reward, next_state, done):
-        self.memory.store((state, action, reward, next_state, done))
 
     # overrides parent function
     def experience_replay(self):

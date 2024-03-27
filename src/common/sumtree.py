@@ -108,7 +108,7 @@ class STBuffer(object):
         # Making the tree 
         self.tree = SumTree(capacity)
 
-    def store(self, experience):
+    def add(self, experience):
         # Find the max priority
         max_priority = np.max(self.tree.tree[-self.tree.capacity:])
 
